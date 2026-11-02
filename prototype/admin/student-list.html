@@ -176,7 +176,7 @@ function applyFilter() {
   Proto.renderRows('rows', rows, s => `
     <tr>
       <td class="mono small">${s.id}</td>
-      <td class="strong"><a href="student-detail.html">${s.name}</a></td>
+      <td class="strong"><a href="student-detail.html?id=${s.id}">${s.name}</a></td>
       <td>${s.gender}</td>
       <td>${s.grade}</td>
       <td>${s.parentName}</td>
@@ -188,7 +188,7 @@ function applyFilter() {
       <td><span class="tag ${STATUS_TAG[s.status]}">${s.status}</span></td>
       <td class="small muted">${s.created}</td>
       <td class="ops">
-        <a class="btn-link" href="student-detail.html">详情</a>
+        <a class="btn-link" href="student-detail.html?id=${s.id}">详情</a>
         <a class="btn-link" href="student-form.html">编辑</a>
         <button class="btn-link" onclick="openAssign('${s.id}')">分配教师</button>
         ${s.status === '在读'

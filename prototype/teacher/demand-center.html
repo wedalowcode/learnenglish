@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>接单中心</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .quick { display: flex; gap: 6px; flex-wrap: wrap; }
+  .quick .btn.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .nowrap-cell { white-space: nowrap; }
+  .demand-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background: #fff; }
+  .demand-card.bidding { border-color: var(--warning); background: #fffdf7; }
+  .dc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .dc-title { font-size: 15px; font-weight: 600; }
+  .dc-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; font-size: 12.5px; color: var(--text-2); }
+  .dc-meta .k { color: var(--text-3); }
+  .need-tag {
+    display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 4px;
+    background: var(--primary-soft); color: var(--primary-dark); margin: 1px 3px 1px 0;
+  }
+  .match-badge { font-size: 11.5px; border-radius: 4px; padding: 1px 6px; }
+  .match-badge.ok { background: var(--success-soft); color: var(--success); }
+  .match-badge.miss { background: var(--warning-soft); color: #b45309; }
+  .wb-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 8px; }
+  .wb-item.disabled { opacity: .55; background: #fafafa; }
+  .wb-item .wb-name { font-size: 13px; font-weight: 600; }
+  .wb-item .wb-meta { font-size: 11.5px; color: var(--text-3); }
+  #w_list { max-height: 208px; overflow-y: auto; padding-right: 4px; border-radius: 8px; }
+  .dc-note { font-size: 12.5px; color: var(--text-2); margin-top: 8px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content" id="page">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">接单中心</div>
+          <h1 class="page-title" id="pageTitle">待响应需求</h1>
+          <div class="page-sub" id="pageSub">—</div>
+        </div>
+        <div class="page-actions">
+          <select class="select" id="t_switch" style="width:190px" onchange="switchTeacher(this.value)"></select>
+          <a class="btn" href="my-students.html">我的学员</a>
+        </div>
+      </div>
+
+      <div class="grid g4 mb16" id="stats"></div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="tabs" id="ttabs" style="border:none">
+            <button class="tab active" data-pane="t1" onclick="go('open')">待响应需求</button>
+            <button class="tab" data-pane="t2" onclick="go('mine')">我的响应</button>
+            <button class="tab" data-pane="t3" onclick="go('wbreq')">我的词库申请</button>
+          </div>
+          <div id="tabActions"></div>
+        </div>
+
+        <div class="tab-pane active" id="t1">
+          <div class="card-body">
+            <div class="alert alert-info mb16"><span class="ico">i</span>
+              <div>这里显示的是<b>已发布、还没被教务确认</b>的需求。响应只代表你有接单意愿，
+                不会改变学员当前的负责教师；最终由教务确认人选、管理员正式分配。</div></div>
+            <div id="openList"></div>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="t2">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr>
+                <th style="width:120px">需求编号</th><th>学员</th><th>年级 / 教材</th>
+                <th>学习需求</th><th style="width:96px">响应状态</th><th style="width:110px">响应时间</th>
+                <th>我的备注</th><th>结果说明</th><th style="width:92px">操作</th>
+              </tr></thead>
+              <tbody id="mineRows"></tbody>
+            </table>
+          </div>
+          <div class="card-foot small muted" id="mineFoot"></div>
+        </div>
+
+        <div class="tab-pane" id="t3">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr>
+                <th style="width:130px">申请编号</th><th>学员</th><th>词库</th>
+                <th>申请原因</th><th style="width:96px">状态</th><th style="width:110px">申请时间</th>
+                <th>审核意见</th><th style="width:92px">操作</th>
+              </tr></thead>
+              <tbody id="wbRows"></tbody>
+            </table>
+          </div>
+          <div class="card-foot small muted">
+            词库授权只决定「这个学员能用哪些词库」，不改变训练进度；停用授权不会删除任何历史训练记录。
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 我可以带 -->
+<div class="mask" id="respondModal">
+  <div class="modal" style="width:520px">
+    <div class="modal-head">
+      <div class="modal-title" id="rsTitle">响应需求</div>
+      <button class="modal-close" onclick="Proto.closeModal('respondModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="rsInfo" class="mb12"></div>
+      <div class="field"><label>给教务的说明</label>
+        <textarea class="textarea" id="rsRemark" placeholder="如：可以带，周三周五下午都有空"></textarea>
+        <div class="hint">教务会看到这段说明，用来比较人选</div></div>
+      <div id="rsErr"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('respondModal')">取消</button>
+      <button class="btn btn-primary" onclick="doRespond()">提交接单意向</button>
+    </div>
+  </div>
+</div>
+
+<!-- 暂不接单 / 撤回 -->
+<div class="mask" id="reasonModal">
+  <div class="modal" style="width:520px">
+    <div class="modal-head">
+      <div class="modal-title" id="rTitle">暂不接单</div>
+      <button class="modal-close" onclick="Proto.closeModal('reasonModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="rPick" class="field"><label>原因 <span class="req">*</span></label>
+        <select class="select" id="rReason"></select></div>
+      <div class="field"><label>补充说明</label>
+        <textarea class="textarea" id="rRemark" placeholder="选填，教务可以看到"></textarea></div>
+      <div id="rErr"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('reasonModal')">取消</button>
+      <button class="btn btn-danger" id="rOk">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- 申请词库 -->
+<div class="mask" id="wbModal">
+  <div class="modal" style="width:680px">
+    <div class="modal-head">
+      <div class="modal-title">申请词库使用权限</div>
+      <button class="modal-close" onclick="Proto.closeModal('wbModal')">×</button>
+    </div>
+    <div class="modal-body" style="max-height:72vh;overflow:auto">
+      <div class="alert alert-info mb12"><span class="ico">i</span>
+        <div>只能为自己<b>当前负责的学员</b>申请；已授权的词库不会重复出现，
+          已有待审核申请的也会标注。提交后由管理员审核开通。</div></div>
+      <div class="grid g2">
+        <div class="field"><label>学员 <span class="req">*</span></label>
+          <select class="select" id="w_student" onchange="renderWbOptions()"></select></div>
+        <div class="field"><label>筛选词库</label>
+          <input class="input" id="w_kw" placeholder="输入词库名称 / 分类" oninput="renderWbOptions()"></div>
+      </div>
+      <div class="field"><label>选择词库 <span class="req">*</span>（可多选）</label>
+        <div id="w_list"></div></div>
+      <div class="field"><label>申请原因 <span class="req">*</span></label>
+        <textarea class="textarea" id="w_reason" placeholder="如：本周开始 Unit 2，需要配套词表做课前初筛"></textarea></div>
+      <div class="field"><label>教学计划 / 备注</label>
+        <textarea class="textarea" id="w_plan" placeholder="如：先用 23 词初筛，再按错词建莱特纳复习"></textarea></div>
+      <div id="w_err"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('wbModal')">取消</button>
+      <button class="btn btn-primary" onclick="submitWb()">提交申请</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const Q = new URLSearchParams(location.search);
+let TAB = Q.get('tab') || 'open';
+let TID = Q.get('t') || 'T001';
+
+const S = Store;
+let ME = S.teacher(TID);
+
+Proto.shell({ role: 'teacher', active: TAB === 'open' ? 'demand-open' : TAB === 'mine' ? 'demand-mine' : 'demand-wbreq' });
+
+function applySession() {
+  ME = S.teacher(TID);
+  S.setSession({ role: 'teacher', operatorName: ME ? ME.name : '李婉', teacherId: TID });
+}
+applySession();
+
+/* 教师身份切换（演示用：同一浏览器里模拟不同教师接单） */
+(function initSwitch() {
+  const sel = document.getElementById('t_switch');
+  sel.innerHTML = S.teachers().map(t =>
+    `<option value="${t.id}" ${t.id === TID ? 'selected' : ''}>${t.name}（${t.cooperationStatus}）</option>`).join('');
+})();
+
+function switchTeacher(id) {
+  location.href = 'demand-center.html?tab=' + TAB + '&t=' + id;
+}
+
+function go(tab) {
+  location.href = 'demand-center.html?tab=' + tab + '&t=' + TID;
+}
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+const TITLES = { open: '待响应需求', mine: '我的响应', wbreq: '我的词库申请' };
+document.getElementById('pageTitle').textContent = TITLES[TAB] || '接单中心';
+
+/* ---------- 统计 ---------- */
+function renderStats() {
+  let open = [], mine = [], reqs = [];
+  try { open = S.openDemandsFor(TID); } catch (e) { }
+  try { mine = S.responsesOfTeacher(TID); } catch (e) { }
+  try { reqs = S.wordbookRequests({ teacherId: TID }); } catch (e) { }
+  const pending = reqs.filter(x => x.request.status === S.WBR.PENDING).length;
+  const selected = mine.filter(x => x.response.status === S.RESP.SELECTED).length;
+  const myStudents = S.currentStudentsOf(TID).length;
+  const ready = ME && ME.cooperationStatus === S.COOP.READY;
+  document.getElementById('stats').innerHTML = [
+    { l: '待响应需求', n: open.length, s: ready ? '面向所有可授课教师开放' : `当前「${ME ? ME.cooperationStatus : '—'}」，不开放接单` },
+    { l: '我已响应', n: mine.filter(x => x.response.status === S.RESP.YES).length, s: `累计 ${mine.length} 次响应` },
+    { l: '已被选为教师', n: selected, s: '等管理员正式分配' },
+    { l: '词库申请', n: pending, s: `我的学员 ${myStudents} 人` }
+  ].map(c => `<div class="card stat">
+      <div class="stat-label">${c.l}</div>
+      <div class="stat-value">${c.n}</div>
+      <div class="stat-foot">${c.s}</div></div>`).join('');
+
+  document.getElementById('pageSub').textContent =
+    `${esc(ME ? ME.name : TID)} · ${esc(ME ? ME.cooperationStatus : '')} · ` +
+    `擅长 ${esc(ME ? (ME.grades.join('、') || '未填写') : '')} · ` +
+    `当前负责 ${myStudents} 名学员`;
+}
+
+/* ---------- Tab1：待响应需求 ---------- */
+function renderOpen() {
+  let list = [];
+  let err = '';
+  try { list = S.openDemandsFor(TID); } catch (e) { err = e.message; }
+
+  const box = document.getElementById('openList');
+  const blocked = ME && ME.cooperationStatus !== S.COOP.READY;
+  const head = blocked ? `<div class="alert alert-warn mb16"><span class="ico">!</span>
+      <div>你当前是「<b>${esc(ME.cooperationStatus)}</b>」，只有<b>可授课</b>教师才能看到待接单需求、提交接单意向。
+        请联系教务处理合作状态后再来响应需求。</div></div>` : '';
+
+  if (err) {
+    box.innerHTML = head + `<div class="alert alert-danger"><span class="ico">!</span><div>${esc(err)}</div></div>`;
+    return;
+  }
+  if (!list.length) {
+    box.innerHTML = head + `<div class="empty"><div class="e-ico">▤</div>
+      <p>${blocked ? '当前合作状态下不开放接单，处理后再来。' : '暂时没有开放中的需求。教务发布新需求后会出现在这里。'}</p></div>`;
+    return;
+  }
+  box.innerHTML = head + list.map(v => demandCard(v)).join('');
+}
+
+function demandCard(v) {
+  const d = v.demand;
+  const resp = S.responseOf(d.id, TID);
+  const m = S.demandMatchFor(d.id, TID);
+  const mine = resp && [S.RESP.YES, S.RESP.NO].indexOf(resp.status) >= 0;
+  const time = d.expectedSchedule.weekday.join('、') + ' · ' + d.expectedSchedule.periods.join('、');
+  const matchHtml = m ? [
+    `<span class="match-badge ${m.grade ? 'ok' : 'miss'}">年级${m.grade ? '匹配' : '不符'}</span>`,
+    `<span class="match-badge ${m.textbook ? 'ok' : 'miss'}">教材${m.textbook ? '匹配' : '不符'}</span>`,
+    `<span class="match-badge ${m.time ? 'ok' : 'miss'}">时间${m.time ? '符合' : '不符'}</span>`
+  ].join(' ') : '';
+
+  const btns = [];
+  if (v.respondedCount) btns.push(`<span class="small muted">已有 ${v.respondedCount} 位教师响应</span>`);
+  if (mine && resp.status === S.RESP.YES) {
+    btns.push(`<span class="tag tag-blue">我已响应</span>`);
+    btns.push(`<button class="btn btn-sm" onclick="askWithdraw('${d.id}')">撤回意向</button>`);
+  } else if (mine && resp.status === S.RESP.NO) {
+    btns.push(`<span class="tag tag-slate">我已暂不接单</span>`);
+    btns.push(`<button class="btn btn-sm btn-primary" onclick="openRespond('${d.id}')">改为我可以带</button>`);
+  } else {
+    btns.push(`<button class="btn btn-sm" onclick="askDecline('${d.id}')">暂不接单</button>`);
+    btns.push(`<button class="btn btn-sm btn-primary" onclick="openRespond('${d.id}')">我可以带</button>`);
+  }
+
+  return `<div class="demand-card ${v.respondedCount ? 'bidding' : ''}" style="margin-bottom:12px">
+    <div class="dc-head">
+      <div>
+        <div class="dc-title">${esc(v.student ? v.student.name : '')} · ${esc(d.grade)} · ${esc(d.textbook)}
+          <span class="tag tag-${S.DEMAND_TONE[d.status]}" style="font-size:11px;margin-left:6px">${d.status}</span></div>
+        <div class="small muted">${esc(d.code)} · 发布于 ${esc(d.publishedAt || d.createdAt)}</div>
+      </div>
+      <div class="flex aic gap8">${btns.join('')}</div>
+    </div>
+    <div class="dc-meta">
+      <span><span class="k">学习方向</span> ${d.learningNeeds.map(n => `<span class="need-tag">${esc(n)}</span>`).join('')}</span>
+      <span><span class="k">期望时间</span> ${esc(time)}${d.expectedSchedule.weeklyLessons ? ` · 每周 ${d.expectedSchedule.weeklyLessons} 次` : ''}</span>
+      ${d.expectedStartAt ? `<span><span class="k">期望开始</span> ${esc(d.expectedStartAt)}</span>` : ''}
+      <span>${matchHtml}</span>
+    </div>
+    ${d.currentLevel ? `<div class="dc-meta"><span><span class="k">学习情况</span> ${esc(d.currentLevel)}</span></div>` : ''}
+    ${d.specialRequirements ? `<div class="dc-note" style="color:#b45309">教学特殊要求：${esc(d.specialRequirements)}</div>` : ''}
+    ${v.isChange ? `<div class="dc-note" style="color:var(--warning)">该学员目前已有负责教师，本次为更换教师需求</div>` : ''}
+    ${resp && resp.remark ? `<div class="dc-note">我的说明：${esc(resp.remark)}</div>` : ''}
+  </div>`;
+}
+
+/* ---------- Tab2：我的响应 ---------- */
+function renderMine() {
+  let list = [];
+  try { list = S.responsesOfTeacher(TID); } catch (e) { }
+  Proto.renderRows('mineRows', list, x => {
+    const d = x.demand, s = x.student, r = x.response;
+    const note = r.status === S.RESP.SELECTED ? '教务已确认你为人选，等管理员正式分配'
+      : r.status === S.RESP.NOT_SELECTED ? '本轮未被选中，响应记录保留'
+        : r.status === S.RESP.WITHDRAWN ? ('已撤回：' + (r.withdrawReason || '—'))
+          : r.status === S.RESP.NO ? ('暂不接单：' + (r.declineReason || '—'))
+            : '等待教务确认';
+    const act = r.status === S.RESP.YES
+      ? `<button class="btn-link mute" onclick="askWithdraw('${d.id}')">撤回</button>`
+      : '<span class="small muted">—</span>';
+    return `<tr>
+      <td class="mono small"><a href="#nogo" onclick="event.preventDefault()">${esc(d.code)}</a></td>
+      <td class="strong nowrap-cell">${esc(s ? s.name : '—')}</td>
+      <td class="small nowrap-cell">${esc(d.grade)} · ${esc(d.textbook)}</td>
+      <td class="nowrap-cell">${d.learningNeeds.map(n => `<span class="need-tag">${esc(n)}</span>`).join('')}</td>
+      <td><span class="tag tag-${S.RESP_TONE[r.status]}">${r.status}</span></td>
+      <td class="small muted nowrap-cell">${esc((r.respondedAt || '').slice(5, 16))}</td>
+      <td class="small">${esc(r.remark || '—')}</td>
+      <td class="small" style="color:var(--text-3)">${esc(note)}</td>
+      <td>${act}</td>
+    </tr>`;
+  }, 9, '你还没有响应过需求。切到「待响应需求」看看有没有合适的。');
+  document.getElementById('mineFoot').textContent =
+    `共 ${list.length} 条响应记录；教务确认结果由教务决定，教师不能修改。`;
+}
+
+/* ---------- Tab3：我的词库申请 ---------- */
+function renderWbReq() {
+  let list = [];
+  try { list = S.wordbookRequests({ teacherId: TID }); } catch (e) { }
+  Proto.renderRows('wbRows', list, x => {
+    const r = x.request;
+    const act = r.status === S.WBR.PENDING
+      ? `<button class="btn-link mute" onclick="askCancelReq('${r.id}')">取消申请</button>`
+      : (r.status === S.WBR.APPROVED && x.authorized
+        ? `<a class="btn-link" href="word-training-setup.html?student=${r.studentId}">去使用</a>`
+        : '<span class="small muted">—</span>');
+    return `<tr>
+      <td class="mono small">${esc(r.id)}</td>
+      <td class="strong nowrap-cell">${esc(x.student ? x.student.name : '—')}
+        <div class="small muted">${esc(x.student ? x.student.grade + ' · ' + (x.student.book || '') : '')}</div></td>
+      <td class="small">${esc(x.wordbook ? x.wordbook.name : r.wordbookId)}
+        <div class="muted">${esc(x.wordbook ? (x.wordbook.category + ' · ' + x.wordbook.wordCount + ' 词') : '')}</div></td>
+      <td class="small">${esc(r.reason || '—')}</td>
+      <td><span class="tag tag-${S.WBR_TONE[r.status]}">${r.status}</span>
+        ${x.authorized ? '<div class="small" style="color:var(--success)">已授权</div>' : ''}</td>
+      <td class="small muted nowrap-cell">${esc((r.requestedAt || '').slice(5, 16))}</td>
+      <td class="small">${esc(r.reviewRemark || '—')}
+        ${r.reviewedBy ? `<div class="muted">${esc(r.reviewedBy)} · ${esc((r.reviewedAt || '').slice(5, 16))}</div>` : ''}</td>
+      <td>${act}</td>
+    </tr>`;
+  }, 8, '还没有词库申请。点右上角「申请词库」为你负责的学员开通词表。');
+}
+
+/* ---------- 我可以带 ---------- */
+let curDemandId = '';
+function openRespond(demandId) {
+  curDemandId = demandId;
+  const v = S.demandView(demandId);
+  const m = S.demandMatchFor(demandId, TID);
+  document.getElementById('rsTitle').textContent = '响应需求：' + (v.student ? v.student.name : '');
+  document.getElementById('rsInfo').innerHTML = `<div class="card" style="box-shadow:none"><div class="card-body">
+    <div class="small" style="line-height:1.9">
+      <b>${esc(v.demand.grade)} · ${esc(v.demand.textbook)}</b> ·
+      ${v.demand.learningNeeds.map(n => `<span class="need-tag">${esc(n)}</span>`).join('')}<br>
+      期望时间：${esc(v.demand.expectedSchedule.weekday.join('、'))} · ${esc(v.demand.expectedSchedule.periods.join('、'))}<br>
+      我的匹配度：${m.grade ? '年级匹配' : '年级不符'} / ${m.textbook ? '教材匹配' : '教材不符'} /
+        ${m.time ? '时间符合' : '时间不符'}
+    </div></div></div>`;
+  document.getElementById('rsRemark').value = '';
+  document.getElementById('rsErr').innerHTML = '';
+  Proto.openModal('respondModal');
+}
+
+function doRespond() {
+  try {
+    S.respondDemand(curDemandId, { remark: document.getElementById('rsRemark').value.trim() });
+    Proto.closeModal('respondModal');
+    Proto.toast('已提交接单意向，等待教务确认', 'ok');
+    renderAll();
+  } catch (e) {
+    document.getElementById('rsErr').innerHTML = `<div class="alert alert-danger mt12">${esc(e.message)}</div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+/* ---------- 暂不接单 / 撤回 / 取消申请 ---------- */
+let reasonMode = '';
+function askDecline(demandId) {
+  reasonMode = 'decline'; curDemandId = demandId;
+  document.getElementById('rTitle').textContent = '暂不接单';
+  document.getElementById('rPick').classList.remove('hidden');
+  document.getElementById('rReason').innerHTML = S.DECLINE_REASONS.map(r => `<option>${r}</option>`).join('');
+  document.getElementById('rRemark').value = '';
+  document.getElementById('rErr').innerHTML = '';
+  document.getElementById('rOk').textContent = '确认暂不接单';
+  document.getElementById('rOk').onclick = submitDecline;
+  Proto.openModal('reasonModal');
+}
+
+function askWithdraw(demandId) {
+  reasonMode = 'withdraw'; curDemandId = demandId;
+  document.getElementById('rTitle').textContent = '撤回接单意向';
+  document.getElementById('rPick').classList.add('hidden');
+  document.getElementById('rRemark').value = '';
+  document.getElementById('rErr').innerHTML = '';
+  document.getElementById('rOk').textContent = '确认撤回';
+  document.getElementById('rOk').onclick = submitWithdraw;
+  Proto.openModal('reasonModal');
+}
+
+let cancelReqId = '';
+function askCancelReq(id) {
+  cancelReqId = id;
+  reasonMode = 'cancelReq';
+  document.getElementById('rTitle').textContent = '取消词库申请';
+  document.getElementById('rPick').classList.add('hidden');
+  document.getElementById('rRemark').value = '';
+  document.getElementById('rErr').innerHTML = '';
+  document.getElementById('rOk').textContent = '确认取消申请';
+  document.getElementById('rOk').onclick = submitCancelReq;
+  Proto.openModal('reasonModal');
+}
+
+function submitDecline() {
+  try {
+    S.declineDemand(curDemandId, {
+      declineReason: document.getElementById('rReason').value,
+      remark: document.getElementById('rRemark').value.trim()
+    });
+    Proto.closeModal('reasonModal');
+    Proto.toast('已回复暂不接单', 'ok');
+    renderAll();
+  } catch (e) {
+    document.getElementById('rErr').innerHTML = `<div class="alert alert-danger mt12">${esc(e.message)}</div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+function submitWithdraw() {
+  const reason = document.getElementById('rRemark').value.trim();
+  try {
+    S.withdrawResponse(curDemandId, { reason: reason });
+    Proto.closeModal('reasonModal');
+    Proto.toast('已撤回接单意向', 'ok');
+    renderAll();
+  } catch (e) {
+    document.getElementById('rErr').innerHTML = `<div class="alert alert-danger mt12">${esc(e.message)}</div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+function submitCancelReq() {
+  const reason = document.getElementById('rRemark').value.trim();
+  try {
+    S.cancelWordbookRequest(cancelReqId, { reason: reason });
+    Proto.closeModal('reasonModal');
+    Proto.toast('申请已取消', 'ok');
+    renderAll();
+  } catch (e) {
+    document.getElementById('rErr').innerHTML = `<div class="alert alert-danger mt12">${esc(e.message)}</div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+/* ---------- 申请词库 ---------- */
+function openWbModal() {
+  const mine = S.currentStudentsOf(TID);
+  if (!mine.length) {
+    Proto.toast('你当前没有负责的学员，无法申请词库', 'err');
+    return;
+  }
+  document.getElementById('w_student').innerHTML = mine.map(x =>
+    `<option value="${x.student.id}">${x.student.name} · ${x.student.grade} · ${x.student.book || '教材未填'}</option>`).join('');
+  document.getElementById('w_kw').value = '';
+  document.getElementById('w_reason').value = '';
+  document.getElementById('w_plan').value = '';
+  document.getElementById('w_err').innerHTML = '';
+  renderWbOptions();
+  Proto.openModal('wbModal');
+}
+
+function renderWbOptions() {
+  const sid = document.getElementById('w_student').value;
+  const kw = document.getElementById('w_kw').value.trim();
+  const list = S.wordbooks().filter(b => b.status === '启用').filter(b => {
+    if (!kw) return true;
+    return (b.name + b.category + b.bookVersion + b.grade).indexOf(kw) >= 0;
+  });
+  document.getElementById('w_list').innerHTML = list.map(b => {
+    const c = S.requestCheck(sid, b.id);
+    const dis = !c.ok;
+    return `<label class="wb-item ${dis ? 'disabled' : ''}">
+      <input type="checkbox" value="${b.id}" ${dis ? 'disabled' : ''} style="margin-top:3px">
+      <div>
+        <div class="wb-name">${esc(b.name)}</div>
+        <div class="wb-meta">${esc(b.category)} · ${esc(b.bookVersion || '未标版本')} · ${esc(b.grade || '')} ·
+          ${b.wordCount} 词 ${dis ? ` · <span style="color:var(--danger)">${esc(c.reason)}</span>` : ''}</div>
+      </div>
+    </label>`;
+  }).join('') || '<div class="small muted">没有匹配的词库</div>';
+}
+
+function submitWb() {
+  const sid = document.getElementById('w_student').value;
+  const ids = Array.from(document.querySelectorAll('#w_list input:checked')).map(x => x.value);
+  const err = document.getElementById('w_err');
+  try {
+    if (!ids.length) throw new Error('请至少选择一个词库');
+    const out = S.createWordbookRequests({
+      studentId: sid, wordbookIds: ids,
+      reason: document.getElementById('w_reason').value.trim(),
+      plan: document.getElementById('w_plan').value.trim()
+    });
+    Proto.closeModal('wbModal');
+    Proto.toast(`已提交 ${out.length} 条词库申请，等待管理员审核`, 'ok');
+    renderAll();
+  } catch (e) {
+    err.innerHTML = `<div class="alert alert-danger mt12">${esc(e.message)}</div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+/* ---------- 渲染调度 ---------- */
+function renderTabActions() {
+  const box = document.getElementById('tabActions');
+  if (TAB === 'wbreq') {
+    box.innerHTML = `<button class="btn btn-sm btn-primary" onclick="openWbModal()">+ 申请词库</button>`;
+  } else if (TAB === 'mine') {
+    box.innerHTML = `<a class="btn btn-sm" href="demand-center.html?tab=open&t=${TID}">去响应需求</a>`;
+  } else {
+    box.innerHTML = `<a class="btn btn-sm" href="my-students.html">我的学员</a>`;
+  }
+}
+
+function setTabActive() {
+  document.querySelectorAll('#ttabs .tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.pane === (TAB === 'open' ? 't1' : TAB === 'mine' ? 't2' : 't3'));
+  });
+  ['t1', 't2', 't3'].forEach((id, i) => {
+    const want = TAB === 'open' ? 't1' : TAB === 'mine' ? 't2' : 't3';
+    document.getElementById(id).classList.toggle('active', id === want);
+  });
+}
+
+function renderAll() {
+  renderStats();
+  renderTabActions();
+  setTabActive();
+  if (TAB === 'open') renderOpen();
+  if (TAB === 'mine') renderMine();
+  if (TAB === 'wbreq') renderWbReq();
+}
+
+renderAll();
+</script>
+</body>
+</html>

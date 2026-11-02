@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>学员需求池</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .quick { display: flex; gap: 6px; flex-wrap: wrap; }
+  .quick .btn.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips label {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px;
+    border: 1px solid var(--border-2); border-radius: 999px; padding: 4px 10px;
+    cursor: pointer; user-select: none; background: #fff; color: var(--text-2);
+  }
+  .chips input { margin: 0; accent-color: var(--primary); }
+  .chips label:has(input:checked) { border-color: var(--primary); color: var(--primary-dark); background: var(--primary-soft); }
+  .nowrap-cell { white-space: nowrap; }
+  .need-tag {
+    display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 4px;
+    background: var(--primary-soft); color: var(--primary-dark); margin: 1px 3px 1px 0;
+  }
+  .mode-switch { display: flex; gap: 6px; margin-bottom: 12px; }
+  .mode-switch .btn.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content" id="page">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教务管理 · 学员接单<span class="sep">/</span>需求池</div>
+          <h1 class="page-title">学员需求池</h1>
+          <div class="page-sub" id="pageSub">—</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="response-manage.html">教师响应管理</a>
+          <button class="btn btn-primary" onclick="openCreate()">+ 新建需求</button>
+        </div>
+      </div>
+
+      <div class="grid g6 mb16" id="stats"></div>
+
+      <div class="card filter">
+        <div class="field"><label>学员 / 需求编号</label>
+          <input class="input" id="f_kw" placeholder="输入学员姓名或需求编号" oninput="render()"></div>
+        <div class="field"><label>需求状态</label>
+          <select class="select" id="f_status" onchange="render()"><option value="">全部状态</option></select></div>
+        <div class="field"><label>年级</label>
+          <select class="select" id="f_grade" onchange="render()"><option value="">全部年级</option></select></div>
+        <div class="field"><label>教材</label>
+          <select class="select" id="f_book" onchange="render()"><option value="">全部教材</option></select></div>
+        <div class="field"><label>发布时间从</label>
+          <input class="input" id="f_from" type="date" onchange="render()"></div>
+        <div class="field"><label>发布时间到</label>
+          <input class="input" id="f_to" type="date" onchange="render()"></div>
+        <div class="field" style="align-self:end">
+          <button class="btn" onclick="resetFilter()">重置</button></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">需求列表</div>
+          <div class="flex aic gap12">
+            <div class="quick" id="quick"></div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th style="width:120px">需求编号</th>
+                <th>学员</th>
+                <th>年级</th>
+                <th>教材</th>
+                <th>学习需求</th>
+                <th style="width:150px">期望上课时间</th>
+                <th class="right" style="width:78px">响应教师</th>
+                <th style="width:104px">当前状态</th>
+                <th style="width:84px">发布人</th>
+                <th style="width:104px">发布时间</th>
+                <th style="width:84px">最终教师</th>
+                <th style="width:196px">操作</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <div class="card-foot flex aic between">
+          <span class="small muted" id="listCount">—</span>
+          <span class="small muted" id="pgInfo"></span>
+        </div>
+      </div>
+
+      <div class="alert alert-info mt16"><span class="ico">i</span>
+        <div><b>需求只是「要找一位什么样的老师」，它不产生师生关系。</b>
+          教师响应只表达意向，教务确认只决定人选，只有管理员正式分配才会建立负责关系；
+          因此需求走到「已完成分配」之前，学员的当前教师不会发生任何变化。</div></div>
+    </main>
+  </div>
+</div>
+
+<!-- 新建需求 -->
+<div class="mask" id="createModal">
+  <div class="modal" style="width:720px">
+    <div class="modal-head">
+      <div class="modal-title">新建学员需求</div>
+      <button class="modal-close" onclick="Proto.closeModal('createModal')">×</button>
+    </div>
+    <div class="modal-body" style="max-height:70vh;overflow:auto">
+      <div class="mode-switch">
+        <button class="btn btn-sm on" id="modeExist" onclick="setMode('exist')">选择已有学员</button>
+        <button class="btn btn-sm" id="modeNew" onclick="setMode('new')">新学员先建档</button>
+      </div>
+
+      <div id="pickExist">
+        <div class="field"><label>学员 <span class="req">*</span></label>
+          <select class="select" id="c_student" onchange="onPickStudent()">
+            <option value="">请选择学员</option>
+          </select>
+          <div class="hint" id="c_studentHint">只列出现有档案；已有一条进行中需求的学员不会再出现</div>
+        </div>
+      </div>
+
+      <div id="pickNew" class="hidden">
+        <div class="alert alert-warn mb12"><span class="ico">!</span>
+          <div>新学员必须先建立<b>学员档案</b>，再发布需求。建档按「姓名 + 年级」查重，
+            不会因为发布需求而重复创建同一个学员。</div></div>
+        <div class="grid g2">
+          <div class="field"><label>学员姓名 <span class="req">*</span></label>
+            <input class="input" id="n_name" placeholder="如 唐语彤"></div>
+          <div class="field"><label>年级 <span class="req">*</span></label>
+            <select class="select" id="n_grade"><option value="">请选择年级</option></select></div>
+          <div class="field"><label>家长联系方式</label>
+            <input class="input" id="n_phone" placeholder="11 位手机号"></div>
+          <div class="field"><label>教材</label>
+            <select class="select" id="n_book"><option value="">未指定</option></select></div>
+        </div>
+      </div>
+
+      <div class="grid g2 mt12">
+        <div class="field"><label>年级（需求）<span class="req">*</span></label>
+          <select class="select" id="c_grade"><option value="">请选择年级</option></select></div>
+        <div class="field"><label>教材（需求）<span class="req">*</span></label>
+          <select class="select" id="c_book"><option value="">请选择教材</option></select></div>
+      </div>
+
+      <div class="field"><label>学习需求 <span class="req">*</span></label>
+        <div class="chips" id="c_needs"></div>
+      </div>
+
+      <div class="field"><label>当前学习情况</label>
+        <textarea class="textarea" id="c_level" placeholder="如：入学测评 68 分，词汇量约 600，长句阅读容易卡"></textarea></div>
+
+      <div class="grid g2">
+        <div class="field"><label>期望上课时间 <span class="req">*</span></label>
+          <div class="chips" id="c_weekday" style="margin-bottom:6px"></div>
+          <div class="chips" id="c_period"></div></div>
+        <div class="field"><label>每周预计课次</label>
+          <input class="input" id="c_weekly" type="number" min="0" max="10" placeholder="如 2">
+          <label class="mt12" style="display:block">期望开始时间</label>
+          <input class="input" id="c_start" type="date"></div>
+      </div>
+
+      <div class="field"><label>教学特殊要求</label>
+        <textarea class="textarea" id="c_special" placeholder="家长要求、教学注意事项，如：需要中考带班经验"></textarea></div>
+      <div class="field"><label>发布备注</label>
+        <textarea class="textarea" id="c_remark" placeholder="其他补充信息"></textarea></div>
+
+      <div class="field"><label>创建方式</label>
+        <select class="select" id="c_publish">
+          <option value="1">直接发布到待接单需求池</option>
+          <option value="0">先存为草稿（不发通知）</option>
+        </select></div>
+      <div id="createErr"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('createModal')">取消</button>
+      <button class="btn btn-primary" onclick="submitCreate()">创建需求</button>
+    </div>
+  </div>
+</div>
+
+<!-- 撤回 / 取消原因 -->
+<div class="mask" id="reasonModal">
+  <div class="modal" style="width:480px">
+    <div class="modal-head">
+      <div class="modal-title" id="reasonTitle">填写原因</div>
+      <button class="modal-close" onclick="Proto.closeModal('reasonModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-warn mb12" id="reasonTip"></div>
+      <div class="field"><label>原因 <span class="req">*</span></label>
+        <textarea class="textarea" id="r_text" placeholder="请说明原因，将写入需求操作流水"></textarea></div>
+      <div id="reasonErr"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('reasonModal')">取消</button>
+      <button class="btn btn-danger" id="reasonOk">确认</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const Q = new URLSearchParams(location.search);
+/* 需求池是教务的地盘；老板可以用 ?as=admin 进来，管理员用 ?as=ops 只能看不能改 */
+const ROLE = Q.get('as') || 'staff';
+Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: 'demand-list' });
+
+const OPERATOR = { admin: '张敏', staff: '陈静', ops: '王敏', teacher: '李婉' };
+Store.setSession({ role: ROLE, operatorName: OPERATOR[ROLE] || '陈静' });
+const S = Store;
+
+const NEEDS = ['词汇', '文章', '阅读', '语法', '听说', '写作', '自然拼读', '中考冲刺'];
+const TEXTBOOKS = ['人教版', '外研版', '译林版', '北师大版', '沪教牛津版', '其他'];
+const GRADES = S.TEACHER_GRADES;
+
+let quickStatus = '';
+let mode = 'exist';
+let pendingAction = null;
+
+/* ---------- 初始化 ---------- */
+(function init() {
+  const st = document.getElementById('f_status');
+  S.DEMAND_STATUS.forEach(s => st.insertAdjacentHTML('beforeend', `<option>${s}</option>`));
+  ['f_grade'].forEach(id => {
+    const el = document.getElementById(id);
+    GRADES.forEach(g => el.insertAdjacentHTML('beforeend', `<option>${g}</option>`));
+  });
+  ['f_book', 'c_book', 'n_book'].forEach(id => {
+    const el = document.getElementById(id);
+    TEXTBOOKS.forEach(b => el.insertAdjacentHTML('beforeend', `<option>${b}</option>`));
+  });
+  ['c_grade', 'n_grade'].forEach(id => {
+    const el = document.getElementById(id);
+    GRADES.forEach(g => el.insertAdjacentHTML('beforeend', `<option>${g}</option>`));
+  });
+  document.getElementById('c_needs').innerHTML = NEEDS.map(n =>
+    `<label><input type="checkbox" value="${n}">${n}</label>`).join('');
+  document.getElementById('c_weekday').innerHTML = S.WEEKDAYS.map(w =>
+    `<label><input type="checkbox" value="${w}">${w}</label>`).join('');
+  document.getElementById('c_period').innerHTML = S.PERIODS.map(p =>
+    `<label><input type="checkbox" value="${p}">${p}</label>`).join('');
+  renderQuick();
+  fillStudentOptions();
+})();
+
+function renderQuick() {
+  const stat = S.demandStat();
+  const items = [
+    { key: '', label: '全部', n: stat.total },
+    { key: S.DEMAND.OPEN, label: '待接单', n: stat.open },
+    { key: S.DEMAND.BIDDING, label: '接单中', n: stat.bidding },
+    { key: S.DEMAND.CONFIRM, label: '待教务确认', n: stat.confirm },
+    { key: S.DEMAND.ASSIGN, label: '待管理员分配', n: stat.assign },
+    { key: S.DEMAND.DONE, label: '已完成分配', n: stat.done }
+  ];
+  document.getElementById('quick').innerHTML = items.map(q =>
+    `<button class="btn btn-sm ${q.key === quickStatus ? 'on' : ''}"
+      onclick="setQuick('${q.key}')">${q.label} ${q.n}</button>`).join('');
+}
+
+function setQuick(k) {
+  quickStatus = k;
+  document.getElementById('f_status').value = k;
+  renderQuick();
+  render();
+}
+
+function resetFilter() {
+  ['f_kw', 'f_from', 'f_to'].forEach(id => document.getElementById(id).value = '');
+  ['f_status', 'f_grade', 'f_book'].forEach(id => document.getElementById(id).value = '');
+  quickStatus = '';
+  renderQuick();
+  render();
+}
+
+function currentFilter() {
+  return {
+    status: document.getElementById('f_status').value,
+    kw: document.getElementById('f_kw').value.trim(),
+    grade: document.getElementById('f_grade').value,
+    textbook: document.getElementById('f_book').value,
+    from: document.getElementById('f_from').value,
+    to: document.getElementById('f_to').value
+  };
+}
+
+/* ---------- 渲染 ---------- */
+function statCard(label, n, note, tone) {
+  return `<div class="card stat">
+    <div class="stat-label">${label}</div>
+    <div class="stat-value" ${tone ? `style="color:var(--${tone})"` : ''}>${n}</div>
+    <div class="stat-foot">${note}</div></div>`;
+}
+
+function render() {
+  const stat = S.demandStat();
+  document.getElementById('stats').innerHTML =
+    statCard('全部需求', stat.total, `草稿 ${stat.draft} · 已取消 ${stat.cancelled}`) +
+    statCard('待接单', stat.open, '已发布，等教师响应', 'primary') +
+    statCard('接单中', stat.bidding, '已有教师响应') +
+    statCard('待教务确认', stat.confirm, '教务正在比较人选') +
+    statCard('待管理员分配', stat.assign, '教务已确认，等正式分配', 'warning') +
+    statCard('已完成分配', stat.done, '已建立师生关系', 'success');
+
+  document.getElementById('pageSub').textContent =
+    `共 ${stat.total} 条需求 · 已收到 ${stat.respondedTotal} 次教师响应 · ` +
+    `当前角色：${S.ROLE_LABEL[ROLE]}`;
+
+  const rows = S.demands(currentFilter());
+  document.getElementById('listCount').textContent = `筛选结果 ${rows.length} 条 / 共 ${stat.total} 条`;
+  document.getElementById('pgInfo').textContent = `共 ${rows.length} 条`;
+
+  Proto.renderRows('rows', rows, v => {
+    const d = v.demand, s = v.student;
+    const time = (d.expectedSchedule.weekday.join('/') || '未填') +
+      ' ' + (d.expectedSchedule.periods.join('/') || '');
+    const need = d.learningNeeds.map(n => `<span class="need-tag">${n}</span>`).join('');
+    return `<tr>
+      <td class="mono small"><a href="demand-detail.html?id=${d.id}&as=${ROLE}">${d.code}</a></td>
+      <td class="strong nowrap-cell">${s ? s.name : '—'}
+        ${v.isChange && [S.DEMAND.DONE, S.DEMAND.CANCELLED].indexOf(d.status) < 0
+          ? '<div class="small" style="color:var(--warning)">更换教师</div>' : ''}</td>
+      <td class="small nowrap-cell">${d.grade}</td>
+      <td class="small nowrap-cell">${d.textbook}</td>
+      <td class="nowrap-cell">${need}</td>
+      <td class="small nowrap-cell">${time}
+        ${d.expectedSchedule.weeklyLessons ? `<div class="muted">每周 ${d.expectedSchedule.weeklyLessons} 次</div>` : ''}</td>
+      <td class="right mono">${v.respondedCount}
+        ${v.declinedCount ? `<div class="small muted">拒 ${v.declinedCount}</div>` : ''}</td>
+      <td><span class="tag tag-${S.DEMAND_TONE[d.status]}">${d.status}</span></td>
+      <td class="small">${d.publishedBy || '—'}</td>
+      <td class="small muted nowrap-cell">${(d.publishedAt || d.createdAt).slice(0, 16)}</td>
+      <td class="small">${v.selectedTeacher ? v.selectedTeacher.name : '—'}</td>
+      <td class="ops">${actionsOf(v)}</td>
+    </tr>`;
+  }, 12, '没有符合条件的需求，调整筛选条件或新建一条');
+}
+
+function actionsOf(v) {
+  const d = v.demand;
+  const out = [`<a class="btn-link" href="demand-detail.html?id=${d.id}&as=${ROLE}">详情</a>`];
+  const editable = d.status !== S.DEMAND.DONE && d.status !== S.DEMAND.CANCELLED;
+  if (editable && S.can('demand.edit')) {
+    out.push(`<button class="btn-link" onclick="openEdit('${d.id}')">编辑</button>`);
+  }
+  if (d.status === S.DEMAND.DRAFT && S.can('demand.publish')) {
+    out.push(`<button class="btn-link" onclick="doPublish('${d.id}')">发布</button>`);
+  }
+  if ((d.status === S.DEMAND.OPEN || d.status === S.DEMAND.BIDDING) && S.can('demand.publish')) {
+    out.push(`<button class="btn-link" onclick="doPublish('${d.id}')">重发通知</button>`);
+    out.push(`<button class="btn-link mute" onclick="askReason('withdraw','${d.id}')">撤回</button>`);
+  }
+  if (d.status === S.DEMAND.CONFIRM && S.can('demand.confirm')) {
+    out.push(`<button class="btn-link" onclick="location.href='demand-detail.html?id=${d.id}&as=${ROLE}'">去确认</button>`);
+  }
+  if (d.status === S.DEMAND.ASSIGN) {
+    out.push(`<a class="btn-link" href="assign-task.html?as=${ROLE}&id=${d.id}">去分配</a>`);
+  }
+  if (d.status !== S.DEMAND.DONE && d.status !== S.DEMAND.CANCELLED && S.can('demand.cancel')) {
+    out.push(`<button class="btn-link mute" onclick="askReason('cancel','${d.id}')">取消</button>`);
+  }
+  return out.join('');
+}
+
+/* ---------- 新建 / 编辑 ---------- */
+function setMode(m) {
+  mode = m;
+  document.getElementById('modeExist').classList.toggle('on', m === 'exist');
+  document.getElementById('modeNew').classList.toggle('on', m === 'new');
+  document.getElementById('pickExist').classList.toggle('hidden', m !== 'exist');
+  document.getElementById('pickNew').classList.toggle('hidden', m !== 'new');
+}
+
+function fillStudentOptions() {
+  /* 有进行中需求的学员不再列出：同一学员不允许同时两条进行中需求 */
+  const busy = {};
+  S.demands({}).forEach(v => {
+    if ([S.DEMAND.OPEN, S.DEMAND.BIDDING, S.DEMAND.CONFIRM, S.DEMAND.ASSIGN].indexOf(v.demand.status) >= 0) {
+      busy[v.demand.studentId] = v.demand.code;
+    }
+  });
+  const sel = document.getElementById('c_student');
+  sel.innerHTML = '<option value="">请选择学员</option>' + S.students().map(s =>
+    `<option value="${s.id}" ${busy[s.id] ? 'disabled' : ''}>${s.name} · ${s.grade} · ${s.book || '教材未填'}${busy[s.id] ? '（已有进行中需求）' : ''} · 当前教师 ${s.teacherName}</option>`
+  ).join('');
+}
+
+let editingId = '';
+function openCreate() {
+  editingId = '';
+  setMode('exist');
+  fillStudentOptions();
+  ['c_student', 'c_grade', 'c_book', 'c_level', 'c_special', 'c_remark', 'c_weekly', 'c_start',
+    'n_name', 'n_phone'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('n_grade').value = '';
+  document.getElementById('n_book').value = '';
+  document.querySelectorAll('#c_needs input, #c_weekday input, #c_period input').forEach(x => x.checked = false);
+  document.getElementById('c_publish').value = '1';
+  document.getElementById('createErr').innerHTML = '';
+  document.querySelector('#createModal .modal-title').textContent = '新建学员需求';
+  Proto.openModal('createModal');
+}
+
+function openEdit(id) {
+  const x = S.demandOf(id);
+  if (!x) return;
+  editingId = id;
+  setMode('exist');
+  fillStudentOptions();
+  document.getElementById('c_student').value = x.studentId;
+  document.getElementById('c_grade').value = x.grade;
+  document.getElementById('c_book').value = x.textbook;
+  document.getElementById('c_level').value = x.currentLevel || '';
+  document.getElementById('c_special').value = x.specialRequirements || '';
+  document.getElementById('c_remark').value = x.remark || '';
+  document.getElementById('c_weekly').value = x.expectedSchedule.weeklyLessons || '';
+  document.getElementById('c_start').value = x.expectedStartAt || '';
+  document.querySelectorAll('#c_needs input').forEach(i => i.checked = x.learningNeeds.indexOf(i.value) >= 0);
+  document.querySelectorAll('#c_weekday input').forEach(i => i.checked = x.expectedSchedule.weekday.indexOf(i.value) >= 0);
+  document.querySelectorAll('#c_period input').forEach(i => i.checked = x.expectedSchedule.periods.indexOf(i.value) >= 0);
+  document.getElementById('createErr').innerHTML = '';
+  document.querySelector('#createModal .modal-title').textContent = '编辑需求 ' + x.code;
+  Proto.openModal('createModal');
+}
+
+function onPickStudent() {
+  const s = S.student(document.getElementById('c_student').value);
+  if (!s) return;
+  document.getElementById('c_grade').value = s.grade || '';
+  document.getElementById('c_book').value = s.book || '';
+  document.getElementById('c_studentHint').innerHTML = s.teacherName && s.teacherName !== '未分配'
+    ? `该学员当前由 <b>${s.teacherName}</b> 负责，本次需求将作为<b>更换教师</b>处理，分配时结束原关系`
+    : '该学员当前未分配教师，分配时直接建立新的负责关系';
+}
+
+function picked(id) {
+  return Array.from(document.querySelectorAll(id + ' input:checked')).map(x => x.value);
+}
+
+function submitCreate() {
+  const err = document.getElementById('createErr');
+  err.innerHTML = '';
+  const payload = {
+    grade: document.getElementById('c_grade').value,
+    textbook: document.getElementById('c_book').value,
+    learningNeeds: picked('#c_needs'),
+    currentLevel: document.getElementById('c_level').value.trim(),
+    expectedSchedule: {
+      weekday: picked('#c_weekday'),
+      periods: picked('#c_period'),
+      weeklyLessons: Number(document.getElementById('c_weekly').value) || 0
+    },
+    expectedStartAt: document.getElementById('c_start').value,
+    specialRequirements: document.getElementById('c_special').value.trim(),
+    remark: document.getElementById('c_remark').value.trim()
+  };
+  try {
+    if (editingId) {
+      S.updateDemand(editingId, payload);
+      Proto.closeModal('createModal');
+      Proto.toast('需求已更新', 'ok');
+      render();
+      renderQuick();
+      return;
+    }
+    let studentId = document.getElementById('c_student').value;
+    if (mode === 'new') {
+      const s = S.createStudent({
+        name: document.getElementById('n_name').value,
+        grade: document.getElementById('n_grade').value,
+        phone: document.getElementById('n_phone').value,
+        book: document.getElementById('n_book').value
+      });
+      studentId = s.id;
+      Proto.toast('已建立学员档案 ' + s.id, 'ok');
+    }
+    if (!studentId) throw new Error('请选择学员，或先为新学员建档');
+    const publish = document.getElementById('c_publish').value === '1';
+    const d = S.createDemand(Object.assign({ studentId: studentId }, payload), { publish: publish });
+    Proto.closeModal('createModal');
+    Proto.toast(publish ? '需求已发布，进入待接单需求池' : '需求已存为草稿', 'ok');
+    render();
+    renderQuick();
+    fillStudentOptions();
+    if (publish) location.href = 'demand-detail.html?id=' + d.id + '&as=' + ROLE;
+  } catch (e) {
+    err.innerHTML = `<div class="alert alert-danger mt12"><span class="ico">!</span>
+      <div>${e.message}${e.code === 'STUDENT_EXISTS' && e.data && e.data.student
+        ? `<br><button class="btn btn-sm mt8" onclick="useExisting('${e.data.student.id}')">直接使用学员「${e.data.student.name}」</button>` : ''}</div></div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+function useExisting(id) {
+  setMode('exist');
+  fillStudentOptions();
+  document.getElementById('c_student').value = id;
+  onPickStudent();
+  document.getElementById('createErr').innerHTML = '';
+}
+
+/* ---------- 发布 / 撤回 / 取消 ---------- */
+function doPublish(id) {
+  try {
+    const x = S.publishDemand(id);
+    Proto.toast(x.status === S.DEMAND.OPEN ? '已发布到需求池' : '已重新发布通知', 'ok');
+    render(); renderQuick();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+function askReason(kind, id) {
+  const x = S.demandOf(id);
+  const map = {
+    withdraw: {
+      title: '撤回发布：' + x.code,
+      tip: '撤回后需求回到「草稿」，已收到的教师响应会保留，但需求不再出现在教师接单中心。',
+      ok: '确认撤回'
+    },
+    cancel: {
+      title: '取消需求：' + x.code,
+      tip: '取消后需求进入「已取消」，不能继续响应与确认；响应历史与操作流水全部保留，不能删除。',
+      ok: '确认取消'
+    }
+  }[kind];
+  pendingAction = { kind: kind, id: id };
+  document.getElementById('reasonTitle').textContent = map.title;
+  document.getElementById('reasonTip').innerHTML = `<span class="ico">!</span><div>${map.tip}</div>`;
+  document.getElementById('reasonOk').textContent = map.ok;
+  document.getElementById('r_text').value = '';
+  document.getElementById('reasonErr').innerHTML = '';
+  document.getElementById('reasonOk').onclick = submitReason;
+  Proto.openModal('reasonModal');
+}
+
+function submitReason() {
+  const reason = document.getElementById('r_text').value.trim();
+  const err = document.getElementById('reasonErr');
+  if (!reason) {
+    err.innerHTML = '<div class="alert alert-danger mt12">原因必填</div>';
+    return;
+  }
+  try {
+    if (pendingAction.kind === 'withdraw') S.withdrawDemand(pendingAction.id, { reason: reason });
+    else S.cancelDemand(pendingAction.id, { reason: reason });
+    Proto.closeModal('reasonModal');
+    Proto.toast(pendingAction.kind === 'withdraw' ? '已撤回发布' : '需求已取消', 'ok');
+    render(); renderQuick();
+  } catch (e) {
+    err.innerHTML = `<div class="alert alert-danger mt12">${e.message}</div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+render();
+</script>
+</body>
+</html>

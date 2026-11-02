@@ -205,13 +205,18 @@
           </div>
         </div>
         <div>
-          <div class="section-title">数据模型（31 张业务表）</div>
+          <div class="section-title">数据模型（36 张业务表）</div>
           <div class="note-list" style="columns:2;column-gap:18px">
             <div><b>teachers 教师档案（永不物理删除）</b></div>
             <div><b>users 登录账号（与档案分离）</b></div>
             <div><b>teacherStudents 师生负责关系（含历史）</b></div>
             <div><b>teacherCooperations 合作流水</b></div>
             <div><b>teacherChanges 资料变更记录</b></div>
+            <div><b>studentDemands 学员需求（第六轮）</b></div>
+            <div><b>teacherResponses 教师响应（第六轮）</b></div>
+            <div><b>studentDemandLogs 需求操作流水（第六轮）</b></div>
+            <div><b>studentWordbookRequests 词库申请（第六轮）</b></div>
+            <div><b>studentWordbooks 学员词库授权（第六轮）</b></div>
             <div>words 基础单词（按英文唯一）</div>
             <div>wordbooks 词库（一份 Excel 一个）</div>
             <div>wordbookWords 词库关联（含排序/来源行号）</div>
@@ -333,6 +338,76 @@
             <a class="btn btn-sm" href="teacher/article-training.html">④ 文章训练</a>
             <a class="btn btn-sm" href="parent/review-words.html">⑤ 家长端词表</a>
             <a class="btn btn-sm" href="admin/hour-flow.html">⑥ 课时流水</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head">
+      <div class="card-title">第六轮迭代 · 学员需求接单与教学资源分配
+        <span class="hint">需求意向 · 业务确认 · 正式分配 · 资源授权 = 四个独立环节</span></div>
+      <div class="flex gap8">
+        <span class="badge-role">存储版本 v7</span>
+        <button class="btn btn-sm" onclick="resetStore()">重置演示数据</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div><b>本轮把「发需求 → 教师接单 → 定人选 → 建关系 → 开词库」全链路纳入系统。</b>
+          教师响应只表达<b>意向</b>（不改变学员当前教师）；教务确认只决定<b>人选</b>（不建师生关系）；
+          管理员分配才<b>正式建立</b>负责关系（复用既有师生关系机制，原子事务）；
+          词库授权只控制<b>使用范围</b>（不保存训练进度）。每个环节都记录责任人、时间、结果与业务关系，
+          不用一个简单的教师 ID 字段代替整条业务链。企微群暂时保留，本系统先管系统内闭环。</div></div>
+
+      <div class="grid g2" style="gap:16px">
+        <div>
+          <div class="section-title">这一轮新增了什么</div>
+          <div class="note-list">
+            <div style="margin-bottom:9px"><b>1 · 学员需求池（教务）</b><br>
+              已有学员直接发需求，新学员先建档再发（不重复建档）；需求 10 项字段、7 种状态
+              （草稿 → 待接单 → 接单中 → 待教务确认 → 待管理员分配 → 已完成分配 / 已取消），
+              编辑、撤回、取消必填原因，操作流水只追加。</div>
+            <div style="margin-bottom:9px"><b>2 · 教师接单中心</b><br>
+              只显示面向可授课教师开放的需求；卡片展示年级 / 教材 / 方向 / 时间 / 特殊要求，
+              <b>不暴露家长联系方式</b>。「我可以带」与「暂不接单」（5 种原因）两条路径；
+              同一需求只有一条有效响应，确认前可撤回；暂停 / 已退出 / 待启用教师看不到也接不了。</div>
+            <div style="margin-bottom:9px"><b>3 · 教务确认人选</b><br>
+              需求详情内响应列表 + 五项确认前检查（合作状态 / 账号 / 学员数量 / 年级教材匹配 / 时间），
+              检查只是提示不是硬禁止，特殊情况允许确认但必须写说明；
+              确认后保存最终教师、确认人、时间、理由，未选中响应标记保留，可撤销重选，历史不删。</div>
+            <div style="margin-bottom:9px"><b>4 · 管理员正式分配</b><br>
+              分配前六项检查；调既有 <code>assignStudent / transferStudent</code>：
+              同学员同时最多一名主教师，换教师 = 原关系结束 + 新关系创建，
+              已完成课程归属不变；关系上写入需求编号；<b>分配与需求推进在同一事务，失败整体回滚</b>。</div>
+            <div><b>5 · 词库申请与授权</b><br>
+              词库资源、学员授权、教师实际使用三者分开：教师为自己负责的学员提交申请
+              （可一次多个，整体预校验）；管理员单条 / 批量审核、批量开通、驳回必填原因；
+              通过即创建 <code>StudentWordbook</code> 授权；同学员同词库不重复授权；
+              管理员可主动开通（记录操作人与原因）；停用不删记录、不删训练历史。</div>
+          </div>
+        </div>
+        <div>
+          <div class="section-title">端到端验证路径（十个场景）</div>
+          <div class="note-list">
+            <div style="margin-bottom:8px"><b>① 正常接单</b>　教务发需求 → 教师响应 → 确认 → 分配 → 学员教师更新，关系带需求编号。</div>
+            <div style="margin-bottom:8px"><b>② 无人响应 / ③ 拒绝接单</b>　需求停在接单中；拒绝必填原因并记录。</div>
+            <div style="margin-bottom:8px"><b>④ 撤回响应</b>　确认前教师可撤回，撤回原因与时间入库。</div>
+            <div style="margin-bottom:8px"><b>⑤ 教师状态变化</b>　暂停 / 退出教师不能接单、教务也不能确认。</div>
+            <div style="margin-bottom:8px"><b>⑥ 已有负责教师</b>　分配走换教师：原关系结束、新关系创建、历史课程教师不变。</div>
+            <div style="margin-bottom:8px"><b>⑦ 正常词库申请</b>　两个词库两条申请 → 审核通过两条授权 → 教师端立即可用。</div>
+            <div style="margin-bottom:8px"><b>⑧ 重复申请</b>　提示已授权，不生成重复申请 / 授权。</div>
+            <div style="margin-bottom:8px"><b>⑨ 越权操作</b>　教师查他人需求 / 为他人学员申请 / 教务直接分配 → 全部被 Store 拦截。</div>
+            <div><b>⑩ 异常与持久化</b>　分配 / 批量审核失败整体回滚，不出现半条数据；刷新后状态仍在，操作人可追溯。</div>
+          </div>
+          <div class="flex gap8 mt12" style="flex-wrap:wrap">
+            <a class="btn btn-sm btn-primary" href="admin/demand-list.html?as=staff">学员需求池（教务）</a>
+            <a class="btn btn-sm" href="admin/demand-detail.html?id=D20261028004&as=staff">需求详情 · 确认人选</a>
+            <a class="btn btn-sm" href="teacher/demand-center.html?tab=open">教师接单中心</a>
+            <a class="btn btn-sm" href="admin/assign-task.html?tab=task&as=ops">待分配学员（管理员）</a>
+            <a class="btn btn-sm" href="admin/wordbook-request.html?tab=pending&as=ops">词库开通申请</a>
+            <a class="btn btn-sm" href="admin/student-detail.html?id=S2026001">学员详情 · 词库授权</a>
           </div>
         </div>
       </div>

@@ -205,12 +205,217 @@ const DB = {
     { teacherId: 'T006', studentId: 'S2026003', startAt: '2026-05-20', endAt: '2026-06-30', endReason: '教师退出合作，转交何俊' },
   ],
 
+  /* ============================================================
+     学员需求种子（第六轮：学员接单与教学资源分配）
+     ------------------------------------------------------------
+     7 条需求覆盖全部 7 种状态，构成一条可演示的完整链路：
+       草稿 / 待接单 / 接单中 / 待教务确认 / 待管理员分配 / 已完成分配 / 已取消
+     需求只是「要找一个什么样的老师」的表达，它本身不产生师生关系；
+     只有管理员正式分配才会写 teacherStudents。
+     ============================================================ */
+  studentDemandSeeds: [
+    {
+      id: 'D20261101001', code: 'D20261101001', studentId: 'S2026009',
+      grade: '七年级', textbook: '人教版', learningNeeds: ['词汇', '阅读'],
+      currentLevel: '新签学员，入学测评 68 分，词汇量约 600，长句阅读容易卡',
+      expectedSchedule: { weekday: ['周二', '周四'], periods: ['晚上'], weeklyLessons: 2 },
+      expectedStartAt: '2026-11-10',
+      specialRequirements: '家长希望每次课后有 5 分钟口头反馈',
+      remark: '已在企微群同步过一次，等教务确认时间后再发',
+      status: '草稿',
+      publishedBy: '陈静', publishedAt: '',
+      createdAt: '2026-10-31 16:20', updatedAt: '2026-10-31 16:20'
+    },
+    {
+      id: 'D20261030002', code: 'D20261030002', studentId: 'S2026010',
+      grade: '九年级', textbook: '人教版', learningNeeds: ['词汇', '语法', '中考冲刺'],
+      currentLevel: '一模英语 74 分，语法填空失分多，急需中考方向教师',
+      expectedSchedule: { weekday: ['周六'], periods: ['上午', '下午'], weeklyLessons: 2 },
+      expectedStartAt: '2026-11-08',
+      specialRequirements: '家长指定要有中考带班经验的老师',
+      remark: '',
+      status: '待接单',
+      publishedBy: '陈静', publishedAt: '2026-10-30 09:20',
+      createdAt: '2026-10-30 09:05', updatedAt: '2026-10-30 09:20'
+    },
+    {
+      id: 'D20261029003', code: 'D20261029003', studentId: 'S2026011',
+      grade: '五年级', textbook: '外研版', learningNeeds: ['词汇', '听说'],
+      currentLevel: '转学插班，外研版 Module 1-3 生词几乎没学过',
+      expectedSchedule: { weekday: ['周三', '周五'], periods: ['下午'], weeklyLessons: 2 },
+      expectedStartAt: '2026-11-06',
+      specialRequirements: '',
+      remark: '家长希望先补 Module 1-3 再跟学校进度',
+      status: '接单中',
+      publishedBy: '陈静', publishedAt: '2026-10-29 14:10',
+      createdAt: '2026-10-29 13:50', updatedAt: '2026-10-30 10:12'
+    },
+    {
+      id: 'D20261028004', code: 'D20261028004', studentId: 'S2026006',
+      grade: '九年级', textbook: '人教版', learningNeeds: ['词汇', '阅读', '中考冲刺'],
+      currentLevel: '词汇量约 800，阅读理解正确率 55%，需要中考方向系统梳理',
+      expectedSchedule: { weekday: ['周一', '周三', '周日'], periods: ['晚上'], weeklyLessons: 3 },
+      expectedStartAt: '2026-11-05',
+      specialRequirements: '家长要求教师能稳定带满一学期，不接受频繁更换',
+      remark: '',
+      status: '待教务确认',
+      publishedBy: '陈静', publishedAt: '2026-10-28 11:00',
+      selectedTeacherId: '', confirmedBy: '', confirmedAt: '', confirmReason: '',
+      createdAt: '2026-10-28 10:40', updatedAt: '2026-11-01 09:30'
+    },
+    {
+      id: 'D20261026005', code: 'D20261026005', studentId: 'S2026001',
+      grade: '七年级', textbook: '人教版', learningNeeds: ['词汇', '阅读'],
+      currentLevel: '家长反馈与现任教师沟通节奏不合，希望更换为阅读方向更强的教师',
+      expectedSchedule: { weekday: ['周二', '周五'], periods: ['晚上'], weeklyLessons: 2 },
+      expectedStartAt: '2026-11-03',
+      specialRequirements: '更换教师，原教师已完成课时不追溯',
+      remark: '这是更换教师需求，分配时会结束原负责关系',
+      status: '待管理员分配',
+      publishedBy: '陈静', publishedAt: '2026-10-26 10:00',
+      selectedTeacherId: 'T004', confirmedBy: '陈静', confirmedAt: '2026-11-01 15:40',
+      confirmReason: '沈心怡带过该学员同年级同学，阅读方向匹配，且可授课时间与家长要求一致',
+      createdAt: '2026-10-26 09:40', updatedAt: '2026-11-01 15:40'
+    },
+    {
+      id: 'D20260920006', code: 'D20260920006', studentId: 'S2026007',
+      grade: '二年级', textbook: '外研版', learningNeeds: ['词汇', '自然拼读'],
+      currentLevel: '零基础启蒙，家长希望从自然拼读开始',
+      expectedSchedule: { weekday: ['周六'], periods: ['上午'], weeklyLessons: 1 },
+      expectedStartAt: '2026-09-26',
+      specialRequirements: '需要低年级教学经验',
+      remark: '',
+      status: '已完成分配',
+      publishedBy: '陈静', publishedAt: '2026-09-20 10:00',
+      selectedTeacherId: 'T004', confirmedBy: '陈静', confirmedAt: '2026-09-24 16:20',
+      confirmReason: '沈心怡有低年级启蒙经验，家长也认可',
+      assignedAt: '2026-09-30 09:10', assignedBy: '王敏',
+      createdAt: '2026-09-20 09:30', updatedAt: '2026-09-30 09:10'
+    },
+    {
+      id: 'D20261024007', code: 'D20261024007', studentId: 'S2026005',
+      grade: '三年级', textbook: '外研版', learningNeeds: ['词汇'],
+      currentLevel: '现有教师带得不错，家长想再加一位老师分担周中课',
+      expectedSchedule: { weekday: ['周四'], periods: ['晚上'], weeklyLessons: 1 },
+      expectedStartAt: '2026-11-01',
+      specialRequirements: '',
+      remark: '',
+      status: '已取消',
+      publishedBy: '陈静', publishedAt: '2026-10-24 15:00',
+      cancelReason: '家长决定维持现有安排，本学期不再增加课次',
+      createdAt: '2026-10-24 14:40', updatedAt: '2026-10-27 09:05'
+    }
+  ],
+
+  /* 教师响应种子：只表达意向，不产生师生关系 */
+  teacherResponseSeeds: [
+    { demandId: 'D20261029003', teacherId: 'T003', status: '已响应',
+      remark: '可以带，外研版五年级我上过两轮', respondedAt: '2026-10-30 09:12' },
+    { demandId: 'D20261029003', teacherId: 'T004', status: '已响应',
+      remark: '周三周五下午都有空', respondedAt: '2026-10-30 10:12' },
+
+    { demandId: 'D20261028004', teacherId: 'T001', status: '已响应',
+      remark: '九年级中考方向带过 3 个学员，周日晚上可以', respondedAt: '2026-10-28 15:20' },
+    { demandId: 'D20261028004', teacherId: 'T003', status: '已响应',
+      remark: '周一至周三晚上均可，中考语法是强项', respondedAt: '2026-10-29 09:05' },
+    { demandId: 'D20261028004', teacherId: 'T004', status: '暂不接单',
+      declineReason: '时间不合适', remark: '周日晚上已有固定课',
+      respondedAt: '2026-10-29 11:30' },
+
+    { demandId: 'D20261026005', teacherId: 'T004', status: '已选中',
+      remark: '阅读方向可以，周二周五晚上都能排', respondedAt: '2026-10-27 09:40' },
+    { demandId: 'D20261026005', teacherId: 'T002', status: '未选中',
+      remark: '可以带，但周二晚上只有 19:00 之后有空', respondedAt: '2026-10-27 14:10' },
+
+    { demandId: 'D20260920006', teacherId: 'T004', status: '已选中',
+      remark: '低年级启蒙我一直在带', respondedAt: '2026-09-22 10:30' }
+  ],
+
+  /* 需求操作流水：只追加，用于「谁在什么时候做了什么」的可追溯 */
+  studentDemandLogSeeds: [
+    { demandId: 'D20261028004', action: 'CREATED', detail: '教务创建需求', operator: '陈静', at: '2026-10-28 10:40' },
+    { demandId: 'D20261028004', action: 'PUBLISHED', detail: '发布到需求池', operator: '陈静', at: '2026-10-28 11:00' },
+    { demandId: 'D20261028004', action: 'RESPONDED', detail: '教师「李婉」响应：九年级中考方向带过 3 个学员', operator: '李婉', at: '2026-10-28 15:20' },
+    { demandId: 'D20261028004', action: 'RESPONDED', detail: '教师「何俊」响应：周一至周三晚上均可', operator: '何俊', at: '2026-10-29 09:05' },
+    { demandId: 'D20261028004', action: 'DECLINED', detail: '教师「沈心怡」暂不接单：时间不合适', operator: '沈心怡', at: '2026-10-29 11:30' },
+    { demandId: 'D20261028004', action: 'CONFIRM_STARTED', detail: '教务开始比较响应教师', operator: '陈静', at: '2026-11-01 09:30' },
+
+    { demandId: 'D20261026005', action: 'CREATED', detail: '教务创建更换教师需求', operator: '陈静', at: '2026-10-26 09:40' },
+    { demandId: 'D20261026005', action: 'PUBLISHED', detail: '发布到需求池', operator: '陈静', at: '2026-10-26 10:00' },
+    { demandId: 'D20261026005', action: 'RESPONDED', detail: '教师「沈心怡」响应', operator: '沈心怡', at: '2026-10-27 09:40' },
+    { demandId: 'D20261026005', action: 'RESPONDED', detail: '教师「周雅」响应', operator: '周雅', at: '2026-10-27 14:10' },
+    { demandId: 'D20261026005', action: 'CONFIRMED', detail: '教务确认「沈心怡」：沈心怡带过该学员同年级同学，阅读方向匹配', operator: '陈静', at: '2026-11-01 15:40' },
+
+    { demandId: 'D20260920006', action: 'CREATED', detail: '教务创建需求', operator: '陈静', at: '2026-09-20 09:30' },
+    { demandId: 'D20260920006', action: 'PUBLISHED', detail: '发布到需求池', operator: '陈静', at: '2026-09-20 10:00' },
+    { demandId: 'D20260920006', action: 'RESPONDED', detail: '教师「沈心怡」响应', operator: '沈心怡', at: '2026-09-22 10:30' },
+    { demandId: 'D20260920006', action: 'CONFIRMED', detail: '教务确认「沈心怡」', operator: '陈静', at: '2026-09-24 16:20' },
+    { demandId: 'D20260920006', action: 'ASSIGNED', detail: '管理员正式分配：建立师生负责关系', operator: '王敏', at: '2026-09-30 09:10' },
+
+    { demandId: 'D20261024007', action: 'CREATED', detail: '教务创建需求', operator: '陈静', at: '2026-10-24 14:40' },
+    { demandId: 'D20261024007', action: 'PUBLISHED', detail: '发布到需求池', operator: '陈静', at: '2026-10-24 15:00' },
+    { demandId: 'D20261024007', action: 'CANCELLED', detail: '取消需求：家长决定维持现有安排，本学期不再增加课次', operator: '陈静', at: '2026-10-27 09:05' }
+  ],
+
+  /* 词库申请种子：教师为「自己负责的学员」申请词库使用权限 */
+  studentWordbookRequestSeeds: [
+    { id: 'WR20261101001', studentId: 'S2026001', teacherId: 'T001', wordbookId: 'WB002',
+      reason: '本周开始人教版七年级上 Unit 2，需要配套词表做课前初筛', plan: '先用 Unit 2 词库做 23 词初筛，再按错词建莱特纳复习',
+      status: '待审核', requestedAt: '2026-11-01 10:20' },
+    { id: 'WR20261101002', studentId: 'S2026003', teacherId: 'T003', wordbookId: 'WB003',
+      reason: '八年级 Unit 1 词汇缺口较大，需要系统过一遍', plan: '两周内完成 Unit 1，每周 2 次课各 15 分钟',
+      status: '待审核', requestedAt: '2026-11-01 16:05' },
+    { id: 'WR20260313003', studentId: 'S2026001', teacherId: 'T001', wordbookId: 'WB001',
+      reason: '新签学员首次课，需要 Unit 1 词库', plan: '',
+      status: '已通过', requestedAt: '2026-03-13 09:10',
+      reviewedBy: '王敏', reviewedAt: '2026-03-13 10:02', reviewRemark: '同意开通，按教材进度使用' },
+    { id: 'WR20261017004', studentId: 'S2026004', teacherId: 'T004', wordbookId: 'WB006',
+      reason: '想给学员加一点九年级词汇拔高', plan: '',
+      status: '已驳回', requestedAt: '2026-10-17 14:30',
+      reviewedBy: '王敏', reviewedAt: '2026-10-17 16:10',
+      reviewRemark: '该学员当前使用外研版，人教版九年级词库与教材不符，请改用外研版词库' },
+    { id: 'WR20261020005', studentId: 'S2026002', teacherId: 'T002', wordbookId: 'WB004',
+      reason: 'Module 1 复习想用词表', plan: '',
+      status: '已取消', requestedAt: '2026-10-20 11:00',
+      reviewedBy: '', reviewedAt: '', reviewRemark: '教师自行取消：改用其他方式复习'
+    }
+  ],
+
+  /* 学员词库授权：只记录「谁在什么时候被授权用哪个词库」，不保存训练进度 */
+  studentWordbookSeeds: [
+    { studentId: 'S2026001', wordbookId: 'WB001', requestId: 'WR20260313003',
+      requestedByTeacherId: 'T001', status: '已授权', approvedBy: '王敏', approvedAt: '2026-03-13 10:02',
+      remark: '按教材进度开通' },
+    { studentId: 'S2026002', wordbookId: 'WB004', requestedByTeacherId: 'T002',
+      status: '已授权', approvedBy: '王敏', approvedAt: '2026-04-10 09:30', remark: '新签学员首次开通' },
+    { studentId: 'S2026003', wordbookId: 'WB003', requestedByTeacherId: 'T003',
+      status: '已授权', approvedBy: '王敏', approvedAt: '2026-07-02 10:00', remark: '' },
+    { studentId: 'S2026003', wordbookId: 'WB001', requestedByTeacherId: 'T006',
+      status: '已停用', approvedBy: '王敏', approvedAt: '2026-05-22 09:00',
+      disabledBy: '王敏', disabledAt: '2026-09-01 10:20',
+      disableReason: '已学完该词库，暂停以专注当前教材；历史训练记录保留' },
+    { studentId: 'S2026004', wordbookId: 'WB005', requestedByTeacherId: 'T004',
+      status: '已授权', approvedBy: '王敏', approvedAt: '2026-06-12 10:00', remark: '' },
+    { studentId: 'S2026005', wordbookId: 'WB004', requestedByTeacherId: 'T002',
+      status: '已授权', approvedBy: '王敏', approvedAt: '2026-07-21 09:40', remark: '' },
+    { studentId: 'S2026006', wordbookId: 'WB006',
+      status: '已授权', approvedBy: '王敏', approvedAt: '2026-10-15 15:00',
+      remark: '试听课后管理员主动开通，家长确认走中考方向' },
+    { studentId: 'S2026007', wordbookId: 'WB004', requestedByTeacherId: 'T004',
+      status: '已授权', approvedBy: '王敏', approvedAt: '2026-10-02 09:20', remark: '' },
+    { studentId: 'S2026008', wordbookId: 'WB001', requestedByTeacherId: 'T001',
+      status: '已授权', approvedBy: '王敏', approvedAt: '2026-10-03 11:00', remark: '' }
+  ],
+
   parents: [
     { id: 'P001', name: '陈志强', phone: '13901112222', wechat: 'chenzq88', relation: '父亲', kids: ['S2026001'], first: '2026-03-12', status: '启用' },
     { id: 'P002', name: '林慧', phone: '13902223333', wechat: 'linhui_2010', relation: '母亲', kids: ['S2026002', 'S2026007'], first: '2026-04-08', status: '启用' },
     { id: 'P003', name: '赵明', phone: '13903334444', wechat: '', relation: '父亲', kids: ['S2026003'], first: '2026-05-20', status: '启用' },
     { id: 'P004', name: '孙巧云', phone: '13904445555', wechat: 'sunqy', relation: '母亲', kids: ['S2026004', 'S2026005'], first: '2026-06-11', status: '启用' },
     { id: 'P005', name: '吴建平', phone: '13905556666', wechat: '', relation: '父亲', kids: ['S2026006'], first: '2026-08-30', status: '停用' },
+    { id: 'P006', name: '唐晓峰', phone: '13905556667', wechat: 'tangxf_88', relation: '父亲', kids: ['S2026009'], first: '2026-10-31', status: '启用' },
+    { id: 'P007', name: '高远', phone: '13906667778', wechat: 'gaoyuan2011', relation: '父亲', kids: ['S2026010'], first: '2026-10-30', status: '启用' },
+    { id: 'P008', name: '沈丽', phone: '13907778889', wechat: 'shenli_mama', relation: '母亲', kids: ['S2026011'], first: '2026-10-29', status: '启用' },
   ],
 
   students: [
@@ -246,6 +451,20 @@ const DB = {
       phone: '13901112222', teacher: 'T001', teacherName: '李婉', product: '30 课时包', remain: 28,
       status: '在读', created: '2026-10-02', book: '人教版', school: '城东实验中学', source: '转介绍',
       words: { total: 55, mastered: 20, review: 18 }, lastCourse: '2026-10-30', lastContent: 'Unit 1 单词初筛' },
+
+    /* 新签学员：已建档、已成交，但还没有负责教师 —— 需求池里正在等待分配 */
+    { id: 'S2026009', name: '唐语彤', gender: '女', grade: '七年级', parent: 'P006', parentName: '唐晓峰',
+      phone: '13905556666', teacher: '', teacherName: '未分配', product: '30 课时包', remain: 30,
+      status: '在读', created: '2026-10-31', book: '人教版', school: '城东实验中学', source: '公众号',
+      words: { total: 0, mastered: 0, review: 0 }, lastCourse: '', lastContent: '' },
+    { id: 'S2026010', name: '高子墨', gender: '男', grade: '九年级', parent: 'P007', parentName: '高远',
+      phone: '13906667777', teacher: '', teacherName: '未分配', product: '60 课时包', remain: 60,
+      status: '在读', created: '2026-10-30', book: '人教版', school: '城南一中', source: '地推',
+      words: { total: 0, mastered: 0, review: 0 }, lastCourse: '', lastContent: '' },
+    { id: 'S2026011', name: '沈亦航', gender: '男', grade: '五年级', parent: 'P008', parentName: '沈丽',
+      phone: '13907778888', teacher: '', teacherName: '未分配', product: '30 课时包', remain: 30,
+      status: '在读', created: '2026-10-29', book: '外研版', school: '育才小学', source: '转介绍',
+      words: { total: 0, mastered: 0, review: 0 }, lastCourse: '', lastContent: '' },
   ],
 
   agents: [

@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>词库开通申请 · 教学资源分配</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .nowrap-cell { white-space: nowrap; }
+  .batchbar { display: flex; align-items: center; gap: 10px; padding: 8px 0 12px; }
+  .batchbar .tip { font-size: 12.5px; color: var(--text-3); }
+  .req-cell input { accent-color: var(--primary); }
+  .wb-sub { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content" id="page">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb" id="crumb">教学资源分配<span class="sep">/</span>词库开通申请</div>
+          <h1 class="page-title" id="pageTitle">词库开通申请</h1>
+          <div class="page-sub" id="pageSub">—</div>
+        </div>
+        <div class="page-actions">
+          <select class="select" id="as" style="width:170px" onchange="switchRole(this.value)"></select>
+          <a class="btn" href="assign-task.html?tab=task">待分配学员</a>
+        </div>
+      </div>
+
+      <div class="grid g5 mb16" id="stats"></div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="tabs" style="border:none">
+            <button class="tab active" id="tabPending" onclick="go('pending')">待处理申请</button>
+            <button class="tab" id="tabGrant" onclick="go('grant')">词库授权记录</button>
+          </div>
+          <div id="tabActions"></div>
+        </div>
+
+        <!-- ============ Tab1 待处理申请 ============ -->
+        <div class="tab-pane active" id="pPending">
+          <div class="card filter">
+            <div class="field"><label>学员 / 教师 / 词库</label>
+              <input class="input" id="p_kw" placeholder="关键词" oninput="renderPending()"></div>
+            <div class="field"><label>申请状态</label>
+              <select class="select" id="p_status" onchange="renderPending()">
+                <option value="">全部状态</option>
+              </select></div>
+            <div class="field"><label>申请教师</label>
+              <select class="select" id="p_teacher" onchange="renderPending()"><option value="">全部教师</option></select></div>
+            <div class="field" style="align-self:end">
+              <button class="btn" onclick="resetPending()">重置</button></div>
+          </div>
+
+          <div class="alert alert-info mb16" style="margin:0 16px 0"><span class="ico">i</span>
+            <div>申请由教师为自己负责的学员提交。通过即创建一条<b>词库授权</b>（记录谁申请、谁审核）；
+              驳回必须填写原因。批量审核要么全部生效、要么一条都不动（不会出现半条授权）。</div></div>
+
+          <div class="batchbar" style="padding:10px 16px 0">
+            <label class="small" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="checkAll" onchange="toggleAll(this.checked)"> 全选待审核
+            </label>
+            <button class="btn btn-sm btn-primary" onclick="batchReview(true)">批量开通</button>
+            <button class="btn btn-sm btn-danger" onclick="batchReview(false)">批量驳回</button>
+            <span class="tip" id="selTip">未勾选任何申请</span>
+          </div>
+
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr>
+                <th style="width:44px"></th>
+                <th style="width:130px">申请编号</th>
+                <th>学员</th>
+                <th style="width:100px">申请教师</th>
+                <th>词库</th>
+                <th>申请原因 / 教学计划</th>
+                <th style="width:92px">状态</th>
+                <th style="width:160px">审核信息</th>
+                <th style="width:150px">操作</th>
+              </tr></thead>
+              <tbody id="reqRows"></tbody>
+            </table>
+          </div>
+          <div class="card-foot small muted" id="reqFoot"></div>
+        </div>
+
+        <!-- ============ Tab2 授权记录 ============ -->
+        <div class="tab-pane" id="pGrant">
+          <div class="card filter">
+            <div class="field"><label>学员 / 词库</label>
+              <input class="input" id="g_kw" placeholder="关键词" oninput="renderGrant()"></div>
+            <div class="field"><label>授权状态</label>
+              <select class="select" id="g_status" onchange="renderGrant()">
+                <option value="">全部状态</option>
+              </select></div>
+            <div class="field" style="align-self:end">
+              <button class="btn" onclick="resetGrant()">重置</button></div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr>
+                <th style="width:96px">授权编号</th>
+                <th>学员</th>
+                <th>词库</th>
+                <th style="width:110px">来源</th>
+                <th style="width:100px">申请教师</th>
+                <th style="width:100px">开通人</th>
+                <th style="width:110px">开通时间</th>
+                <th style="width:92px">状态</th>
+                <th style="width:120px">操作</th>
+              </tr></thead>
+              <tbody id="grantRows"></tbody>
+            </table>
+          </div>
+          <div class="card-foot small muted" id="grantFoot"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 审核弹窗 -->
+<div class="mask" id="reviewModal">
+  <div class="modal" style="width:560px">
+    <div class="modal-head">
+      <div class="modal-title" id="rvTitle">审核申请</div>
+      <button class="modal-close" onclick="Proto.closeModal('reviewModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="rvSum" class="mb12"></div>
+      <div class="field" id="rvReasonField"><label id="rvReasonLabel">审核意见</label>
+        <textarea class="textarea" id="rvRemark" placeholder="通过时选填；驳回时必填"></textarea></div>
+      <div id="rvErr"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('reviewModal')">取消</button>
+      <button class="btn btn-primary" id="rvOk">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- 停用 / 启用 / 主动开通 原因弹窗 -->
+<div class="mask" id="reasonModal">
+  <div class="modal" style="width:520px">
+    <div class="modal-head">
+      <div class="modal-title" id="rTitle">停用授权</div>
+      <button class="modal-close" onclick="Proto.closeModal('reasonModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="rDesc" class="small muted mb12"></div>
+      <div class="field"><label>原因 <span class="req">*</span></label>
+        <textarea class="textarea" id="rReason" placeholder="必填，会记录在授权与流水里"></textarea></div>
+      <div id="rErr"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('reasonModal')">取消</button>
+      <button class="btn btn-danger" id="rOk">确认</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const Q = new URLSearchParams(location.search);
+let TAB = Q.get('tab') || 'pending';
+const ROLE = Q.get('as') || 'ops';
+const S = Store;
+
+Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: TAB === 'pending' ? 'wordbook-request' : 'wordbook-grant' });
+
+const OPERATOR = { admin: '张敏', staff: '陈静', ops: '王敏' };
+S.setSession({ role: ROLE, operatorName: OPERATOR[ROLE] || '王敏' });
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function switchRole(r) { location.href = 'wordbook-request.html?tab=' + TAB + '&as=' + r; }
+function go(t) { location.href = 'wordbook-request.html?tab=' + t + '&as=' + ROLE; }
+
+(function initRole() {
+  const sel = document.getElementById('as');
+  sel.innerHTML = [['ops', '王敏（管理员）'], ['admin', '张敏（老板）'], ['staff', '陈静（教务负责人）']]
+    .map(x => `<option value="${x[0]}" ${x[0] === ROLE ? 'selected' : ''}>${x[1]}</option>`).join('');
+})();
+
+/* ---------- 统计 ---------- */
+function renderStats() {
+  const st = S.wordbookRequestStat();
+  const gs = S.wordbookGrantStat();
+  const cards = TAB === 'pending' ? [
+    { l: '待审核', n: st.pending, s: '等管理员处理', tone: st.pending ? 'primary' : '' },
+    { l: '已通过', n: st.approved, s: '通过即创建授权', tone: 'success' },
+    { l: '已驳回', n: st.rejected, s: '记录驳回原因', tone: '' },
+    { l: '已取消', n: st.cancelled, s: '教师自行撤回', tone: '' },
+    { l: '累计申请', n: st.total, s: '全部申请记录', tone: '' }
+  ] : [
+    { l: '有效授权', n: gs.active, s: '学员可用词库', tone: 'success' },
+    { l: '已停用', n: gs.disabled, s: '记录保留，可重新启用', tone: '' },
+    { l: '涉及学员', n: gs.students, s: '至少 1 个有效授权', tone: '' },
+    { l: '累计授权', n: gs.total, s: '含停用，不删除历史', tone: '' },
+    { l: '待审核申请', n: st.pending, s: '审核通过后计入授权', tone: st.pending ? 'warning' : '' }
+  ];
+  document.getElementById('stats').innerHTML = cards.map(c => `<div class="card stat">
+    <div class="stat-label">${c.l}</div>
+    <div class="stat-value" ${c.tone ? `style="color:var(--${c.tone})"` : ''}>${c.n}</div>
+    <div class="stat-foot">${c.s}</div></div>`).join('');
+
+  document.getElementById('pageSub').textContent =
+    `${OPERATOR[ROLE]} · ${S.ROLE_LABEL[ROLE]} · 词库资源、学员授权、教师使用三者分开记录`;
+}
+
+/* ---------- Tab1 待处理申请 ---------- */
+function renderPending() {
+  renderStats();
+  const kw = document.getElementById('p_kw').value.trim();
+  const fs = document.getElementById('p_status').value;
+  const ft = document.getElementById('p_teacher').value;
+  const list = S.wordbookRequests({ kw: kw, status: fs || undefined })
+    .filter(x => !ft || x.request.teacherId === ft);
+
+  const checked = [];
+  Proto.renderRows('reqRows', list, x => {
+    const r = x.request, b = x.wordbook;
+    const pend = r.status === S.WBR.PENDING;
+    const can = S.can('wordbookRequest.review');
+    const act = pend
+      ? (can
+        ? `<button class="btn btn-sm btn-primary" onclick="openReview('${r.id}',true)">通过</button>
+           <button class="btn btn-sm btn-danger" onclick="openReview('${r.id}',false)">驳回</button>`
+        : `<span class="small muted">无审核权限</span>`)
+      : '<span class="small muted">—</span>';
+    if (pend) checked.push(r.id);
+    const auth = x.authorized
+      ? `<div class="wb-sub" style="color:var(--success)">已有有效授权</div>` : '';
+    return `<tr>
+      <td class="req-cell">${pend && can
+        ? `<input type="checkbox" data-id="${r.id}" onchange="updateSelTip()">` : ''}</td>
+      <td class="mono small">${esc(r.id)}
+        <div class="small muted">${esc((r.requestedAt || '').slice(5, 16))}</div></td>
+      <td><div class="strong nowrap-cell">${esc(x.student ? x.student.name : '—')}</div>
+        <div class="small muted nowrap-cell">${esc(x.student ? x.student.grade + ' · ' + (x.student.book || '') : '')}</div></td>
+      <td class="small nowrap-cell">${esc(x.teacher ? x.teacher.name : r.teacherId)}</td>
+      <td><div class="strong small">${esc(b ? b.name : r.wordbookId)}</div>
+        <div class="wb-sub">${esc(b ? (b.category + ' · ' + b.bookVersion || '') + ' · ' + b.wordCount + ' 词' : '')}</div>${auth}</td>
+      <td class="small">${esc(r.reason || '—')}
+        ${r.plan ? `<div class="wb-sub">计划：${esc(r.plan)}</div>` : ''}</td>
+      <td><span class="tag tag-${S.WBR_TONE[r.status]}">${r.status}</span></td>
+      <td class="small">${esc(r.reviewRemark || '—')}
+        ${r.reviewedBy ? `<div class="wb-sub">${esc(r.reviewedBy)} · ${esc((r.reviewedAt || '').slice(5, 16))}</div>` : ''}</td>
+      <td class="nowrap-cell">${act}</td>
+    </tr>`;
+  }, 9, '没有符合条件的申请。教师提交后会出现在这里。');
+
+  const pendCount = list.filter(x => x.request.status === S.WBR.PENDING).length;
+  document.getElementById('reqFoot').textContent =
+    `共 ${list.length} 条申请（其中待审核 ${pendCount} 条）；审核结果会同步到学员详情的词库授权区。`;
+  document.getElementById('selTip').textContent = pendCount
+    ? `已选 0 / 待审核 ${pendCount} 条` : '当前没有待审核申请';
+}
+
+function resetPending() { ['p_kw', 'p_status', 'p_teacher'].forEach(id => { document.getElementById(id).value = ''; }); renderPending(); }
+
+function toggleAll(on) {
+  document.querySelectorAll('#reqRows input[type=checkbox]').forEach(c => { c.checked = on; });
+  updateSelTip();
+}
+function selIds() {
+  return [...document.querySelectorAll('#reqRows input[type=checkbox]:checked')].map(c => c.dataset.id);
+}
+function updateSelTip() {
+  document.getElementById('selTip').textContent = `已选 ${selIds().length} 条`;
+}
+
+/* 单条审核 */
+let reviewTarget = null;
+function openReview(id, approve) {
+  reviewTarget = { id: id, approve: approve };
+  const r = S.wordbookRequestOf(id);
+  const s = S.student(r.studentId), t = S.teacher(r.teacherId), b = S.wordbook(r.wordbookId);
+  document.getElementById('rvTitle').textContent = approve ? '通过申请 · 开通词库' : '驳回申请';
+  document.getElementById('rvSum').innerHTML = `<div class="small" style="line-height:2">
+    <b>${esc(s ? s.name : '—')}</b> · ${esc(b ? b.name : '—')}<br>
+    申请教师：${esc(t ? t.name : '—')} · 原因：${esc(r.reason || '—')}<br>
+    ${approve ? '通过后将立即创建一条词库授权，学员随即可在训练中使用该词库。'
+      : '驳回后申请关闭；教师可以修改原因后重新提交。'}</div>`;
+  document.getElementById('rvRemark').value = '';
+  document.getElementById('rvReasonLabel').textContent = approve ? '审核意见（选填）' : '驳回原因（必填）';
+  document.getElementById('rvErr').innerHTML = '';
+  const ok = document.getElementById('rvOk');
+  ok.textContent = approve ? '确认开通' : '确认驳回';
+  ok.className = 'btn ' + (approve ? 'btn-primary' : 'btn-danger');
+  ok.onclick = doReview;
+  Proto.openModal('reviewModal');
+}
+
+function doReview() {
+  try {
+    S.reviewWordbookRequest(reviewTarget.id, {
+      approve: reviewTarget.approve,
+      remark: document.getElementById('rvRemark').value.trim()
+    });
+    Proto.closeModal('reviewModal');
+    Proto.toast(reviewTarget.approve ? '已通过并开通授权' : '已驳回申请', 'ok');
+    renderPending();
+  } catch (e) {
+    document.getElementById('rvErr').innerHTML =
+      `<div class="alert alert-danger mt12"><span class="ico">!</span><div>${esc(e.message)}</div></div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+/* 批量审核：驳回复用 reasonModal 收集统一原因 */
+let batchTarget = null;
+function batchReview(approve) {
+  const ids = selIds();
+  if (!ids.length) { Proto.toast('请先勾选要处理的申请', 'err'); return; }
+  if (approve) {
+    try {
+      const out = S.batchReviewWordbookRequests(ids, { approve: true });
+      Proto.toast(`已批量开通 ${out.length} 条授权`, 'ok');
+      renderPending();
+    } catch (e) { Proto.toast(e.message, 'err'); }
+    return;
+  }
+  batchTarget = ids;
+  document.getElementById('rTitle').textContent = '批量驳回 ' + ids.length + ' 条申请';
+  document.getElementById('rDesc').textContent =
+    '统一驳回原因会写入每条申请的审核记录；批量操作要么全部生效、要么一条都不动。';
+  document.getElementById('rReason').value = '';
+  document.getElementById('rErr').innerHTML = '';
+  const ok = document.getElementById('rOk');
+  ok.textContent = '确认批量驳回';
+  ok.onclick = doBatchReject;
+  Proto.openModal('reasonModal');
+}
+
+function doBatchReject() {
+  const reason = document.getElementById('rReason').value.trim();
+  try {
+    const out = S.batchReviewWordbookRequests(batchTarget, { approve: false, remark: reason });
+    Proto.closeModal('reasonModal');
+    Proto.toast(`已批量驳回 ${out.length} 条申请`, 'ok');
+    renderPending();
+  } catch (e) {
+    document.getElementById('rErr').innerHTML =
+      `<div class="alert alert-danger mt12"><span class="ico">!</span><div>${esc(e.message)}</div></div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+/* ---------- Tab2 授权记录 ---------- */
+function renderGrant() {
+  renderStats();
+  const kw = document.getElementById('g_kw').value.trim();
+  const fs = document.getElementById('g_status').value;
+  const list = S.wordbookGrants({ kw: kw, status: fs || undefined });
+
+  Proto.renderRows('grantRows', list, x => {
+    const w = x.auth, b = x.wordbook;
+    const can = S.can('studentWordbook.manage');
+    const act = can
+      ? (w.status === S.SWB.ACTIVE
+        ? `<button class="btn-link mute" onclick="askDisable('${w.id}')">停用</button>`
+        : `<button class="btn-link" onclick="askEnable('${w.id}')">重新启用</button>`)
+      : '<span class="small muted">—</span>';
+    return `<tr>
+      <td class="mono small">${esc(w.id)}</td>
+      <td><div class="strong nowrap-cell">${esc(x.student ? x.student.name : '—')}</div>
+        <div class="small muted nowrap-cell">${esc(x.student ? x.student.grade + ' · ' + (x.student.book || '') : '')}</div></td>
+      <td><div class="strong small">${esc(b ? b.name : w.wordbookId)}</div>
+        <div class="wb-sub">${esc(b ? (b.category + ' · ' + (b.bookVersion || '') + ' · ' + b.wordCount + ' 词') : '')}</div></td>
+      <td class="small">${w.requestId ? `<a class="btn-link" href="#" onclick="return false" title="来自申请 ${esc(w.requestId)}">教师申请</a>`
+        : '<span class="tag tag-slate">管理员开通</span>'}</td>
+      <td class="small nowrap-cell">${esc(x.teacher ? x.teacher.name : '—')}</td>
+      <td class="small nowrap-cell">${esc(w.approvedBy || '—')}</td>
+      <td class="small muted nowrap-cell">${esc((w.approvedAt || '').slice(0, 16))}</td>
+      <td><span class="tag tag-${S.SWB_TONE[w.status]}">${w.status}</span>
+        ${w.status === S.SWB.DISABLED && w.disableReason
+          ? `<div class="wb-sub" style="color:var(--danger)">${esc(w.disableReason)}</div>` : ''}</td>
+      <td class="nowrap-cell">${act}</td>
+    </tr>`;
+  }, 9, '还没有授权记录。审核通过申请后会在这里出现。');
+
+  document.getElementById('grantFoot').textContent =
+    `共 ${list.length} 条授权记录；停用只是让学员暂时不可用，记录、基础单词与训练历史全部保留，不能删除。`;
+}
+
+function resetGrant() { ['g_kw', 'g_status'].forEach(id => { document.getElementById(id).value = ''; }); renderGrant(); }
+
+let reasonTarget = null;
+function askDisable(id) {
+  reasonTarget = { kind: 'disable', id: id };
+  const w = S.db.studentWordbooks.filter(x => x.id === id)[0];
+  const b = S.wordbook(w.wordbookId);
+  const s = S.student(w.studentId);
+  document.getElementById('rTitle').textContent = '停用词库授权';
+  document.getElementById('rDesc').textContent =
+    `停用后学员「${s ? s.name : ''}」将无法在训练中使用「${b ? b.name : ''}」，但历史训练记录与基础单词全部保留，随时可重新启用。`;
+  document.getElementById('rReason').value = '';
+  document.getElementById('rErr').innerHTML = '';
+  const ok = document.getElementById('rOk');
+  ok.textContent = '确认停用';
+  ok.onclick = doReason;
+  Proto.openModal('reasonModal');
+}
+
+function askEnable(id) {
+  reasonTarget = { kind: 'enable', id: id };
+  const w = S.db.studentWordbooks.filter(x => x.id === id)[0];
+  const b = S.wordbook(w.wordbookId);
+  document.getElementById('rTitle').textContent = '重新启用授权';
+  document.getElementById('rDesc').textContent = `将恢复学员对「${b ? b.name : ''}」的使用权限；停用历史仍保留在记录里。`;
+  document.getElementById('rReason').value = '';
+  document.getElementById('rErr').innerHTML = '';
+  const ok = document.getElementById('rOk');
+  ok.textContent = '确认启用';
+  ok.onclick = doReason;
+  Proto.openModal('reasonModal');
+}
+
+function doReason() {
+  const reason = document.getElementById('rReason').value.trim();
+  try {
+    if (reasonTarget.kind === 'disable') S.disableStudentWordbook(reasonTarget.id, { reason: reason });
+    else S.enableStudentWordbook(reasonTarget.id, { reason: reason });
+    Proto.closeModal('reasonModal');
+    Proto.toast(reasonTarget.kind === 'disable' ? '授权已停用' : '授权已重新启用', 'ok');
+    renderGrant();
+  } catch (e) {
+    document.getElementById('rErr').innerHTML =
+      `<div class="alert alert-danger mt12"><span class="ico">!</span><div>${esc(e.message)}</div></div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+/* ---------- 调度 ---------- */
+function initFilters() {
+  const sts = document.getElementById('p_status');
+  if (!sts.options.length) {
+    sts.innerHTML = '<option value="">全部状态</option>' + S.WBR_STATUS.map(s => `<option>${s}</option>`).join('');
+  }
+  const gsts = document.getElementById('g_status');
+  if (!gsts.options.length) {
+    gsts.innerHTML = '<option value="">全部状态</option>' + S.SWB_STATUS.map(s => `<option>${s}</option>`).join('');
+  }
+  const pts = {};
+  S.wordbookRequests({}).forEach(x => { pts[x.request.teacherId] = x.teacher ? x.teacher.name : x.request.teacherId; });
+  const pt = document.getElementById('p_teacher');
+  if (pt.options.length <= 1) {
+    pt.innerHTML = '<option value="">全部教师</option>' +
+      Object.keys(pts).map(k => `<option value="${esc(k)}">${esc(pts[k])}</option>`).join('');
+  }
+}
+
+function setTab() {
+  const isPending = TAB === 'pending';
+  document.getElementById('tabPending').classList.toggle('active', isPending);
+  document.getElementById('tabGrant').classList.toggle('active', !isPending);
+  document.getElementById('pPending').classList.toggle('active', isPending);
+  document.getElementById('pGrant').classList.toggle('active', !isPending);
+  document.getElementById('crumb').innerHTML = isPending
+    ? '教学资源分配<span class="sep">/</span>词库开通申请'
+    : '教学资源分配<span class="sep">/</span>词库授权记录';
+  document.getElementById('pageTitle').textContent = isPending ? '词库开通申请' : '词库授权记录';
+  document.getElementById('tabActions').innerHTML = isPending
+    ? `<a class="btn btn-sm" href="assign-task.html?tab=task&as=${ROLE}">待分配学员</a>`
+    : `<a class="btn btn-sm" href="wordbook-request.html?tab=pending&as=${ROLE}">待处理申请</a>`;
+}
+
+function renderAll() {
+  initFilters();
+  setTab();
+  if (TAB === 'pending') renderPending(); else renderGrant();
+}
+
+renderAll();
+</script>
+</body>
+</html>

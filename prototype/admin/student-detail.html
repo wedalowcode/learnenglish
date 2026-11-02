@@ -11,7 +11,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar" id="topbar"></header>
-    <main class="content">
+    <main class="content" id="page">
 
       <div class="page-head">
         <div>
@@ -50,6 +50,7 @@
           <button class="tab" data-pane="p4">课时账户</button>
           <button class="tab" data-pane="p5">学习报告<span class="count">3</span></button>
           <button class="tab" data-pane="p6">操作日志</button>
+          <button class="tab" data-pane="p7">词库授权<span class="count" id="wbCount">0</span></button>
         </div>
 
         <!-- 1 基础资料 -->
@@ -275,6 +276,32 @@
           </div>
         </div>
 
+        <!-- 7 词库授权（数据来自 Store.studentWordbooksOf） -->
+        <div class="tab-pane" id="p7">
+          <div class="flex jcb mb12">
+            <div class="alert alert-info" style="flex:1;margin:0"><span class="ico">i</span>
+              <div>词库授权只决定「这个学员能用哪些词库」，不保存任何训练进度；
+                停用只是暂时收回使用权限，<b>授权记录、基础单词与训练历史全部保留，不能删除</b>。</div></div>
+            <button class="btn btn-primary" style="margin-left:12px" id="btnGrant" onclick="openGrant()">主动开通词库</button>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr>
+                <th style="width:92px">授权编号</th>
+                <th>词库</th>
+                <th style="width:120px">来源</th>
+                <th style="width:96px">申请教师</th>
+                <th style="width:96px">开通人</th>
+                <th style="width:110px">开通时间</th>
+                <th style="width:150px">状态 / 停用信息</th>
+                <th style="width:110px">操作</th>
+              </tr></thead>
+              <tbody id="wbRows"></tbody>
+            </table>
+          </div>
+          <div class="card-foot small muted" id="wbFoot"></div>
+        </div>
+
       </div>
     </main>
   </div>
@@ -296,9 +323,184 @@
     <button class="btn btn-primary" onclick="Proto.closeDrawer('assign2');Proto.toast('教师归属已调整','ok')">确认</button></div>
 </div>
 
+<!-- 主动开通词库 -->
+<div class="mask" id="grantModal">
+  <div class="modal" style="width:520px">
+    <div class="modal-head"><div class="modal-title">主动开通词库</div>
+      <button class="modal-close" onclick="Proto.closeModal('grantModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb12"><span class="ico">i</span>
+        <div>管理员可以直接为学员开通词库；开通原因必填，会记录在授权里（与教师申请通道区分开）。</div></div>
+      <div class="field"><label>词库 <span class="req">*</span></label>
+        <select class="select" id="g_wb"></select>
+        <div class="hint">只列出「启用中、且该学员还没有有效授权」的词库</div></div>
+      <div class="field"><label>开通原因 <span class="req">*</span></label>
+        <textarea class="textarea" id="g_reason" placeholder="如：家长购买新增教材，需要配套词汇练习"></textarea></div>
+      <div id="g_err"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('grantModal')">取消</button>
+      <button class="btn btn-primary" onclick="doGrant()">确认开通</button>
+    </div>
+  </div>
+</div>
+
+<!-- 停用 / 启用原因 -->
+<div class="mask" id="reasonModal">
+  <div class="modal" style="width:500px">
+    <div class="modal-head"><div class="modal-title" id="rTitle">停用授权</div>
+      <button class="modal-close" onclick="Proto.closeModal('reasonModal')">×</button></div>
+    <div class="modal-body">
+      <div class="small muted mb12" id="rDesc"></div>
+      <div class="field"><label>原因 <span class="req">*</span></label>
+        <textarea class="textarea" id="rReason" placeholder="必填，会记录在授权里"></textarea></div>
+      <div id="r_err"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('reasonModal')">取消</button>
+      <button class="btn btn-danger" id="rOk">确认</button>
+    </div>
+  </div>
+</div>
+
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
-<script>Proto.shell({ role: 'admin', active: 'student-list' });</script>
+<script src="../assets/js/store.js"></script>
+<script>
+const Q = new URLSearchParams(location.search);
+const S = Store;
+const SID = Q.get('id') || 'S2026001';
+S.setSession({ role: 'admin', operatorName: '张敏' });
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+/* 侧栏 + 标题随学员刷新 */
+Proto.shell({ role: 'admin', active: 'student-list' });
+(function syncHead() {
+  const s = S.student(SID);
+  if (!s) return;
+  const rel = S.activeRelationOfStudent(SID);
+  document.querySelector('.page-title').innerHTML =
+    esc(s.name) + ' <span class="tag ' + (s.status === '在读' ? 'tag-green' : 'tag-slate') +
+    '" style="font-size:12px;vertical-align:middle">' + esc(s.status || '在读') + '</span>';
+  document.querySelector('.page-sub').textContent =
+    s.id + ' · ' + s.grade + ' · ' + (s.book || '教材未填') +
+    ' · 负责教师 ' + (rel ? (S.teacher(rel.teacherId) || {}).name || '—' : '未分配') +
+    ' · 入学 ' + String(s.created || '').slice(0, 10);
+  const drawer = document.querySelector('#assign2 .modal-body');
+  if (drawer) drawer.querySelectorAll('input[disabled]').forEach((inp, i) => {
+    inp.value = i === 0 ? s.name : (rel ? (S.teacher(rel.teacherId) || {}).name || '—' : '未分配');
+  });
+})();
+
+/* ---------- 词库授权区 ---------- */
+function renderWb() {
+  const list = S.studentWordbooksOf(SID);
+  const cnt = document.getElementById('wbCount');
+  if (cnt) cnt.textContent = list.length;
+  Proto.renderRows('wbRows', list, x => {
+    const w = x.auth, b = x.wordbook;
+    return `<tr>
+      <td class="mono small">${esc(w.id)}</td>
+      <td><div class="strong small">${esc(b ? b.name : w.wordbookId)}</div>
+        <div class="small muted">${esc(b ? (b.category + ' · ' + (b.bookVersion || '未标版本') + ' · ' + b.wordCount + ' 词') : '')}</div></td>
+      <td class="small">${w.requestId
+        ? `<a class="btn-link" href="wordbook-request.html?tab=grant&as=ops" title="申请 ${esc(w.requestId)}">教师申请</a>`
+        : '<span class="tag tag-slate">管理员开通</span>'}</td>
+      <td class="small nowrap-cell">${esc(x.teacher ? x.teacher.name : '—')}</td>
+      <td class="small nowrap-cell">${esc(w.approvedBy || '—')}</td>
+      <td class="small muted nowrap-cell">${esc((w.approvedAt || '').slice(0, 16))}</td>
+      <td>${w.status === S.SWB.ACTIVE
+        ? '<span class="tag tag-green">已授权</span>'
+        : `<span class="tag tag-slate">已停用</span>
+           ${w.disableReason ? `<div class="small" style="color:var(--danger)">${esc(w.disableReason)}</div>` : ''}
+           ${w.disabledBy ? `<div class="small muted">${esc(w.disabledBy)} · ${esc((w.disabledAt || '').slice(5, 16))}</div>` : ''}`}</td>
+      <td class="nowrap-cell">${w.status === S.SWB.ACTIVE
+        ? `<button class="btn-link mute" onclick="askWbDisable('${w.id}')">停用</button>`
+        : `<button class="btn-link" onclick="askWbEnable('${w.id}')">重新启用</button>`}</td>
+    </tr>`;
+  }, 8, '该学员还没有任何词库授权。教师提交申请或管理员主动开通后会出现在这里。');
+  document.getElementById('wbFoot').textContent =
+    `共 ${list.length} 条授权记录（有效 ${list.filter(x => x.auth.status === S.SWB.ACTIVE).length} 条）；` +
+    `授权只控制使用范围，删除历史记录是不允许的操作。`;
+}
+
+/* 主动开通 */
+function openGrant() {
+  const exist = S.studentWordbooksOf(SID).filter(x => x.auth.status === S.SWB.ACTIVE)
+    .map(x => x.wordbook ? x.wordbook.id : x.auth.wordbookId);
+  const options = S.wordbooks().filter(b => b.status === '启用' && exist.indexOf(b.id) < 0);
+  document.getElementById('g_wb').innerHTML = options.length
+    ? options.map(b => `<option value="${b.id}">${esc(b.name)}（${esc(b.category)} · ${b.wordCount} 词）</option>`).join('')
+    : '<option value="">没有可开通的词库</option>';
+  document.getElementById('g_reason').value = '';
+  document.getElementById('g_err').innerHTML = '';
+  Proto.openModal('grantModal');
+}
+
+function doGrant() {
+  const err = document.getElementById('g_err');
+  try {
+    const wid = document.getElementById('g_wb').value;
+    if (!wid) throw new Error('没有可开通的词库');
+    S.grantWordbook(SID, wid, { reason: document.getElementById('g_reason').value.trim() });
+    Proto.closeModal('grantModal');
+    Proto.toast('已为学员开通词库授权', 'ok');
+    renderWb();
+  } catch (e) {
+    err.innerHTML = `<div class="alert alert-danger mt12"><span class="ico">!</span><div>${esc(e.message)}</div></div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+/* 停用 / 启用 */
+let wbTarget = null;
+function askWbDisable(id) {
+  wbTarget = { kind: 'disable', id: id };
+  const x = S.studentWordbooksOf(SID).filter(v => v.auth.id === id)[0];
+  document.getElementById('rTitle').textContent = '停用词库授权';
+  document.getElementById('rDesc').textContent =
+    `停用「${x && x.wordbook ? x.wordbook.name : ''}」后，学员将暂时无法在训练中使用它；` +
+    '授权记录、基础单词与历史训练全部保留，可随时重新启用。';
+  document.getElementById('rReason').value = '';
+  document.getElementById('r_err').innerHTML = '';
+  const ok = document.getElementById('rOk');
+  ok.textContent = '确认停用';
+  ok.onclick = doWbReason;
+  Proto.openModal('reasonModal');
+}
+
+function askWbEnable(id) {
+  wbTarget = { kind: 'enable', id: id };
+  const x = S.studentWordbooksOf(SID).filter(v => v.auth.id === id)[0];
+  document.getElementById('rTitle').textContent = '重新启用授权';
+  document.getElementById('rDesc').textContent =
+    `恢复学员对「${x && x.wordbook ? x.wordbook.name : ''}」的使用权限；停用历史保留在记录里。`;
+  document.getElementById('rReason').value = '';
+  document.getElementById('r_err').innerHTML = '';
+  const ok = document.getElementById('rOk');
+  ok.textContent = '确认启用';
+  ok.onclick = doWbReason;
+  Proto.openModal('reasonModal');
+}
+
+function doWbReason() {
+  const reason = document.getElementById('rReason').value.trim();
+  try {
+    if (wbTarget.kind === 'disable') S.disableStudentWordbook(wbTarget.id, { reason: reason });
+    else S.enableStudentWordbook(wbTarget.id, { reason: reason });
+    Proto.closeModal('reasonModal');
+    Proto.toast(wbTarget.kind === 'disable' ? '授权已停用' : '授权已重新启用', 'ok');
+    renderWb();
+  } catch (e) {
+    document.getElementById('r_err').innerHTML =
+      `<div class="alert alert-danger mt12"><span class="ico">!</span><div>${esc(e.message)}</div></div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+renderWb();
+</script>
 </body>
 </html>

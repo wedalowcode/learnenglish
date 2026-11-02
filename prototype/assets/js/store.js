@@ -4,7 +4,18 @@
    第一轮：建立学习域唯一数据源。
    第二轮：加固业务完整性（judge/correct 分离、唯一 wordId 计数）。
    第三轮：从「功能闭环」转向「课程闭环」。
-   第五轮（本版）补上「兼职教师全生命周期」，原则：
+   第六轮（本版）在第五轮教师资源池之上补上「学员接单与教学资源分配」，原则：
+     1. 四个环节彼此独立，任何一环都不能用「一个教师 ID 字段」代替整条业务链：
+        教师响应（意向）→ 教务确认（人选）→ 管理员分配（正式师生关系）→ 词库申请与授权（资源权限）。
+     2. TeacherStudent 仍然是「谁现在负责谁」的唯一事实来源；
+        TeacherResponse 只表达接单意向，StudentWordbook 只表达资源授权，两者都不产生师生关系。
+     3. 需求状态、响应状态、申请状态、授权状态四套词表互不推导；
+        不根据响应数量自动判断需求完成，需求只能被「管理员正式分配」推进到已完成。
+     4. 每一步业务动作都写操作流水（只追加），记录责任人、时间、原因与结果；
+        确认可以撤销、响应可以撤回、授权可以停用，但不允许删除历史。
+     5. 权限在 Store 写操作入口校验：教务不能正式分配，管理员不能确认教师，
+        教师只能响应对自己开放的需求、只能为自己负责的学员申请词库。
+   第五轮补上「兼职教师全生命周期」，原则：
      1. 教师是机构持续维护的教学资源，不是一次性创建、使用、删除的员工记录：
         档案永不物理删除，退出只是合作状态的一种。
      2. 教师档案与登录账号分离：teachers.accountId ↔ users.teacherId，
@@ -29,6 +40,8 @@
      3. 聚合层 courseRecords 只存「关联 + 汇总快照」，不复制教学明细。
      4. 课程状态与教学报告状态完全分离，报告未发布家长不可见。
    分层存储（互不覆盖）：
+     接单域 学员需求 studentDemands / 教师响应 teacherResponses / 需求流水 studentDemandLogs
+     资源授权 词库申请 studentWordbookRequests / 学员词库 studentWordbooks
      教师 teachers / 登录账号 users / 师生关系 teacherStudents
      合作流水 teacherCooperations / 资料变更 teacherChanges
      基础单词 words / 词库 wordbooks / 关联 wordbookWords / 导入批次 importBatches + importJobs
@@ -46,8 +59,8 @@
   'use strict';
 
   var W = typeof window !== 'undefined' ? window : globalThis;
-  var KEY = 'ee_proto_store_v6';
-  var VERSION = 6;
+  var KEY = 'ee_proto_store_v7';
+  var VERSION = 7;
   var TODAY = '2026-11-02';
 
   /* ---------------- 统一状态词表 ----------------
@@ -127,20 +140,104 @@
 
   /* 角色与权限：页面隐藏按钮只是体验层，真正拦截在 Store 的每个写操作入口 */
   var PERMS = {
-    'teacher.view': ['admin', 'staff'],
+    'teacher.view': ['admin', 'staff', 'ops'],
     'teacher.create': ['admin', 'staff'],
     'teacher.edit': ['admin', 'staff'],
-    'teacher.account': ['admin', 'staff'],
+    'teacher.account': ['admin', 'staff', 'ops'],
     'teacher.activate': ['admin', 'staff'],
     'teacher.pause': ['admin', 'staff'],
     'teacher.resume': ['admin', 'staff'],
     'teacher.exit': ['admin', 'staff'],
-    'teacher.assign': ['admin', 'staff'],
-    'teacher.stats': ['admin', 'staff'],
-    'self.records': ['admin', 'staff', 'teacher']
+    'teacher.assign': ['admin', 'staff', 'ops'],
+    'teacher.stats': ['admin', 'staff', 'ops'],
+    'self.records': ['admin', 'staff', 'ops', 'teacher'],
+
+    /* ---- 学员接单与教学资源分配 ---- */
+    'demand.view': ['admin', 'staff', 'ops'],          /* 查看全部需求 */
+    'demand.create': ['admin', 'staff'],
+    'student.create': ['admin', 'staff'],              /* 新学员先建档，再发需求 */
+    'demand.edit': ['admin', 'staff'],
+    'demand.publish': ['admin', 'staff'],
+    'demand.cancel': ['admin', 'staff'],
+    'demand.confirm': ['admin', 'staff'],              /* 教务确认最终教师 */
+    'demand.open': ['teacher'],                        /* 教师查看开放给自己的需求 */
+    'response.submit': ['teacher'],                    /* 教师响应 / 暂不接单 / 撤回 */
+    'response.viewAll': ['admin', 'staff', 'ops'],
+    'student.assignFinal': ['admin', 'ops'],           /* 管理员正式分配 */
+    'wordbookRequest.create': ['teacher'],
+    'wordbookRequest.review': ['admin', 'ops'],
+    'studentWordbook.view': ['admin', 'staff', 'ops', 'teacher'],
+    'studentWordbook.manage': ['admin', 'ops']
   };
-  var ROLE_LABEL = { admin: '老板', staff: '教务', teacher: '教师' };
-  var session = { role: 'admin', operatorName: '张敏', operatorId: '张敏' };
+  var ROLE_LABEL = { admin: '老板', staff: '教务负责人', ops: '管理员', teacher: '教师' };
+  var session = { role: 'admin', operatorName: '张敏', operatorId: '张敏', teacherId: '' };
+
+  /* ============================================================
+     学员接单与教学资源分配：四套状态词表
+     ------------------------------------------------------------
+     业务流程里的四个环节彼此独立，任何一个都不能用「一个教师 ID 字段」代替：
+       1. 教师响应 TeacherResponse —— 表达接单意向（不是师生关系）
+       2. 教务确认（写回需求 selectedTeacherId / confirmedBy） —— 决定人选（仍不是师生关系）
+       3. 管理员分配（TeacherStudent） —— 正式建立师生负责关系，唯一事实来源
+       4. 词库申请与授权（StudentWordbookRequest → StudentWordbook） —— 学员获得的资源权限
+     四套词表分开：
+       需求 DEMAND / 响应 RESP / 申请 WBR / 授权 SWB
+     ============================================================ */
+  var DEMAND = {
+    DRAFT: '草稿',
+    OPEN: '待接单',
+    BIDDING: '接单中',
+    CONFIRM: '待教务确认',
+    ASSIGN: '待管理员分配',
+    DONE: '已完成分配',
+    CANCELLED: '已取消'
+  };
+  var DEMAND_STATUS = [DEMAND.DRAFT, DEMAND.OPEN, DEMAND.BIDDING, DEMAND.CONFIRM,
+    DEMAND.ASSIGN, DEMAND.DONE, DEMAND.CANCELLED];
+  var DEMAND_TONE = {
+    '草稿': 'slate', '待接单': 'blue', '接单中': 'amber', '待教务确认': 'purple',
+    '待管理员分配': 'cyan', '已完成分配': 'green', '已取消': 'red'
+  };
+  /* 教师可见（可以响应）的需求状态：只有还没被教务确认掉的公开需求 */
+  var DEMAND_OPEN_STATUS = [DEMAND.OPEN, DEMAND.BIDDING];
+
+  var RESP = {
+    YES: '已响应',
+    NO: '暂不接单',
+    WITHDRAWN: '已撤回',
+    SELECTED: '已选中',
+    NOT_SELECTED: '未选中'
+  };
+  var RESP_STATUS = [RESP.YES, RESP.NO, RESP.WITHDRAWN, RESP.SELECTED, RESP.NOT_SELECTED];
+  var RESP_TONE = {
+    '已响应': 'blue', '暂不接单': 'slate', '已撤回': 'amber', '已选中': 'green', '未选中': 'red'
+  };
+  /* 有效响应 = 仍参与人选的响应（教务确认前可撤回） */
+  var RESP_VALID = [RESP.YES, RESP.SELECTED, RESP.NOT_SELECTED];
+
+  var DECLINE_REASONS = ['时间不合适', '年级不匹配', '教材不熟悉', '当前学员数量较多', '其他原因'];
+
+  var WBR = { PENDING: '待审核', APPROVED: '已通过', REJECTED: '已驳回', CANCELLED: '已取消' };
+  var WBR_STATUS = [WBR.PENDING, WBR.APPROVED, WBR.REJECTED, WBR.CANCELLED];
+  var WBR_TONE = { '待审核': 'amber', '已通过': 'green', '已驳回': 'red', '已取消': 'slate' };
+
+  var SWB = { ACTIVE: '已授权', DISABLED: '已停用' };
+  var SWB_STATUS = [SWB.ACTIVE, SWB.DISABLED];
+  var SWB_TONE = { '已授权': 'green', '已停用': 'slate' };
+
+  /* 需求操作流水动作（只追加，不修改） */
+  var DEMAND_ACTION = {
+    CREATED: 'CREATED', PUBLISHED: 'PUBLISHED', WITHDRAWN: 'WITHDRAWN',
+    RESPONDED: 'RESPONDED', DECLINED: 'DECLINED', RESPONSE_WITHDRAWN: 'RESPONSE_WITHDRAWN',
+    CONFIRM_STARTED: 'CONFIRM_STARTED', CONFIRMED: 'CONFIRMED', CONFIRM_REVOKED: 'CONFIRM_REVOKED',
+    ASSIGNED: 'ASSIGNED', CANCELLED: 'CANCELLED', UPDATED: 'UPDATED'
+  };
+  var DEMAND_ACTION_LABEL = {
+    CREATED: '创建需求', PUBLISHED: '发布需求', WITHDRAWN: '撤回发布',
+    RESPONDED: '教师响应', DECLINED: '教师暂不接单', RESPONSE_WITHDRAWN: '教师撤回响应',
+    CONFIRM_STARTED: '进入教务确认', CONFIRMED: '教务确认教师', CONFIRM_REVOKED: '撤销确认',
+    ASSIGNED: '管理员正式分配', CANCELLED: '取消需求', UPDATED: '编辑需求'
+  };
 
 
   /* ---------------- 存储适配（三级降级） ---------------- */
@@ -354,6 +451,92 @@
           operatorId: c.operator || '张敏', operatorName: c.operator || '张敏',
           remark: c.remark || '', createdAt: c.at || t.createdAt || TODAY
         });
+      });
+    });
+
+    /* 3. 学员接单域：需求 / 响应 / 需求流水 / 词库申请 / 学员词库授权
+       这几张表是「意向 → 确认 → 分配 → 授权」四个环节各自的事实来源，
+       任何一环都不去改写 TeacherStudent —— 只有正式分配会写关系表。 */
+    var demandSeq = 0, respSeq = 0, wbrSeq = 0, swbSeq = 0, dlogSeq = 0;
+    var studentDemands = [];
+    var teacherResponses = [];
+    var studentDemandLogs = [];
+    var studentWordbookRequests = [];
+    var studentWordbooks = [];
+
+    (B.studentDemandSeeds || []).forEach(function (d) {
+      demandSeq++;
+      studentDemands.push({
+        id: d.id, code: d.code || d.id, studentId: d.studentId,
+        grade: d.grade || '', textbook: d.textbook || '',
+        learningNeeds: toList(d.learningNeeds),
+        currentLevel: d.currentLevel || '',
+        expectedSchedule: {
+          weekday: toList((d.expectedSchedule || {}).weekday),
+          periods: toList((d.expectedSchedule || {}).periods),
+          weeklyLessons: (d.expectedSchedule || {}).weeklyLessons || 0
+        },
+        expectedStartAt: d.expectedStartAt || '',
+        specialRequirements: d.specialRequirements || '',
+        remark: d.remark || '',
+        status: d.status || DEMAND.DRAFT,
+        publishedBy: d.publishedBy || '', publishedAt: d.publishedAt || '',
+        selectedTeacherId: d.selectedTeacherId || '',
+        confirmedBy: d.confirmedBy || '', confirmedAt: d.confirmedAt || '',
+        confirmReason: d.confirmReason || '',
+        assignedAt: d.assignedAt || '', assignedBy: d.assignedBy || '',
+        cancelReason: d.cancelReason || '',
+        createdBy: d.publishedBy || '陈静',
+        createdAt: d.createdAt || stamp(), updatedAt: d.updatedAt || d.createdAt || stamp()
+      });
+    });
+
+    (B.teacherResponseSeeds || []).forEach(function (r) {
+      respSeq++;
+      var d = studentDemands.filter(function (x) { return x.id === r.demandId; })[0];
+      var t = (B.teachers || []).filter(function (x) { return x.id === r.teacherId; })[0];
+      teacherResponses.push({
+        id: 'TRS' + pad(respSeq, 3), demandId: r.demandId, teacherId: r.teacherId,
+        status: r.status || RESP.YES,
+        remark: r.remark || '', declineReason: r.declineReason || '',
+        respondedAt: r.respondedAt || '', withdrawnAt: '', withdrawReason: '',
+        createdAt: r.respondedAt || (d ? d.createdAt : stamp()), updatedAt: r.respondedAt || stamp()
+      });
+      void t;
+    });
+
+    (B.studentDemandLogSeeds || []).forEach(function (l) {
+      dlogSeq++;
+      studentDemandLogs.push({
+        id: 'DL' + pad(dlogSeq, 3), demandId: l.demandId, action: l.action,
+        detail: l.detail || '', operatorName: l.operator || '系统',
+        operatorId: l.operator || '系统', from: '', to: '', at: l.at || stamp(),
+        createdAt: l.at || stamp()
+      });
+    });
+
+    (B.studentWordbookRequestSeeds || []).forEach(function (r) {
+      wbrSeq++;
+      studentWordbookRequests.push({
+        id: r.id, studentId: r.studentId, teacherId: r.teacherId, wordbookId: r.wordbookId,
+        reason: r.reason || '', plan: r.plan || '', status: r.status || WBR.PENDING,
+        requestedAt: r.requestedAt || stamp(),
+        reviewedBy: r.reviewedBy || '', reviewedAt: r.reviewedAt || '',
+        reviewRemark: r.reviewRemark || '',
+        createdAt: r.requestedAt || stamp(), updatedAt: r.reviewedAt || r.requestedAt || stamp()
+      });
+    });
+
+    (B.studentWordbookSeeds || []).forEach(function (w) {
+      swbSeq++;
+      studentWordbooks.push({
+        id: 'SW' + pad(swbSeq, 3), studentId: w.studentId, wordbookId: w.wordbookId,
+        requestId: w.requestId || '', requestedByTeacherId: w.requestedByTeacherId || '',
+        status: w.status || SWB.ACTIVE,
+        approvedBy: w.approvedBy || '王敏', approvedAt: w.approvedAt || stamp(),
+        disabledBy: w.disabledBy || '', disabledAt: w.disabledAt || '',
+        disableReason: w.disableReason || '', remark: w.remark || '',
+        createdAt: w.approvedAt || stamp(), updatedAt: w.disabledAt || w.approvedAt || stamp()
       });
     });
 
@@ -690,7 +873,8 @@
             var x = /^T(\d+)$/.exec(t.code);
             return x ? Math.max(m, Number(x[1])) : m;
           }, 0),
-          UA: users.length, TS: teacherStudents.length, TCH: coopSeq, TCL: 0
+          UA: users.length, TS: teacherStudents.length, TCH: coopSeq, TCL: 0,
+          SD: demandSeq, TRS: respSeq, DL: dlogSeq, WBR: wbrSeq, SWB: swbSeq
         },
         builtAt: stamp()
       },
@@ -700,6 +884,11 @@
       teacherStudents: teacherStudents,
       teacherCooperations: teacherCooperations,
       teacherChanges: teacherChanges,
+      studentDemands: studentDemands,
+      teacherResponses: teacherResponses,
+      studentDemandLogs: studentDemandLogs,
+      studentWordbookRequests: studentWordbookRequests,
+      studentWordbooks: studentWordbooks,
       parents: clone(B.parents || []),
       words: words,
       wordbooks: wordbooks,
@@ -994,6 +1183,141 @@
     d.meta.seq.TCH = Math.max(d.meta.seq.TCH || 0, d.teacherCooperations.length);
     d.meta.seq.TCL = Math.max(d.meta.seq.TCL || 0, d.teacherChanges.length);
 
+    /* ============================================================
+       学员接单域收敛（v6 → v7）
+       ------------------------------------------------------------
+       老数据里没有这五张表，一律补空数组；
+       已有的则统一字段、统一状态词表、统一编号序列，
+       并做三件一致性修复：
+         1. 需求选了教师但状态还停在接单中 → 推到待管理员分配
+         2. 需求已完成分配但 selectedTeacherId 为空 → 用关系反查补上
+         3. 同一学员同一词库多条有效授权 → 只保留最近一条，其余置为已停用
+       ============================================================ */
+    d.studentDemands = d.studentDemands || [];
+    d.teacherResponses = d.teacherResponses || [];
+    d.studentDemandLogs = d.studentDemandLogs || [];
+    d.studentWordbookRequests = d.studentWordbookRequests || [];
+    d.studentWordbooks = d.studentWordbooks || [];
+
+    var demandById = {};
+    d.studentDemands.forEach(function (x) {
+      x.code = x.code || x.id;
+      x.learningNeeds = toList(x.learningNeeds);
+      x.expectedSchedule = x.expectedSchedule || {};
+      x.expectedSchedule.weekday = toList(x.expectedSchedule.weekday);
+      x.expectedSchedule.periods = toList(x.expectedSchedule.periods);
+      x.expectedSchedule.weeklyLessons = Number(x.expectedSchedule.weeklyLessons) || 0;
+      if (DEMAND_STATUS.indexOf(x.status) < 0) x.status = DEMAND.DRAFT;
+      ['currentLevel', 'expectedStartAt', 'specialRequirements', 'remark',
+        'publishedBy', 'publishedAt', 'selectedTeacherId', 'confirmedBy', 'confirmedAt',
+        'confirmReason', 'assignedAt', 'assignedBy', 'cancelReason', 'createdBy'
+      ].forEach(function (k) { x[k] = x[k] || ''; });
+      x.createdAt = x.createdAt || stamp();
+      x.updatedAt = x.updatedAt || x.createdAt;
+      demandById[x.id] = x;
+      return true;
+    });
+
+    var respSeen = {};
+    d.teacherResponses = d.teacherResponses.filter(function (r) {
+      if (!demandById[r.demandId]) return false;             /* 孤儿响应丢弃 */
+      if (RESP_STATUS.indexOf(r.status) < 0) r.status = RESP.YES;
+      r.remark = r.remark || '';
+      r.declineReason = r.declineReason || '';
+      r.withdrawnAt = r.withdrawnAt || '';
+      r.withdrawReason = r.withdrawReason || '';
+      r.respondedAt = r.respondedAt || stamp();
+      r.createdAt = r.createdAt || r.respondedAt;
+      r.updatedAt = r.updatedAt || r.respondedAt;
+      /* 同一教师对同一需求只能有一条有效响应：重复的保留最近一条 */
+      if (RESP_VALID.indexOf(r.status) >= 0) {
+        var key = r.demandId + '|' + r.teacherId;
+        if (respSeen[key]) {
+          if (!respSeen[key].updatedAt || respSeen[key].updatedAt < r.updatedAt) respSeen[key] = r;
+          return false;
+        }
+        respSeen[key] = r;
+      }
+      return true;
+    });
+
+    d.studentDemandLogs.forEach(function (l) {
+      l.action = DEMAND_ACTION[l.action] ? l.action : DEMAND_ACTION.CREATED;
+      l.detail = l.detail || '';
+      l.operatorName = l.operatorName || '系统';
+      l.operatorId = l.operatorId || l.operatorName;
+      l.at = l.at || l.createdAt || stamp();
+      l.createdAt = l.createdAt || l.at;
+      return true;
+    });
+
+    d.studentWordbookRequests.forEach(function (r) {
+      if (WBR_STATUS.indexOf(r.status) < 0) r.status = WBR.PENDING;
+      ['reason', 'plan', 'reviewedBy', 'reviewedAt', 'reviewRemark'].forEach(function (k) {
+        r[k] = r[k] || '';
+      });
+      r.requestedAt = r.requestedAt || stamp();
+      r.createdAt = r.createdAt || r.requestedAt;
+      r.updatedAt = r.updatedAt || r.reviewedAt || r.requestedAt;
+      return true;
+    });
+
+    var swbSeen = {};
+    d.studentWordbooks.forEach(function (w) {
+      if (SWB_STATUS.indexOf(w.status) < 0) w.status = SWB.ACTIVE;
+      ['requestId', 'requestedByTeacherId', 'disabledBy', 'disabledAt',
+        'disableReason', 'remark'].forEach(function (k) { w[k] = w[k] || ''; });
+      w.approvedBy = w.approvedBy || '王敏';
+      w.approvedAt = w.approvedAt || stamp();
+      w.createdAt = w.createdAt || w.approvedAt;
+      w.updatedAt = w.updatedAt || w.disabledAt || w.approvedAt;
+      if (w.status === SWB.ACTIVE) {
+        var sk = w.studentId + '|' + w.wordbookId;
+        if (swbSeen[sk]) {
+          /* 同一学员同一词库只允许一条有效授权，历史授权保留为已停用 */
+          if ((swbSeen[sk].approvedAt || '') < (w.approvedAt || '')) {
+            swbSeen[sk].status = SWB.DISABLED;
+            swbSeen[sk].disabledAt = swbSeen[sk].disabledAt || w.approvedAt;
+            swbSeen[sk].disableReason = swbSeen[sk].disableReason || '系统归一：同一词库重复授权，保留最新一条';
+            swbSeen[sk] = w;
+          } else {
+            w.status = SWB.DISABLED;
+            w.disabledAt = w.disabledAt || swbSeen[sk].approvedAt;
+            w.disableReason = w.disableReason || '系统归一：同一词库重复授权，保留最新一条';
+          }
+        } else {
+          swbSeen[sk] = w;
+        }
+      }
+      return true;
+    });
+
+    /* 需求与关系的一致性修复 */
+    d.studentDemands.forEach(function (x) {
+      if (x.status === DEMAND.DONE && !x.selectedTeacherId) {
+        var rel = d.teacherStudents.filter(function (r) {
+          return r.studentId === x.studentId && r.demandId === x.id;
+        })[0];
+        if (rel) x.selectedTeacherId = rel.teacherId;
+      }
+      if (x.selectedTeacherId && (x.status === DEMAND.OPEN || x.status === DEMAND.BIDDING)) {
+        x.status = DEMAND.ASSIGN;
+      }
+      return true;
+    });
+
+    d.meta.seq = d.meta.seq || {};
+    /* 需求编号形如 D20261102008：字母 + 8 位日期 + 3 位流水，只取后 3 位进序列 */
+    d.meta.seq.SD = Math.max.apply(null, [d.meta.seq.SD || 0, d.studentDemands.length]
+      .concat(d.studentDemands.map(function (x) {
+        var m = /^D\d{8}(\d{3,})$/.exec(x.code || '');
+        return m ? Number(m[1]) : 0;
+      })));
+    d.meta.seq.TRS = Math.max(d.meta.seq.TRS || 0, d.teacherResponses.length);
+    d.meta.seq.DL = Math.max(d.meta.seq.DL || 0, d.studentDemandLogs.length);
+    d.meta.seq.WBR = Math.max(d.meta.seq.WBR || 0, d.studentWordbookRequests.length);
+    d.meta.seq.SWB = Math.max(d.meta.seq.SWB || 0, d.studentWordbooks.length);
+
     /* 课程 */
     d.courses.forEach(function (c) {
       c.studentId = c.studentId || stuByName[c.student] || '';
@@ -1250,6 +1574,11 @@
     if (!bk) throw new Error('词库不存在');
     if (bk.status !== '启用') throw new Error('词库已停用，不能用于新建训练');
     if (!bookLinkCount(bk.id)) throw new Error('该词库还没有单词，请先到资源中心导入词表');
+    /* 教师只能在「学员已获授权」的词库上开训练；未授权请先到接单中心提交词库申请 */
+    if (session.role === 'teacher' && !isAuthorized(opt.studentId, bk.id)) {
+      throw bizError('NOT_AUTHORIZED',
+        '学员还没有词库「' + bk.name + '」的有效授权，不能用它开始训练；请先到接单中心提交词库申请');
+    }
 
     // 同一学员同一词库存在未完成任务时，直接复用，避免出现两个并行任务
     var ex = activeTask(opt.studentId, bk.id);
@@ -4214,6 +4543,8 @@
     if (s.role) session.role = s.role;
     if (s.operatorName) { session.operatorName = s.operatorName; session.operatorId = s.operatorName; }
     if (s.operatorId) session.operatorId = s.operatorId;
+    /* 教师身份单独记：教师端所有「我的 / 自己的」判断都靠它，不靠姓名猜 */
+    if ('teacherId' in s) session.teacherId = s.teacherId || '';
     return clone(session);
   }
   function currentSession() { return clone(session); }
@@ -5158,6 +5489,7 @@
       id: 'TS' + seq('TS', 3), teacherId: teacherId, studentId: studentId,
       startAt: opt.startAt || TODAY, endAt: '', status: REL.ACTIVE,
       assignReason: reason, endReason: '', attention: '',
+      demandId: opt.demandId || '', responseId: opt.responseId || '',
       createdBy: session.operatorName, createdAt: stamp()
     };
     db.teacherStudents.push(r);
@@ -5195,6 +5527,7 @@
       id: 'TS' + seq('TS', 3), teacherId: toTeacherId, studentId: studentId,
       startAt: opt.effectiveAt || TODAY, endAt: '', status: REL.ACTIVE,
       assignReason: reason, endReason: '', attention: '',
+      demandId: opt.demandId || '', responseId: opt.responseId || '',
       createdBy: session.operatorName, createdAt: stamp()
     };
     db.teacherStudents.push(r);
@@ -5291,6 +5624,1243 @@
     return db.users.filter(function (u) { return u.roleId === roleId; });
   }
 
+  /* ============================================================
+     学员接单与教学资源分配
+     ------------------------------------------------------------
+     这条链上有四个环节，每个环节都有自己的表、自己的状态、自己的责任人：
+       1. StudentDemand          需求本身（教务发，教务管）
+       2. TeacherResponse        教师接单意向（教师本人提交，只表达意向）
+       3. TeacherStudent         正式师生关系（只有管理员「正式分配」才能创建）
+       4. StudentWordbookRequest → StudentWordbook  资源授权（教师申请、管理员开通）
+     禁止事项（都在下面的写操作里用断言守住）：
+       · 教师响应不能改变学员当前教师
+       · 教务确认不能绕过管理员直接建立师生关系
+       · 管理员分配必须复用 assignStudent / transferStudent，不能另建一套关系
+       · 词库授权只记录权限，不写训练进度；停用授权不删任何历史
+     ============================================================ */
+
+  /* ---------- 会话里的教师身份 ---------- */
+  function sessionTeacherId() {
+    if (session.teacherId) return session.teacherId;
+    var t = db.teachers.filter(function (x) { return x.name === session.operatorName; })[0];
+    return t ? t.id : '';
+  }
+  /** 教师角色只能操作自己的数据：把越权挡在 Store 里，而不是靠页面隐藏按钮 */
+  function assertSelfTeacher(teacherId) {
+    if (session.role !== 'teacher') return teacherId;
+    var self = sessionTeacherId();
+    if (!self) throw bizError('NO_TEACHER_CONTEXT', '当前教师登录态无法识别，请重新进入接单中心');
+    if (teacherId && teacherId !== self) {
+      throw bizError('FORBIDDEN', '教师只能查看和操作自己的数据');
+    }
+    return self;
+  }
+  /** 教师只能碰自己负责的学员 */
+  function assertMyStudent(studentId) {
+    if (session.role !== 'teacher') return;
+    var self = assertSelfTeacher();
+    var rel = activeRelationOfStudent(studentId);
+    if (!rel || rel.teacherId !== self) {
+      throw bizError('FORBIDDEN', '该学员不在你当前负责的学员名单中');
+    }
+  }
+
+  /* ---------- 新学员建档（发布需求的前置步骤，不重复建同一个学员） ---------- */
+  function createStudent(input, opt) {
+    assertCan('student.create');
+    input = input || {};
+    opt = opt || {};
+    var name = String(input.name || '').trim();
+    if (!name) throw bizError('NAME_REQUIRED', '请填写学员姓名');
+    var grade = String(input.grade || '').trim();
+    if (!grade) throw bizError('GRADE_REQUIRED', '请选择年级');
+    var phone = String(input.phone || '').trim();
+    if (phone && !/^1[3-9]\d{9}$/.test(phone)) throw bizError('PHONE_INVALID', '手机号格式不正确');
+    /* 同名同年级视为同一个人：需求发布不能变成「重复建档」的入口 */
+    var dup = db.students.filter(function (s) {
+      return s.name === name && s.grade === grade;
+    })[0];
+    if (dup) {
+      throw bizError('STUDENT_EXISTS',
+        '已存在同名同年级学员「' + dup.name + '」（' + dup.id + '），请直接选择该学员，不要重复建档',
+        { student: dup });
+    }
+    if (phone) {
+      var dupPhone = db.students.filter(function (s) { return s.phone === phone; })[0];
+      if (dupPhone) {
+        throw bizError('PHONE_DUPLICATE',
+          '手机号 ' + phone + ' 已被学员「' + dupPhone.name + '」（' + dupPhone.id + '）使用',
+          { student: dupPhone });
+      }
+    }
+    var maxN = db.students.reduce(function (m, s) {
+      var x = /^S(\d{7})$/.exec(s.id);
+      return x ? Math.max(m, Number(x[1])) : m;
+    }, 0);
+    var id = 'S' + (maxN + 1);
+    while (db.students.some(function (s) { return s.id === id; })) {
+      maxN++;
+      id = 'S' + (maxN + 1);
+    }
+    var s = {
+      id: id, name: name,
+      gender: input.gender || '男',
+      grade: grade,
+      parent: input.parent || '', parentName: String(input.parentName || '').trim(),
+      phone: phone,
+      teacher: '', teacherName: '未分配',
+      product: input.product || '30 课时包',
+      remain: Number(input.remain) || 30,
+      status: '在读', created: TODAY,
+      book: input.book || '', school: String(input.school || '').trim(),
+      source: input.source || '其他',
+      words: { total: 0, mastered: 0, review: 0 },
+      lastCourse: '', lastContent: ''
+    };
+    db.students.push(s);
+    save();
+    return s;
+  }
+
+  /* ---------- 需求：查询 ---------- */
+  function demandOf(id) {
+    return db.studentDemands.filter(function (x) { return x.id === id || x.code === id; })[0] || null;
+  }
+  function demandOfStudent(studentId) {
+    return db.studentDemands.filter(function (x) { return x.studentId === studentId; })
+      .sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+  }
+  function responseOf(demandId, teacherId) {
+    var list = db.teacherResponses.filter(function (r) {
+      return r.demandId === demandId && r.teacherId === teacherId;
+    });
+    if (!list.length) return null;
+    /* 有效响应优先，其次最近一条 */
+    var valid = list.filter(function (r) { return RESP_VALID.indexOf(r.status) >= 0; })[0];
+    return valid || list.sort(function (a, b) { return a.updatedAt < b.updatedAt ? 1 : -1; })[0];
+  }
+  function responsesOfDemand(demandId) {
+    return db.teacherResponses
+      .filter(function (r) { return r.demandId === demandId; })
+      .map(function (r) {
+        var t = teacher(r.teacherId);
+        return {
+          response: r, teacher: t,
+          stat: t ? teacherStat(t.id) : null,
+          valid: RESP_VALID.indexOf(r.status) >= 0
+        };
+      })
+      .sort(function (a, b) {
+        var w = { '已选中': 0, '已响应': 1, '未选中': 2, '暂不接单': 3, '已撤回': 4 };
+        var d = (w[a.response.status] || 9) - (w[b.response.status] || 9);
+        return d !== 0 ? d : (a.response.respondedAt < b.response.respondedAt ? -1 : 1);
+      });
+  }
+  function responsesOfTeacher(teacherId) {
+    teacherId = assertSelfTeacher(teacherId);
+    return db.teacherResponses
+      .filter(function (r) { return r.teacherId === teacherId; })
+      .map(function (r) {
+        var d = demandOf(r.demandId);
+        return { response: r, demand: d, student: d ? student(d.studentId) : null };
+      })
+      .sort(function (a, b) { return a.response.respondedAt < b.response.respondedAt ? 1 : -1; });
+  }
+  function demandLogsOf(id) {
+    return db.studentDemandLogs.filter(function (l) { return l.demandId === id; })
+      .sort(function (a, b) { return a.at < b.at ? -1 : 1; });
+  }
+
+  var DEMAND_ORDER = {};
+  DEMAND_STATUS.forEach(function (s, i) { DEMAND_ORDER[s] = i; });
+
+  /** 需求列表：教务/老板/管理员用，支持状态、学员、年级、教材、发布时间、响应数筛选 */
+  function demands(q) {
+    q = q || {};
+    var list = db.studentDemands.filter(function (x) {
+      if (q.status && x.status !== q.status) return false;
+      if (q.studentId && x.studentId !== q.studentId) return false;
+      if (q.grade && x.grade !== q.grade) return false;
+      if (q.textbook && x.textbook !== q.textbook) return false;
+      if (q.publishedBy && x.publishedBy !== q.publishedBy) return false;
+      if (q.from && x.createdAt.slice(0, 10) < q.from) return false;
+      if (q.to && x.createdAt.slice(0, 10) > q.to) return false;
+      if (q.kw) {
+        var s = student(x.studentId);
+        var hay = [x.code, x.grade, x.textbook, x.learningNeeds.join(' '),
+          s ? s.name : '', s ? s.id : ''].join(' ').toLowerCase();
+        if (hay.indexOf(String(q.kw).toLowerCase()) < 0) return false;
+      }
+      return true;
+    });
+    return list.map(function (x) { return demandView(x); }).sort(function (a, b) {
+      var d = (DEMAND_ORDER[a.demand.status] || 0) - (DEMAND_ORDER[b.demand.status] || 0);
+      if (q.status) d = 0;
+      return d !== 0 ? d : (a.demand.createdAt < b.demand.createdAt ? 1 : -1);
+    });
+  }
+
+  /** 一条需求的完整视图：需求 + 学员 + 响应统计 + 已选教师 + 分配结果 */
+  function demandView(x) {
+    if (typeof x === 'string') x = demandOf(x);
+    if (!x) return null;
+    var resp = responsesOfDemand(x.id);
+    var valid = resp.filter(function (r) { return r.valid; });
+    var sel = x.selectedTeacherId ? teacher(x.selectedTeacherId) : null;
+    var st = student(x.studentId);
+    var rel = st ? activeRelationOfStudent(st.id) : null;
+    return {
+      demand: clone(x), student: st, responses: resp,
+      responseCount: resp.length, validCount: valid.length,
+      respondedCount: resp.filter(function (r) { return r.response.status === RESP.YES ||
+        r.response.status === RESP.SELECTED || r.response.status === RESP.NOT_SELECTED; }).length,
+      declinedCount: resp.filter(function (r) { return r.response.status === RESP.NO; }).length,
+      selectedTeacher: sel,
+      currentTeacher: rel ? teacher(rel.teacherId) : null,
+      relation: rel,
+      isChange: !!rel,
+      logs: demandLogsOf(x.id)
+    };
+  }
+
+  function demandStat() {
+    var m = {};
+    DEMAND_STATUS.forEach(function (s) { m[s] = 0; });
+    db.studentDemands.forEach(function (x) { m[x.status] = (m[x.status] || 0) + 1; });
+    return {
+      total: db.studentDemands.length, byStatus: m,
+      draft: m[DEMAND.DRAFT] || 0, open: m[DEMAND.OPEN] || 0,
+      bidding: m[DEMAND.BIDDING] || 0, confirm: m[DEMAND.CONFIRM] || 0,
+      assign: m[DEMAND.ASSIGN] || 0, done: m[DEMAND.DONE] || 0,
+      cancelled: m[DEMAND.CANCELLED] || 0,
+      respondedTotal: db.teacherResponses.filter(function (r) {
+        return r.status === RESP.YES || r.status === RESP.SELECTED || r.status === RESP.NOT_SELECTED;
+      }).length
+    };
+  }
+
+  /**
+   * 教师可见的开放需求：只有已发布、还没被教务确认掉的。
+   * 暂停 / 已退出 / 待启用 的教师看不到待接单需求（业务上也不允许响应）。
+   */
+  function openDemandsFor(teacherId) {
+    teacherId = assertSelfTeacher(teacherId);
+    var t = teacher(teacherId);
+    if (!t) throw bizError('NOT_FOUND', '教师不存在');
+    if (t.cooperationStatus !== COOP.READY) return [];
+    return db.studentDemands
+      .filter(function (x) { return DEMAND_OPEN_STATUS.indexOf(x.status) >= 0; })
+      .map(function (x) { return demandView(x); })
+      .sort(function (a, b) {
+        /* 与我能力匹配的排前面：年级 → 教材 → 响应时间 */
+        var sa = 0, sb = 0;
+        if (a.demand.grade && t.grades.indexOf(a.demand.grade) >= 0) sa += 2;
+        if (a.demand.textbook && t.textbooks.indexOf(a.demand.textbook) >= 0) sa += 1;
+        if (b.demand.grade && t.grades.indexOf(b.demand.grade) >= 0) sb += 2;
+        if (b.demand.textbook && t.textbooks.indexOf(b.demand.textbook) >= 0) sb += 1;
+        if (sb !== sa) return sb - sa;
+        return a.demand.publishedAt < b.demand.publishedAt ? 1 : -1;
+      });
+  }
+  /** 匹配提示：不阻止响应，只告诉教师「匹配/不匹配」 */
+  function demandMatchFor(demandId, teacherId) {
+    var x = demandOf(demandId), t = teacher(teacherId);
+    if (!x || !t) return null;
+    var gradeOk = !!x.grade && t.grades.indexOf(x.grade) >= 0;
+    var bookOk = !!x.textbook && t.textbooks.indexOf(x.textbook) >= 0;
+    var timeOk = x.expectedSchedule.weekday.length
+      ? x.expectedSchedule.weekday.every(function (w) {
+        return x.expectedSchedule.periods.some(function (p) {
+          return t.availability.some(function (a) { return a.weekday === w && a.period === p; });
+        });
+      }) : true;
+    return {
+      grade: gradeOk, textbook: bookOk, time: timeOk,
+      miss: [gradeOk ? '' : '年级不符', bookOk ? '' : '教材不符', timeOk ? '' : '时间不符'].filter(Boolean),
+      score: (gradeOk ? 3 : 0) + (bookOk ? 2 : 0) + (timeOk ? 1 : 0)
+    };
+  }
+
+  /* ---------- 需求：写操作 ---------- */
+  function logDemand(demandId, action, detail, extra) {
+    extra = extra || {};
+    var l = {
+      id: 'DL' + seq('DL', 3), demandId: demandId,
+      action: DEMAND_ACTION[action] ? action : DEMAND_ACTION.UPDATED,
+      detail: detail || '',
+      operatorId: session.operatorId, operatorName: session.operatorName,
+      from: extra.from || '', to: extra.to || '',
+      at: stamp(), createdAt: stamp()
+    };
+    db.studentDemandLogs.push(l);
+    return l;
+  }
+
+  function demandNeeds(x) {
+    return toList(x.learningNeeds);
+  }
+
+  function createDemand(input, opt) {
+    assertCan('demand.create');
+    input = input || {};
+    opt = opt || {};
+    var s = student(input.studentId);
+    if (!s) throw bizError('STUDENT_NOT_FOUND', '请选择一位已有学员档案');
+    /* 同一学员不允许同时有两条「进行中」的需求，避免重复发布造成重复分配 */
+    var dup = db.studentDemands.filter(function (x) {
+      return x.studentId === s.id && [DEMAND.OPEN, DEMAND.BIDDING, DEMAND.CONFIRM, DEMAND.ASSIGN].indexOf(x.status) >= 0;
+    })[0];
+    if (dup) {
+      throw bizError('DEMAND_EXISTS',
+        '学员「' + s.name + '」已有一条进行中的需求（' + dup.code + ' · ' + dup.status + '），不能重复发布',
+        { demand: dup });
+    }
+    var needs = toList(input.learningNeeds);
+    if (!needs.length) throw bizError('NEEDS_REQUIRED', '请至少选择一项学习需求');
+    var grade = String(input.grade || s.grade || '').trim();
+    if (!grade) throw bizError('GRADE_REQUIRED', '请填写年级');
+    var textbook = String(input.textbook || s.book || '').trim();
+    if (!textbook) throw bizError('TEXTBOOK_REQUIRED', '请填写教材');
+    var sch = input.expectedSchedule || {};
+    var weekday = toList(sch.weekday);
+    var periods = toList(sch.periods);
+    if (!weekday.length || !periods.length) {
+      throw bizError('SCHEDULE_REQUIRED', '请填写期望上课时间（至少一个星期与一个时段）');
+    }
+    var publish = opt.publish !== false && input.publish !== false;
+
+    var n = seq('SD', 3);
+    var code = 'D' + TODAY.replace(/-/g, '') + n;
+    while (db.studentDemands.some(function (x) { return x.code === code; })) {
+      code = 'D' + TODAY.replace(/-/g, '') + seq('SD', 3);
+    }
+    var now = stamp();
+    var x = {
+      id: code, code: code, studentId: s.id,
+      grade: grade, textbook: textbook, learningNeeds: needs,
+      currentLevel: String(input.currentLevel || '').trim(),
+      expectedSchedule: {
+        weekday: weekday, periods: periods,
+        weeklyLessons: Number(sch.weeklyLessons) || 0
+      },
+      expectedStartAt: input.expectedStartAt || '',
+      specialRequirements: String(input.specialRequirements || '').trim(),
+      remark: String(input.remark || '').trim(),
+      status: publish ? DEMAND.OPEN : DEMAND.DRAFT,
+      publishedBy: publish ? session.operatorName : '',
+      publishedAt: publish ? now : '',
+      selectedTeacherId: '', confirmedBy: '', confirmedAt: '', confirmReason: '',
+      assignedAt: '', assignedBy: '', cancelReason: '',
+      createdBy: session.operatorName,
+      createdAt: now, updatedAt: now
+    };
+    db.studentDemands.push(x);
+    logDemand(x.id, DEMAND_ACTION.CREATED,
+      '创建需求：' + grade + ' · ' + textbook + ' · ' + needs.join('/'), { to: x.status });
+    if (publish) {
+      logDemand(x.id, DEMAND_ACTION.PUBLISHED, '发布到待接单需求池', { from: DEMAND.DRAFT, to: DEMAND.OPEN });
+    }
+    save();
+    return x;
+  }
+
+  var DEMAND_EDITABLE = ['grade', 'textbook', 'learningNeeds', 'currentLevel', 'expectedSchedule',
+    'expectedStartAt', 'specialRequirements', 'remark'];
+
+  function updateDemand(id, patch) {
+    assertCan('demand.edit');
+    var x = demandOf(id);
+    if (!x) throw bizError('NOT_FOUND', '需求不存在');
+    if (x.status === DEMAND.DONE) throw bizError('DEMAND_DONE', '已完成分配的需求不能修改，请新建需求');
+    if (x.status === DEMAND.CANCELLED) throw bizError('DEMAND_CANCELLED', '已取消的需求不能修改');
+    patch = patch || {};
+    var changed = [];
+    DEMAND_EDITABLE.forEach(function (k) {
+      if (!(k in patch)) return;
+      if (k === 'learningNeeds') {
+        var v = toList(patch[k]);
+        if (v.join('|') !== x.learningNeeds.join('|')) { x.learningNeeds = v; changed.push('学习需求'); }
+      } else if (k === 'expectedSchedule') {
+        var s = patch[k] || {};
+        var wd = toList(s.weekday), pd = toList(s.periods);
+        if (wd.join('|') !== x.expectedSchedule.weekday.join('|') ||
+          pd.join('|') !== x.expectedSchedule.periods.join('|')) {
+          x.expectedSchedule = { weekday: wd, periods: pd, weeklyLessons: Number(s.weeklyLessons) || x.expectedSchedule.weeklyLessons };
+          changed.push('期望上课时间');
+        }
+      } else {
+        var nv = String(patch[k] == null ? '' : patch[k]).trim();
+        if (nv !== x[k]) { x[k] = nv; changed.push(k); }
+      }
+    });
+    if (changed.length) {
+      x.updatedAt = stamp();
+      logDemand(x.id, DEMAND_ACTION.UPDATED, '编辑需求：' + changed.join('、'));
+      save();
+    }
+    return x;
+  }
+
+  function publishDemand(id, opt) {
+    assertCan('demand.publish');
+    opt = opt || {};
+    var x = demandOf(id);
+    if (!x) throw bizError('NOT_FOUND', '需求不存在');
+    if (x.status !== DEMAND.DRAFT && x.status !== DEMAND.OPEN) {
+      throw bizError('BAD_STATUS', '当前状态（' + x.status + '）不能发布');
+    }
+    if (x.status === DEMAND.OPEN) {
+      /* 重新发布通知：不改状态，只留一条流水，让「又催了一次」这件事有记录 */
+      logDemand(x.id, DEMAND_ACTION.PUBLISHED, opt.reason || '重新发布通知（需求仍在需求池中）');
+      x.updatedAt = stamp();
+      save();
+      return x;
+    }
+    var from = x.status;
+    x.status = DEMAND.OPEN;
+    x.publishedBy = session.operatorName;
+    x.publishedAt = stamp();
+    x.updatedAt = x.publishedAt;
+    logDemand(x.id, DEMAND_ACTION.PUBLISHED, opt.reason || '发布到待接单需求池', { from: from, to: x.status });
+    save();
+    return x;
+  }
+
+  function withdrawDemand(id, opt) {
+    assertCan('demand.publish');
+    opt = opt || {};
+    var reason = String(opt.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '撤回发布必须填写原因');
+    var x = demandOf(id);
+    if (!x) throw bizError('NOT_FOUND', '需求不存在');
+    if (DEMAND_OPEN_STATUS.indexOf(x.status) < 0) {
+      throw bizError('BAD_STATUS', '只有待接单 / 接单中的需求可以撤回，当前为「' + x.status + '」');
+    }
+    var from = x.status;
+    x.status = DEMAND.DRAFT;
+    x.updatedAt = stamp();
+    logDemand(x.id, DEMAND_ACTION.WITHDRAWN, '撤回发布：' + reason, { from: from, to: x.status });
+    save();
+    return x;
+  }
+
+  function cancelDemand(id, opt) {
+    assertCan('demand.cancel');
+    opt = opt || {};
+    var reason = String(opt.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '取消需求必须填写原因');
+    var x = demandOf(id);
+    if (!x) throw bizError('NOT_FOUND', '需求不存在');
+    if (x.status === DEMAND.DONE) {
+      throw bizError('DEMAND_DONE', '已完成分配的需求不能取消，如需调整请走教师更换流程');
+    }
+    if (x.status === DEMAND.CANCELLED) throw bizError('ALREADY_CANCELLED', '该需求已经取消');
+    var from = x.status;
+    var snap = JSON.stringify(db);
+    try {
+      x.status = DEMAND.CANCELLED;
+      x.cancelReason = reason;
+      x.updatedAt = stamp();
+      /* 取消需求不清空响应历史：把它们标记为已取消影响面之外的状态保持不变，
+         只有「已选中」退回「已响应」，避免出现选中了一个已取消的需求 */
+      db.teacherResponses.forEach(function (r) {
+        if (r.demandId !== x.id) return;
+        if (r.status === RESP.SELECTED) r.status = RESP.YES;
+        r.updatedAt = stamp();
+      });
+      logDemand(x.id, DEMAND_ACTION.CANCELLED, '取消需求：' + reason, { from: from, to: x.status });
+      save();
+      return x;
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'CANCEL_FAILED', '取消需求失败，已回滚：' + e.message);
+    }
+  }
+
+  /** 教务开始确认：待接单 / 接单中 → 待教务确认（只是一个「进入比较」的动作） */
+  function startConfirm(id) {
+    assertCan('demand.confirm');
+    var x = demandOf(id);
+    if (!x) throw bizError('NOT_FOUND', '需求不存在');
+    if (x.status === DEMAND.CONFIRM) return x;
+    if (DEMAND_OPEN_STATUS.indexOf(x.status) < 0) {
+      throw bizError('BAD_STATUS', '当前状态（' + x.status + '）不能进入教务确认');
+    }
+    var valid = responsesOfDemand(x.id).filter(function (r) { return r.valid; });
+    if (!valid.length) {
+      throw bizError('NO_RESPONSE', '还没有教师响应，无法进入确认环节');
+    }
+    var from = x.status;
+    x.status = DEMAND.CONFIRM;
+    x.updatedAt = stamp();
+    logDemand(x.id, DEMAND_ACTION.CONFIRM_STARTED,
+      '教务开始比较 ' + valid.length + ' 位响应教师', { from: from, to: x.status });
+    save();
+    return x;
+  }
+
+  /** 确认前检查：作为提示 + 业务校验，年级/教材不匹配不永久禁止，但必须填说明 */
+  function confirmCheck(demandId, teacherId) {
+    var x = demandOf(demandId);
+    var t = teacher(teacherId);
+    if (!x || !t) return null;
+    var v = demandView(x);
+    var m = demandMatchFor(demandId, teacherId);
+    var acc = accountStatusOf(t.id);
+    var maxStu = (db.config.teacher && db.config.teacher.maxStudentsPerTeacher) || 6;
+    var items = [
+      { key: 'coop', label: '教师处于可授课状态', ok: t.cooperationStatus === COOP.READY,
+        value: t.cooperationStatus, blocking: true,
+        hint: t.cooperationStatus === COOP.READY ? '' : '暂停合作 / 已退出 / 待启用的教师不能确认为最终人选' },
+      { key: 'account', label: '教师登录账号正常', ok: acc === ACCOUNT.OK, value: acc, blocking: false,
+        hint: acc === ACCOUNT.OK ? '' : '账号「' + acc + '」时教师无法登录教学端，建议先恢复账号' },
+      { key: 'students', label: '当前学员数量合理', ok: (v && teacherStat(t.id).currentStudents < maxStu),
+        value: teacherStat(t.id).currentStudents + ' / ' + maxStu, blocking: false,
+        hint: '超过 ' + maxStu + ' 人时排课压力较大，请确认能保证课时' },
+      { key: 'grade', label: '擅长年级与需求匹配', ok: !!(m && m.grade),
+        value: x.grade + ' ⇄ ' + (t.grades.join('/') || '未填写'), blocking: false,
+        hint: m && !m.grade ? '教师没有标注 ' + x.grade + '，仍可确认但需要说明' : '' },
+      { key: 'textbook', label: '擅长教材与需求匹配', ok: !!(m && m.textbook),
+        value: x.textbook + ' ⇄ ' + (t.textbooks.join('/') || '未填写'), blocking: false,
+        hint: m && !m.textbook ? '教师没有标注 ' + x.textbook + '，仍可确认但需要说明' : '' },
+      { key: 'time', label: '可授课时间覆盖期望时间', ok: !!(m && m.time),
+        value: x.expectedSchedule.weekday.join('/') + ' ' + x.expectedSchedule.periods.join('/'),
+        blocking: false,
+        hint: m && !m.time ? '教师可授课时间：' + availabilityText(t) : '' }
+    ];
+    var blockingMissing = items.filter(function (i) { return i.blocking && !i.ok; });
+    var adviseMissing = items.filter(function (i) { return !i.blocking && !i.ok; });
+    return {
+      demand: x, teacher: t, items: items,
+      blocking: blockingMissing, advisory: adviseMissing,
+      /* 阻断项没有 = 可以确认；只有建议项缺失时，必须填写说明 */
+      can: blockingMissing.length === 0,
+      needReason: adviseMissing.length > 0,
+      match: m, accountStatus: acc
+    };
+  }
+
+  /** 教务确认最终教师：写需求，不写师生关系 */
+  function confirmDemand(id, teacherId, opt) {
+    assertCan('demand.confirm');
+    opt = opt || {};
+    var x = demandOf(id);
+    if (!x) throw bizError('NOT_FOUND', '需求不存在');
+    if (x.status === DEMAND.DONE) throw bizError('DEMAND_DONE', '该需求已完成分配，不能再确认教师');
+    if (x.status === DEMAND.CANCELLED) throw bizError('DEMAND_CANCELLED', '该需求已取消');
+    if (x.status === DEMAND.ASSIGN) {
+      throw bizError('ALREADY_CONFIRMED',
+        '该需求已确认「' + (teacher(x.selectedTeacherId) || {}).name + '」，等待管理员正式分配；如需改选请先撤销确认');
+    }
+    var chk = confirmCheck(id, teacherId);
+    if (!chk) throw bizError('NOT_FOUND', '教师不存在');
+    if (!chk.can) {
+      throw bizError('TEACHER_NOT_READY',
+        '「' + chk.teacher.name + '」当前为「' + chk.teacher.cooperationStatus + '」，不能确认为最终人选',
+        { check: chk });
+    }
+    var reason = String(opt.reason || '').trim();
+    if (!reason) {
+      throw bizError('REASON_REQUIRED',
+        chk.needReason ? '该教师有 ' + chk.advisory.length + ' 项条件不匹配，确认理由必填' : '请填写确认理由');
+    }
+    var resp = responseOf(id, teacherId);
+    if (!resp || [RESP.YES, RESP.SELECTED].indexOf(resp.status) < 0) {
+      throw bizError('NO_VALID_RESPONSE',
+        '「' + chk.teacher.name + '」没有有效响应，不能直接确认为人选');
+    }
+    var from = x.status;
+    var snap = JSON.stringify(db);
+    try {
+      if (from !== DEMAND.CONFIRM) {
+        logDemand(x.id, DEMAND_ACTION.CONFIRM_STARTED, '教务开始比较响应教师', { from: from, to: DEMAND.CONFIRM });
+      }
+      x.selectedTeacherId = teacherId;
+      x.confirmedBy = session.operatorName;
+      x.confirmedAt = stamp();
+      x.confirmReason = reason;
+      x.status = DEMAND.ASSIGN;
+      x.updatedAt = x.confirmedAt;
+      /* 未被选中的响应保留，只标记结果 —— 不删除任何一条响应历史 */
+      db.teacherResponses.forEach(function (r) {
+        if (r.demandId !== x.id) return;
+        if (r.teacherId === teacherId) { r.status = RESP.SELECTED; r.updatedAt = stamp(); }
+        else if (r.status === RESP.YES || r.status === RESP.SELECTED) {
+          r.status = RESP.NOT_SELECTED; r.updatedAt = stamp();
+        }
+      });
+      logDemand(x.id, DEMAND_ACTION.CONFIRMED,
+        '教务确认「' + chk.teacher.name + '」：' + reason, { from: DEMAND.CONFIRM, to: x.status });
+      save();
+      return demandView(x);
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'CONFIRM_FAILED', '确认教师失败，已回滚：' + e.message);
+    }
+  }
+
+  /** 撤销确认：回到教师选择环节，历史全部保留 */
+  function revokeConfirm(id, opt) {
+    assertCan('demand.confirm');
+    opt = opt || {};
+    var reason = String(opt.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '撤销确认必须填写原因');
+    var x = demandOf(id);
+    if (!x) throw bizError('NOT_FOUND', '需求不存在');
+    if (x.status !== DEMAND.ASSIGN) {
+      throw bizError('BAD_STATUS', '只有「待管理员分配」的需求可以撤销确认，当前为「' + x.status + '」');
+    }
+    var snap = JSON.stringify(db);
+    try {
+      var prev = x.selectedTeacherId;
+      var prevName = (teacher(prev) || {}).name || '—';
+      x.selectedTeacherId = '';
+      x.confirmedBy = '';
+      x.confirmedAt = '';
+      x.confirmReason = '';
+      x.status = DEMAND.CONFIRM;
+      x.updatedAt = stamp();
+      db.teacherResponses.forEach(function (r) {
+        if (r.demandId !== x.id) return;
+        if (r.status === RESP.SELECTED) r.status = RESP.YES;         /* 回到「已响应」，仍可被重新选择 */
+        else if (r.status === RESP.NOT_SELECTED) r.status = RESP.YES;
+        r.updatedAt = stamp();
+      });
+      logDemand(x.id, DEMAND_ACTION.CONFIRM_REVOKED,
+        '撤销对「' + prevName + '」的确认：' + reason, { from: DEMAND.ASSIGN, to: x.status });
+      save();
+      return demandView(x);
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'REVOKE_FAILED', '撤销确认失败，已回滚：' + e.message);
+    }
+  }
+
+  /* ---------- 教师响应 ---------- */
+  function checkRespondable(x, teacherId) {
+    if (!x) throw bizError('NOT_FOUND', '需求不存在');
+    if (x.status === DEMAND.DRAFT) throw bizError('NOT_PUBLISHED', '该需求还没有发布，暂不开放响应');
+    if (DEMAND_OPEN_STATUS.indexOf(x.status) < 0) {
+      throw bizError('DEMAND_CLOSED',
+        '该需求当前为「' + x.status + '」，已不再接受新的响应');
+    }
+    var t = teacher(teacherId);
+    if (!t) throw bizError('NOT_FOUND', '教师不存在');
+    if (t.cooperationStatus !== COOP.READY) {
+      throw bizError('TEACHER_NOT_READY',
+        '教师「' + t.name + '」当前为「' + t.cooperationStatus + '」，只有可授课教师能接单');
+    }
+    var exist = responseOf(x.id, teacherId);
+    if (exist && RESP_VALID.indexOf(exist.status) >= 0) {
+      throw bizError('DUPLICATE_RESPONSE',
+        '你已经响应过这条需求（' + exist.status + '），无需重复提交', { response: exist });
+    }
+    return { demand: x, teacher: t, exist: exist };
+  }
+
+  function respondDemand(demandId, opt) {
+    assertCan('response.submit');
+    opt = opt || {};
+    var tid = assertSelfTeacher(opt.teacherId || sessionTeacherId());
+    if (!tid) throw bizError('NO_TEACHER_CONTEXT', '无法识别当前教师，请重新进入接单中心');
+    var x = demandOf(demandId);
+    var c = checkRespondable(x, tid);
+    var remark = String(opt.remark || '').trim();
+    var snap = JSON.stringify(db);
+    try {
+      var r;
+      if (c.exist && c.exist.status === RESP.NO) {
+        /* 之前拒绝了，现在改主意：复用同一条记录，保留原始拒绝原因 */
+        r = c.exist;
+        r.status = RESP.YES;
+        r.respondedAt = stamp();
+        r.updatedAt = r.respondedAt;
+        r.remark = remark || r.remark;
+      } else {
+        r = {
+          id: 'TRS' + seq('TRS', 3), demandId: x.id, teacherId: tid,
+          status: RESP.YES, remark: remark, declineReason: '',
+          respondedAt: stamp(), withdrawnAt: '', withdrawReason: '',
+          createdAt: stamp(), updatedAt: stamp()
+        };
+        db.teacherResponses.push(r);
+      }
+      if (x.status === DEMAND.OPEN) x.status = DEMAND.BIDDING;
+      x.updatedAt = stamp();
+      logDemand(x.id, DEMAND_ACTION.RESPONDED,
+        '教师「' + c.teacher.name + '」响应' + (remark ? '：' + remark : ''), { to: x.status });
+      save();
+      return r;
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'RESPOND_FAILED', '提交响应失败，已回滚：' + e.message);
+    }
+  }
+
+  function declineDemand(demandId, opt) {
+    assertCan('response.submit');
+    opt = opt || {};
+    var tid = assertSelfTeacher(opt.teacherId || sessionTeacherId());
+    if (!tid) throw bizError('NO_TEACHER_CONTEXT', '无法识别当前教师');
+    var reason = String(opt.declineReason || opt.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '请选择暂不接单的原因');
+    if (DECLINE_REASONS.indexOf(reason) < 0 && reason !== '其他原因') {
+      /* 自定义原因也允许，但必须写清楚 */
+      if (reason.length < 4) throw bizError('REASON_REQUIRED', '请把「其他原因」写清楚');
+    }
+    var x = demandOf(demandId);
+    var c = checkRespondable(x, tid);
+    var snap = JSON.stringify(db);
+    try {
+      var r = c.exist;
+      if (r) {
+        r.status = RESP.NO;
+        r.declineReason = reason;
+        r.remark = String(opt.remark || '').trim() || r.remark;
+        r.respondedAt = stamp();
+        r.updatedAt = r.respondedAt;
+      } else {
+        r = {
+          id: 'TRS' + seq('TRS', 3), demandId: x.id, teacherId: tid,
+          status: RESP.NO, remark: String(opt.remark || '').trim(), declineReason: reason,
+          respondedAt: stamp(), withdrawnAt: '', withdrawReason: '',
+          createdAt: stamp(), updatedAt: stamp()
+        };
+        db.teacherResponses.push(r);
+      }
+      x.updatedAt = stamp();
+      logDemand(x.id, DEMAND_ACTION.DECLINED,
+        '教师「' + c.teacher.name + '」暂不接单：' + reason, { to: x.status });
+      save();
+      return r;
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'DECLINE_FAILED', '提交失败，已回滚：' + e.message);
+    }
+  }
+
+  function withdrawResponse(demandId, opt) {
+    assertCan('response.submit');
+    opt = opt || {};
+    var tid = assertSelfTeacher(opt.teacherId || sessionTeacherId());
+    if (!tid) throw bizError('NO_TEACHER_CONTEXT', '无法识别当前教师');
+    var x = demandOf(demandId);
+    if (!x) throw bizError('NOT_FOUND', '需求不存在');
+    if ([DEMAND.ASSIGN, DEMAND.DONE, DEMAND.CANCELLED].indexOf(x.status) >= 0) {
+      throw bizError('DEMAND_CLOSED', '需求已进入「' + x.status + '」，不能撤回响应');
+    }
+    var r = responseOf(x.id, tid);
+    if (!r || r.status !== RESP.YES) {
+      throw bizError('NO_RESPONSE', '当前没有可以撤回的接单意向');
+    }
+    var reason = String(opt.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '撤回响应必须填写原因');
+    var snap = JSON.stringify(db);
+    try {
+      r.status = RESP.WITHDRAWN;
+      r.withdrawnAt = stamp();
+      r.withdrawReason = reason;
+      r.updatedAt = r.withdrawnAt;
+      /* 撤回后如果没有任何有效响应了，需求回到「待接单」——但需求本身不会被自动关闭 */
+      var still = responsesOfDemand(x.id).filter(function (y) { return y.valid; });
+      if (!still.length && x.status === DEMAND.BIDDING) x.status = DEMAND.OPEN;
+      x.updatedAt = stamp();
+      var t = teacher(tid);
+      logDemand(x.id, DEMAND_ACTION.RESPONSE_WITHDRAWN,
+        '教师「' + (t ? t.name : tid) + '」撤回响应：' + reason, { to: x.status });
+      save();
+      return r;
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'WITHDRAW_FAILED', '撤回失败，已回滚：' + e.message);
+    }
+  }
+
+  /* ---------- 管理员：待分配任务与正式分配 ---------- */
+  function assignTasks(q) {
+    q = q || {};
+    return db.studentDemands.filter(function (x) {
+      if (q.status === 'all') return x.status === DEMAND.ASSIGN || x.status === DEMAND.DONE;
+      return x.status === DEMAND.ASSIGN;
+    }).map(function (x) { return demandView(x); })
+      .sort(function (a, b) { return a.demand.confirmedAt < b.demand.confirmedAt ? 1 : -1; });
+  }
+
+  /** 正式分配前检查：管理员点「分配」时看到的六项 */
+  function assignCheck(demandId) {
+    var x = demandOf(demandId);
+    if (!x) return null;
+    var t = x.selectedTeacherId ? teacher(x.selectedTeacherId) : null;
+    var s = student(x.studentId);
+    var rel = s ? activeRelationOfStudent(s.id) : null;
+    var curT = rel ? teacher(rel.teacherId) : null;
+    var acc = t ? accountStatusOf(t.id) : ACCOUNT.NONE;
+    var items = [
+      { key: 'demand', label: '需求处于待管理员分配', ok: x.status === DEMAND.ASSIGN,
+        value: x.status, blocking: true },
+      { key: 'selected', label: '教务已确认最终教师', ok: !!t, value: t ? t.name : '未确认', blocking: true },
+      { key: 'coop', label: '教师仍处于可授课状态', ok: !!t && t.cooperationStatus === COOP.READY,
+        value: t ? t.cooperationStatus : '—', blocking: true,
+        hint: t && t.cooperationStatus !== COOP.READY ? '教师已不是可授课状态，请退回教务重新确认' : '' },
+      { key: 'account', label: '教师登录账号正常', ok: acc === ACCOUNT.OK, value: acc, blocking: true,
+        hint: acc !== ACCOUNT.OK ? '账号不可用时教师无法登录教学端，请先恢复账号' : '' },
+      { key: 'student', label: '学员档案存在', ok: !!s, value: s ? s.name : '—', blocking: true },
+      { key: 'relation', label: '学员当前负责教师', ok: true,
+        value: curT ? curT.name + '（分配后结束原关系）' : '未分配（分配后新建关系）',
+        blocking: false, change: !!curT && !!t && curT.id !== t.id,
+        same: !!curT && !!t && curT.id === t.id }
+    ];
+    var blocking = items.filter(function (i) { return i.blocking && !i.ok; });
+    return {
+      demand: x, teacher: t, student: s, currentTeacher: curT, relation: rel,
+      accountStatus: acc, items: items, blocking: blocking,
+      isChange: !!curT && !!t && curT.id !== t.id,
+      alreadySame: !!curT && !!t && curT.id === t.id,
+      can: blocking.length === 0 && !(!!curT && !!t && curT.id === t.id)
+    };
+  }
+
+  /**
+   * 管理员正式分配：唯一能创建 TeacherStudent 的入口。
+   * 原子性：先快照，任何一步失败整体回滚，绝不出现「关系建了、需求还待分配」。
+   */
+  function assignDemand(demandId, opt) {
+    assertCan('student.assignFinal');
+    opt = opt || {};
+    var x = demandOf(demandId);
+    if (!x) throw bizError('NOT_FOUND', '需求不存在');
+    if (x.status === DEMAND.DONE) throw bizError('DEMAND_DONE', '该需求已完成分配，不能重复分配');
+    if (x.status === DEMAND.CANCELLED) throw bizError('DEMAND_CANCELLED', '该需求已取消');
+    if (x.status !== DEMAND.ASSIGN) {
+      throw bizError('NOT_READY_TO_ASSIGN',
+        '教务还没有确认最终教师（当前状态「' + x.status + '」），管理员不能跳过确认直接分配');
+    }
+    var chk = assignCheck(demandId);
+    if (chk.blocking.length) {
+      throw bizError('ASSIGN_BLOCKED', chk.blocking.map(function (i) { return i.label; }).join('；'),
+        { check: chk });
+    }
+    if (chk.alreadySame) {
+      throw bizError('ALREADY_ASSIGNED', '学员「' + chk.student.name + '」当前已经由「' +
+        chk.teacher.name + '」负责，无需重复分配');
+    }
+    var reason = String(opt.reason || '').trim() ||
+      ('需求 ' + x.code + ' 正式分配' + (chk.isChange ? '（更换教师）' : ''));
+    var snap = JSON.stringify(db);
+    try {
+      var rel;
+      if (chk.isChange) {
+        /* 已有负责教师：必须走「原关系结束 + 新关系创建」，不允许直接覆盖 */
+        var res = transferStudent(x.studentId, chk.teacher.id, {
+          reason: reason,
+          endReason: '需求 ' + x.code + ' 确认更换教师，原关系结束',
+          effectiveAt: opt.effectiveAt || TODAY,
+          demandId: x.id
+        });
+        rel = res.to;
+        /* 被结束的旧关系同样记上需求编号，保证「换了谁、因为哪条需求」可追溯 */
+        if (res.from) res.from.demandId = x.id;
+      } else {
+        rel = assignStudent(chk.teacher.id, x.studentId, {
+          reason: reason, startAt: opt.effectiveAt || TODAY, demandId: x.id
+        });
+      }
+      /* 关系建好之后再推进需求；两步在同一事务里，任何一步失败都整体回滚 */
+      var from = x.status;
+      x.status = DEMAND.DONE;
+      x.assignedAt = stamp();
+      x.assignedBy = session.operatorName;
+      x.updatedAt = x.assignedAt;
+      logDemand(x.id, DEMAND_ACTION.ASSIGNED,
+        '管理员正式分配：' + chk.student.name + ' → ' + chk.teacher.name +
+        (chk.isChange ? '（原负责教师 ' + chk.currentTeacher.name + ' 的关系已结束）' : '') +
+        '，关系 ' + rel.id, { from: from, to: x.status });
+      save();
+      return {
+        ok: true, demand: x, relation: rel, teacher: chk.teacher,
+        student: chk.student, isChange: chk.isChange,
+        prevTeacher: chk.currentTeacher, check: chk
+      };
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'ASSIGN_FAILED',
+        '正式分配未完成，已回滚到分配前状态：' + e.message, e.data);
+    }
+  }
+
+  /* ---------- 词库申请 ---------- */
+  function wordbookRequestOf(id) {
+    return db.studentWordbookRequests.filter(function (r) { return r.id === id; })[0] || null;
+  }
+  function requestView(r) {
+    var s = student(r.studentId), t = teacher(r.teacherId), b = wordbook(r.wordbookId);
+    var auth = db.studentWordbooks.filter(function (w) {
+      return w.studentId === r.studentId && w.wordbookId === r.wordbookId && w.status === SWB.ACTIVE;
+    })[0];
+    return { request: r, student: s, teacher: t, wordbook: b, authorized: !!auth, auth: auth };
+  }
+  function wordbookRequests(q) {
+    q = q || {};
+    return db.studentWordbookRequests.filter(function (r) {
+      if (q.status && r.status !== q.status) return false;
+      if (q.studentId && r.studentId !== q.studentId) return false;
+      if (q.teacherId) {
+        var tid = assertSelfTeacher(q.teacherId);
+        if (r.teacherId !== tid) return false;
+      }
+      if (q.wordbookId && r.wordbookId !== q.wordbookId) return false;
+      if (q.kw) {
+        var s = student(r.studentId), b = wordbook(r.wordbookId), t = teacher(r.teacherId);
+        var hay = [r.id, s ? s.name : '', b ? b.name : '', t ? t.name : '', r.reason]
+          .join(' ').toLowerCase();
+        if (hay.indexOf(String(q.kw).toLowerCase()) < 0) return false;
+      }
+      return true;
+    }).map(requestView).sort(function (a, b) {
+      var w = { '待审核': 0, '已通过': 1, '已驳回': 2, '已取消': 3 };
+      var d = (w[a.request.status] || 9) - (w[b.request.status] || 9);
+      return d !== 0 ? d : (a.request.requestedAt < b.request.requestedAt ? 1 : -1);
+    });
+  }
+  function wordbookRequestStat() {
+    var m = {};
+    WBR_STATUS.forEach(function (s) { m[s] = 0; });
+    db.studentWordbookRequests.forEach(function (r) { m[r.status] = (m[r.status] || 0) + 1; });
+    return {
+      total: db.studentWordbookRequests.length, byStatus: m,
+      pending: m[WBR.PENDING] || 0, approved: m[WBR.APPROVED] || 0,
+      rejected: m[WBR.REJECTED] || 0, cancelled: m[WBR.CANCELLED] || 0
+    };
+  }
+
+  /** 申请前检查：学员归属 / 词库可用 / 是否已授权 / 是否已有待审申请 */
+  function requestCheck(studentId, wordbookId) {
+    var s = student(studentId), b = wordbook(wordbookId);
+    var rel = s ? activeRelationOfStudent(s.id) : null;
+    var auth = db.studentWordbooks.filter(function (w) {
+      return w.studentId === studentId && w.wordbookId === wordbookId && w.status === SWB.ACTIVE;
+    })[0];
+    var pending = db.studentWordbookRequests.filter(function (r) {
+      return r.studentId === studentId && r.wordbookId === wordbookId && r.status === WBR.PENDING;
+    })[0];
+    var ok = !!s && !!b && b.status === '启用' && !auth && !pending;
+    var why = !s ? '学员不存在'
+      : !b ? '词库不存在'
+        : b.status !== '启用' ? '词库当前不可用（' + b.status + '）'
+          : auth ? '已授权该词库' : pending ? '已有待审核申请' : '';
+    return {
+      student: s, wordbook: b, relation: rel, teacher: rel ? teacher(rel.teacherId) : null,
+      authorized: !!auth, auth: auth, pending: pending, ok: ok, reason: why
+    };
+  }
+
+  /** 教师提交词库申请：可一次提交多个词库，每个词库一条申请记录 */
+  function createWordbookRequests(input, opt) {
+    assertCan('wordbookRequest.create');
+    input = input || {};
+    opt = opt || {};
+    var tid = assertSelfTeacher(input.teacherId || sessionTeacherId());
+    if (!tid) throw bizError('NO_TEACHER_CONTEXT', '无法识别当前教师');
+    var s = student(input.studentId);
+    if (!s) throw bizError('STUDENT_NOT_FOUND', '请选择学员');
+    assertMyStudent(s.id);
+    var ids = toList(input.wordbookIds);
+    if (!ids.length) throw bizError('WORDBOOK_REQUIRED', '请至少选择一个词库');
+    var reason = String(input.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '请填写申请原因');
+    /* 先整体校验，再写入：不允许出现「前两个词库申请成功、第三个失败」的半成品 */
+    var bad = [];
+    ids.forEach(function (wid) {
+      var c = requestCheck(s.id, wid);
+      if (!c.ok) bad.push({ wordbookId: wid, wordbook: c.wordbook, reason: c.reason });
+    });
+    if (bad.length) {
+      throw bizError('REQUEST_INVALID',
+        bad.map(function (b) {
+          return (b.wordbook ? b.wordbook.name : b.wordbookId) + '：' + b.reason;
+        }).join('；'), { invalid: bad });
+    }
+    var snap = JSON.stringify(db);
+    try {
+      var out = [];
+      ids.forEach(function (wid) {
+        var r = {
+          id: 'WR' + TODAY.replace(/-/g, '') + seq('WBR', 3),
+          studentId: s.id, teacherId: tid, wordbookId: wid,
+          reason: reason, plan: String(input.plan || '').trim(),
+          status: WBR.PENDING, requestedAt: stamp(),
+          reviewedBy: '', reviewedAt: '', reviewRemark: '',
+          createdAt: stamp(), updatedAt: stamp()
+        };
+        db.studentWordbookRequests.push(r);
+        out.push(r);
+      });
+      save();
+      return out;
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'REQUEST_FAILED', '提交词库申请失败，已回滚：' + e.message);
+    }
+  }
+
+  function cancelWordbookRequest(id, opt) {
+    assertCan('wordbookRequest.create');
+    opt = opt || {};
+    var r = wordbookRequestOf(id);
+    if (!r) throw bizError('NOT_FOUND', '申请不存在');
+    assertSelfTeacher(r.teacherId);
+    if (r.status !== WBR.PENDING) {
+      throw bizError('BAD_STATUS', '只有「待审核」的申请可以取消，当前为「' + r.status + '」');
+    }
+    var reason = String(opt.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '取消申请必须填写原因');
+    r.status = WBR.CANCELLED;
+    r.reviewRemark = '教师自行取消：' + reason;
+    r.reviewedBy = session.operatorName;
+    r.reviewedAt = stamp();
+    r.updatedAt = r.reviewedAt;
+    save();
+    return r;
+  }
+
+  /**
+   * 审核词库申请：通过即创建 StudentWordbook 授权。
+   * 一条申请要么「审核结果 + 授权记录」都成立，要么都不成立。
+   */
+  function reviewWordbookRequest(id, opt) {
+    assertCan('wordbookRequest.review');
+    opt = opt || {};
+    var approve = !!opt.approve;
+    var remark = String(opt.remark || '').trim();
+    if (!approve && !remark) throw bizError('REASON_REQUIRED', '驳回申请必须填写驳回原因');
+    var r = wordbookRequestOf(id);
+    if (!r) throw bizError('NOT_FOUND', '申请不存在');
+    if (r.status !== WBR.PENDING) {
+      throw bizError('BAD_STATUS', '该申请已经是「' + r.status + '」，不能重复审核');
+    }
+    var s = student(r.studentId), b = wordbook(r.wordbookId);
+    if (!s) throw bizError('STUDENT_NOT_FOUND', '申请对应的学员不存在');
+    if (!b) throw bizError('WORDBOOK_NOT_FOUND', '申请对应的词库不存在');
+    var snap = JSON.stringify(db);
+    try {
+      var grant = null;
+      if (approve) {
+        if (b.status !== '启用') {
+          throw bizError('WORDBOOK_DISABLED', '词库「' + b.name + '」当前为「' + b.status + '」，不能开通');
+        }
+        var exist = db.studentWordbooks.filter(function (w) {
+          return w.studentId === r.studentId && w.wordbookId === r.wordbookId && w.status === SWB.ACTIVE;
+        })[0];
+        if (exist) {
+          throw bizError('ALREADY_AUTHORIZED',
+            '学员「' + s.name + '」已经拥有词库「' + b.name + '」的有效授权，无需重复开通');
+        }
+        grant = {
+          id: 'SW' + seq('SWB', 3), studentId: r.studentId, wordbookId: r.wordbookId,
+          requestId: r.id, requestedByTeacherId: r.teacherId,
+          status: SWB.ACTIVE,
+          approvedBy: session.operatorName, approvedAt: stamp(),
+          disabledBy: '', disabledAt: '', disableReason: '',
+          remark: remark || ('由申请 ' + r.id + ' 审核通过'),
+          createdAt: stamp(), updatedAt: stamp()
+        };
+        db.studentWordbooks.push(grant);
+      }
+      r.status = approve ? WBR.APPROVED : WBR.REJECTED;
+      r.reviewedBy = session.operatorName;
+      r.reviewedAt = stamp();
+      r.reviewRemark = remark || (approve ? '同意开通' : '');
+      r.updatedAt = r.reviewedAt;
+      save();
+      return { request: r, grant: grant, approved: approve };
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'REVIEW_FAILED', '审核失败，已回滚：' + e.message, e.data);
+    }
+  }
+
+  /** 批量审核：要么全部生效，要么一条都不动 */
+  function batchReviewWordbookRequests(ids, opt) {
+    assertCan('wordbookRequest.review');
+    opt = opt || {};
+    ids = toList(ids);
+    if (!ids.length) throw bizError('NOTHING_SELECTED', '请先勾选要处理的申请');
+    if (!opt.approve && !String(opt.remark || '').trim()) {
+      throw bizError('REASON_REQUIRED', '批量驳回必须填写原因');
+    }
+    var snap = JSON.stringify(db);
+    var done = [];
+    try {
+      ids.forEach(function (id) {
+        done.push(reviewWordbookRequest(id, opt));
+      });
+      save();
+      return done;
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'BATCH_FAILED',
+        '批量审核未完成，' + ids.length + ' 条申请全部回滚：' + e.message, e.data);
+    }
+  }
+
+  /* ---------- 学员词库授权 ---------- */
+  function studentWordbooksOf(studentId) {
+    if (session.role === 'teacher') assertMyStudent(studentId);
+    return db.studentWordbooks.filter(function (w) { return w.studentId === studentId; })
+      .map(function (w) {
+        var b = wordbook(w.wordbookId);
+        return {
+          auth: w, wordbook: b,
+          teacher: w.requestedByTeacherId ? teacher(w.requestedByTeacherId) : null,
+          request: w.requestId ? wordbookRequestOf(w.requestId) : null
+        };
+      })
+      .sort(function (a, b) {
+        var d = (a.auth.status === SWB.ACTIVE ? 0 : 1) - (b.auth.status === SWB.ACTIVE ? 0 : 1);
+        return d !== 0 ? d : (a.auth.approvedAt < b.auth.approvedAt ? 1 : -1);
+      });
+  }
+  /** 教师教学端唯一可用的词库来源：只有「已授权」的 */
+  function authorizedWordbooksOf(studentId) {
+    if (session.role === 'teacher') assertMyStudent(studentId);
+    return db.studentWordbooks
+      .filter(function (w) { return w.studentId === studentId && w.status === SWB.ACTIVE; })
+      .map(function (w) {
+        var b = wordbook(w.wordbookId);
+        return b ? { auth: w, wordbook: b } : null;
+      })
+      .filter(function (x) { return !!x; });
+  }
+  function isAuthorized(studentId, wordbookId) {
+    return db.studentWordbooks.some(function (w) {
+      return w.studentId === studentId && w.wordbookId === wordbookId && w.status === SWB.ACTIVE;
+    });
+  }
+  /** 管理员主动开通（不经过申请）：必须写原因 */
+  function grantWordbook(studentId, wordbookId, opt) {
+    assertCan('studentWordbook.manage');
+    opt = opt || {};
+    var s = student(studentId), b = wordbook(wordbookId);
+    if (!s) throw bizError('STUDENT_NOT_FOUND', '学员不存在');
+    if (!b) throw bizError('WORDBOOK_NOT_FOUND', '词库不存在');
+    if (b.status !== '启用') throw bizError('WORDBOOK_DISABLED', '词库「' + b.name + '」当前不可用');
+    var reason = String(opt.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '主动开通词库必须填写开通原因');
+    var exist = db.studentWordbooks.filter(function (w) {
+      return w.studentId === studentId && w.wordbookId === wordbookId && w.status === SWB.ACTIVE;
+    })[0];
+    if (exist) throw bizError('ALREADY_AUTHORIZED', '学员「' + s.name + '」已拥有「' + b.name + '」的有效授权');
+    var g = {
+      id: 'SW' + seq('SWB', 3), studentId: studentId, wordbookId: wordbookId,
+      requestId: opt.requestId || '', requestedByTeacherId: opt.teacherId || '',
+      status: SWB.ACTIVE, approvedBy: session.operatorName, approvedAt: stamp(),
+      disabledBy: '', disabledAt: '', disableReason: '',
+      remark: '管理员主动开通：' + reason,
+      createdAt: stamp(), updatedAt: stamp()
+    };
+    db.studentWordbooks.push(g);
+    save();
+    return g;
+  }
+
+  function disableStudentWordbook(id, opt) {
+    assertCan('studentWordbook.manage');
+    opt = opt || {};
+    var w = db.studentWordbooks.filter(function (x) { return x.id === id; })[0];
+    if (!w) throw bizError('NOT_FOUND', '授权记录不存在');
+    if (w.status === SWB.DISABLED) throw bizError('ALREADY_DISABLED', '该授权已经是停用状态');
+    var reason = String(opt.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '停用词库授权必须填写原因');
+    w.status = SWB.DISABLED;
+    w.disabledBy = session.operatorName;
+    w.disabledAt = stamp();
+    w.disableReason = reason;
+    w.updatedAt = w.disabledAt;
+    save();
+    return w;
+  }
+
+  function enableStudentWordbook(id, opt) {
+    assertCan('studentWordbook.manage');
+    opt = opt || {};
+    var w = db.studentWordbooks.filter(function (x) { return x.id === id; })[0];
+    if (!w) throw bizError('NOT_FOUND', '授权记录不存在');
+    if (w.status === SWB.ACTIVE) throw bizError('ALREADY_ACTIVE', '该授权已经是启用状态');
+    var dup = db.studentWordbooks.filter(function (x) {
+      return x.id !== id && x.studentId === w.studentId && x.wordbookId === w.wordbookId &&
+        x.status === SWB.ACTIVE;
+    })[0];
+    if (dup) throw bizError('ALREADY_AUTHORIZED', '该学员已有这个词库的有效授权，无需重新启用');
+    w.status = SWB.ACTIVE;
+    w.disabledBy = '';
+    w.disabledAt = '';
+    w.disableReason = '';
+    w.remark = (w.remark ? w.remark + '；' : '') + '重新启用：' + (String(opt.reason || '').trim() || '管理员操作');
+    w.updatedAt = stamp();
+    save();
+    return w;
+  }
+
+  /** 全机构授权记录：授权记录页用 */
+  function wordbookGrants(q) {
+    q = q || {};
+    return db.studentWordbooks.filter(function (w) {
+      if (q.status && w.status !== q.status) return false;
+      if (q.studentId && w.studentId !== q.studentId) return false;
+      if (q.wordbookId && w.wordbookId !== q.wordbookId) return false;
+      if (q.kw) {
+        var s = student(w.studentId), b = wordbook(w.wordbookId);
+        var hay = [s ? s.name : '', b ? b.name : '', w.approvedBy, w.requestId].join(' ').toLowerCase();
+        if (hay.indexOf(String(q.kw).toLowerCase()) < 0) return false;
+      }
+      return true;
+    }).map(function (w) {
+      var b = wordbook(w.wordbookId);
+      return {
+        auth: w, wordbook: b, student: student(w.studentId),
+        teacher: w.requestedByTeacherId ? teacher(w.requestedByTeacherId) : null
+      };
+    }).sort(function (a, b) { return a.auth.approvedAt < b.auth.approvedAt ? 1 : -1; });
+  }
+
+  function wordbookGrantStat() {
+    var active = db.studentWordbooks.filter(function (w) { return w.status === SWB.ACTIVE; }).length;
+    var disabled = db.studentWordbooks.filter(function (w) { return w.status === SWB.DISABLED; }).length;
+    var stu = {};
+    db.studentWordbooks.forEach(function (w) {
+      if (w.status === SWB.ACTIVE) stu[w.studentId] = 1;
+    });
+    return {
+      total: db.studentWordbooks.length, active: active, disabled: disabled,
+      students: Object.keys(stu).length,
+      mine: session.role === 'teacher' ? 0 : 0
+    };
+  }
+
+  /** 教师在教学中能选的词库（按学员授权过滤），没有授权时给出去申请的引导 */
+  function teachingWordbooks(studentId) {
+    var list = authorizedWordbooksOf(studentId)
+      .filter(function (x) { return x.wordbook.status === '启用'; })
+      .map(function (x) { return x.wordbook; });
+    return list;
+  }
+
+  /* ---------- 跨域统计：给首页/工作台用 ---------- */
+  function demandPipeline() {
+    var st = demandStat();
+    return {
+      total: st.total,
+      /* 四个环节各自「还压着多少事」，用于工作台待办 */
+      toRespond: st.open + st.bidding,
+      toConfirm: st.confirm,
+      toAssign: st.assign,
+      done: st.done,
+      cancelled: st.cancelled,
+      draft: st.draft,
+      pendingRequests: wordbookRequestStat().pending
+    };
+  }
+
   /* ---------------- 对外 ---------------- */
   var Store = {
     TODAY: TODAY,
@@ -5323,6 +6893,32 @@
     assignStudent: assignStudent, transferStudent: transferStudent, releaseStudent: releaseStudent,
     reassignCourse: reassignCourse, cancelCourse: cancelCourse,
     cooperationsOf: cooperationsOf, changeLogsOf: changeLogsOf, pendingRecordsOf: pendingRecordsOf,
+    /* ---------- 学员接单与教学资源分配 ---------- */
+    createStudent: createStudent,
+    demandOf: demandOf, demands: demands, demandView: demandView, demandStat: demandStat,
+    demandOfStudent: demandOfStudent, demandLogsOf: demandLogsOf,
+    responsesOfDemand: responsesOfDemand, responsesOfTeacher: responsesOfTeacher,
+    responseOf: responseOf, openDemandsFor: openDemandsFor, demandMatchFor: demandMatchFor,
+    createDemand: createDemand, updateDemand: updateDemand, publishDemand: publishDemand,
+    withdrawDemand: withdrawDemand, cancelDemand: cancelDemand, startConfirm: startConfirm,
+    confirmCheck: confirmCheck, confirmDemand: confirmDemand, revokeConfirm: revokeConfirm,
+    respondDemand: respondDemand, declineDemand: declineDemand, withdrawResponse: withdrawResponse,
+    assignTasks: assignTasks, assignCheck: assignCheck, assignDemand: assignDemand,
+    wordbookRequests: wordbookRequests, wordbookRequestOf: wordbookRequestOf,
+    wordbookRequestStat: wordbookRequestStat, requestCheck: requestCheck,
+    createWordbookRequests: createWordbookRequests, cancelWordbookRequest: cancelWordbookRequest,
+    reviewWordbookRequest: reviewWordbookRequest, batchReviewWordbookRequests: batchReviewWordbookRequests,
+    studentWordbooksOf: studentWordbooksOf, authorizedWordbooksOf: authorizedWordbooksOf,
+    isAuthorized: isAuthorized, grantWordbook: grantWordbook,
+    disableStudentWordbook: disableStudentWordbook, enableStudentWordbook: enableStudentWordbook,
+    wordbookGrants: wordbookGrants, wordbookGrantStat: wordbookGrantStat,
+    teachingWordbooks: teachingWordbooks, demandPipeline: demandPipeline,
+    DEMAND: DEMAND, DEMAND_STATUS: DEMAND_STATUS, DEMAND_TONE: DEMAND_TONE,
+    DEMAND_OPEN_STATUS: DEMAND_OPEN_STATUS, DEMAND_ACTION: DEMAND_ACTION,
+    DEMAND_ACTION_LABEL: DEMAND_ACTION_LABEL, DECLINE_REASONS: DECLINE_REASONS,
+    RESP: RESP, RESP_STATUS: RESP_STATUS, RESP_TONE: RESP_TONE,
+    WBR: WBR, WBR_STATUS: WBR_STATUS, WBR_TONE: WBR_TONE,
+    SWB: SWB, SWB_STATUS: SWB_STATUS, SWB_TONE: SWB_TONE,
     /* 教师资源池：权限 */
     setSession: setSession, currentSession: currentSession, can: can, assertCan: assertCan,
     PERMS: PERMS, ROLE_LABEL: ROLE_LABEL,

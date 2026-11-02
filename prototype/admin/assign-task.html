@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>待分配学员 · 教学资源分配</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .nowrap-cell { white-space: nowrap; }
+  .need-tag {
+    display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 4px;
+    background: var(--primary-soft); color: var(--primary-dark); margin: 1px 3px 1px 0;
+  }
+  .chk { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px;
+    border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; background: #fff; }
+  .chk.block { border-color: #fecaca; background: #fff5f5; }
+  .chk-ico { flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%; margin-top: 1px;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; color: #fff; }
+  .chk-ico.ok { background: var(--success); }
+  .chk-ico.no { background: var(--danger); }
+  .chk-ico.info { background: var(--info); }
+  .chk-label { font-size: 13px; font-weight: 600; }
+  .chk-value { font-size: 12.5px; color: var(--text-2); margin-top: 2px; }
+  .chk-hint { font-size: 12px; color: var(--danger); margin-top: 3px; line-height: 1.6; }
+  .sum { font-size: 13px; line-height: 1.9; }
+  .sum .k { color: var(--text-3); display: inline-block; width: 84px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content" id="page">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb" id="crumb">教学资源分配<span class="sep">/</span>待分配学员</div>
+          <h1 class="page-title" id="pageTitle">待分配学员</h1>
+          <div class="page-sub" id="pageSub">—</div>
+        </div>
+        <div class="page-actions">
+          <select class="select" id="as" style="width:170px" onchange="switchRole(this.value)"></select>
+          <a class="btn" href="wordbook-request.html?tab=pending">词库开通申请</a>
+        </div>
+      </div>
+
+      <div class="grid g5 mb16" id="stats"></div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="tabs" style="border:none">
+            <button class="tab active" id="tabTask" onclick="go('task')">待分配学员</button>
+            <button class="tab" id="tabLog" onclick="go('log')">分配记录</button>
+          </div>
+          <div id="tabActions"></div>
+        </div>
+
+        <!-- ============ Tab1 待分配 ============ -->
+        <div class="tab-pane active" id="pTask">
+          <div class="card filter">
+            <div class="field"><label>学员 / 需求编号</label>
+              <input class="input" id="f_kw" placeholder="输入学员姓名或需求编号" oninput="render()"></div>
+            <div class="field"><label>确认教师</label>
+              <select class="select" id="f_teacher" onchange="render()"><option value="">全部教师</option></select></div>
+            <div class="field"><label>教务负责人</label>
+              <select class="select" id="f_by" onchange="render()"><option value="">全部</option></select></div>
+            <div class="field"><label>分配类型</label>
+              <select class="select" id="f_type" onchange="render()">
+                <option value="">全部</option>
+                <option value="new">首次分配</option>
+                <option value="change">更换教师</option>
+              </select></div>
+            <div class="field" style="align-self:end">
+              <button class="btn" onclick="resetFilter()">重置</button></div>
+          </div>
+
+          <div class="alert alert-info mb16" style="margin:0 16px 0"><span class="ico">i</span>
+            <div>教务确认只决定<b>人选</b>，不会建立师生关系。这里是<b>唯一能正式建立负责关系</b>的入口：
+              分配成功后系统会在师生关系中写入需求编号，并把需求推进到「已完成分配」；
+              两步在同一事务内完成，任何一步出错都会整体回滚。</div></div>
+
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr>
+                <th style="width:130px">需求编号</th>
+                <th>学员</th>
+                <th style="width:150px">最终确认教师</th>
+                <th style="width:110px">教务负责人</th>
+                <th style="width:120px">确认时间</th>
+                <th style="width:150px">当前分配状态</th>
+                <th style="width:130px">操作</th>
+              </tr></thead>
+              <tbody id="taskRows"></tbody>
+            </table>
+          </div>
+          <div class="card-foot small muted" id="taskFoot"></div>
+        </div>
+
+        <!-- ============ Tab2 分配记录 ============ -->
+        <div class="tab-pane" id="pLog">
+          <div class="card filter">
+            <div class="field"><label>学员 / 需求编号</label>
+              <input class="input" id="l_kw" placeholder="输入学员姓名或需求编号" oninput="renderLog()"></div>
+            <div class="field"><label>分配类型</label>
+              <select class="select" id="l_type" onchange="renderLog()">
+                <option value="">全部</option>
+                <option value="new">首次分配</option>
+                <option value="change">更换教师</option>
+              </select></div>
+            <div class="field"><label>分配人</label>
+              <select class="select" id="l_by" onchange="renderLog()"><option value="">全部</option></select></div>
+            <div class="field" style="align-self:end">
+              <button class="btn" onclick="resetLogFilter()">重置</button></div>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr>
+                <th style="width:130px">需求编号</th>
+                <th>学员</th>
+                <th style="width:130px">分配教师</th>
+                <th style="width:96px">类型</th>
+                <th style="width:130px">原负责教师</th>
+                <th style="width:110px">分配人</th>
+                <th style="width:120px">分配时间</th>
+                <th>责任关系 / 原因</th>
+              </tr></thead>
+              <tbody id="logRows"></tbody>
+            </table>
+          </div>
+          <div class="card-foot small muted" id="logFoot"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 正式分配 -->
+<div class="mask" id="assignModal">
+  <div class="modal" style="width:660px">
+    <div class="modal-head">
+      <div class="modal-title" id="asTitle">正式分配学员</div>
+      <button class="modal-close" onclick="Proto.closeModal('assignModal')">×</button>
+    </div>
+    <div class="modal-body" style="max-height:74vh;overflow:auto">
+      <div id="asSum" class="mb12"></div>
+      <div class="field"><label>分配前检查 <span class="req">*</span></label>
+        <div id="asChecks"></div></div>
+      <div class="grid g2">
+        <div class="field"><label>关系生效日期</label>
+          <input class="input" id="asDate" type="date"></div>
+        <div class="field"><label>分配说明 / 原因</label>
+          <input class="input" id="asReason" placeholder="留空则按默认说明记录"></div>
+      </div>
+      <div id="asTip"></div>
+      <div id="asErr"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('assignModal')">取消</button>
+      <button class="btn btn-primary" id="asOk" onclick="doAssign()">确认正式分配</button>
+    </div>
+  </div>
+</div>
+
+<!-- 通用原因弹窗（退回教务 / 取消分配） -->
+<div class="mask" id="reasonModal">
+  <div class="modal" style="width:520px">
+    <div class="modal-head">
+      <div class="modal-title" id="rTitle">退回教务</div>
+      <button class="modal-close" onclick="Proto.closeModal('reasonModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="rDesc" class="small muted mb12"></div>
+      <div class="field"><label>原因 <span class="req">*</span></label>
+        <textarea class="textarea" id="rReason" placeholder="必填，会写进需求流水"></textarea></div>
+      <div id="rErr"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('reasonModal')">取消</button>
+      <button class="btn btn-danger" id="rOk">确认</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const Q = new URLSearchParams(location.search);
+let TAB = Q.get('tab') || 'task';
+const ROLE = Q.get('as') || 'ops';
+const S = Store;
+
+Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: TAB === 'task' ? 'assign-task' : 'assign-log' });
+
+const OPERATOR = { admin: '张敏', staff: '陈静', ops: '王敏' };
+S.setSession({ role: ROLE, operatorName: OPERATOR[ROLE] || '王敏' });
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function switchRole(r) { location.href = 'assign-task.html?tab=' + TAB + '&as=' + r; }
+function go(t) { location.href = 'assign-task.html?tab=' + t + '&as=' + ROLE; }
+
+/* 角色选择器：演示「谁能正式分配」 */
+(function initRole() {
+  const sel = document.getElementById('as');
+  sel.innerHTML = [
+    ['ops', '王敏（管理员）'], ['admin', '张敏（老板）'], ['staff', '陈静（教务负责人）']
+  ].map(x => `<option value="${x[0]}" ${x[0] === ROLE ? 'selected' : ''}>${x[1]}</option>`).join('');
+})();
+
+/* ---------- 数据 ---------- */
+function tasks() {
+  try { return S.assignTasks({}); } catch (e) { return []; }
+}
+function doneDemands() {
+  return S.demands({}).filter(v => v.demand.status === S.DEMAND.DONE);
+}
+
+/* 分配记录：已完成的分配，带出关系与原教师 */
+function assignLogs() {
+  return doneDemands().map(v => {
+    const d = v.demand;
+    const rels = S.relationsOfStudent(d.studentId) || [];
+    const rel = rels.filter(r => r.demandId === d.id && r.status === S.REL.ACTIVE)[0] || null;
+    const ended = rels.filter(r => r.demandId === d.id && r.status === S.REL.ENDED)[0] || null;
+    const prev = ended ? S.teacher(ended.teacherId) : null;
+    return {
+      demand: d, student: v.student, teacher: d.selectedTeacherId ? S.teacher(d.selectedTeacherId) : null,
+      prevTeacher: prev, relation: rel, isChange: !!prev
+    };
+  }).sort((a, b) => (a.demand.assignedAt || '') < (b.demand.assignedAt || '') ? 1 : -1);
+}
+
+/* ---------- 统计 ---------- */
+function renderStats() {
+  const list = tasks();
+  let blocked = 0, change = 0;
+  list.forEach(v => {
+    const c = S.assignCheck(v.demand.id);
+    if (c && (c.blocking.length || c.alreadySame)) blocked++;
+    if (c && c.isChange) change++;
+  });
+  const logs = assignLogs();
+  const today = S.TODAY;
+  const todayCount = logs.filter(x => (x.demand.assignedAt || '').slice(0, 10) === today).length;
+  const cards = [
+    { l: '待我分配', n: list.length, s: '教务已确认，等正式分配', tone: 'primary' },
+    { l: '其中更换教师', n: change, s: '原关系结束 + 新关系创建', tone: 'warning' },
+    { l: '检查未通过', n: blocked, s: '需退回教务处理', tone: blocked ? 'danger' : '' },
+    { l: '今日已分配', n: todayCount, s: '按 ' + today + ' 统计', tone: 'success' },
+    { l: '累计分配', n: logs.length, s: '关系均带需求编号', tone: '' }
+  ];
+  document.getElementById('stats').innerHTML = cards.map(c => `<div class="card stat">
+    <div class="stat-label">${c.l}</div>
+    <div class="stat-value" ${c.tone ? `style="color:var(--${c.tone})"` : ''}>${c.n}</div>
+    <div class="stat-foot">${c.s}</div></div>`).join('');
+
+  document.getElementById('pageSub').textContent =
+    `${OPERATOR[ROLE]} · ${S.ROLE_LABEL[ROLE]} · 正式分配是唯一建立师生负责关系的入口`;
+}
+
+/* ---------- Tab1 ---------- */
+function render() {
+  renderStats();
+  const kw = document.getElementById('f_kw').value.trim().toLowerCase();
+  const ft = document.getElementById('f_teacher').value;
+  const fb = document.getElementById('f_by').value;
+  const ftype = document.getElementById('f_type').value;
+
+  let list = tasks();
+  const enriched = list.map(v => ({ v: v, c: S.assignCheck(v.demand.id) })).filter(x => {
+    const v = x.v, c = x.c;
+    if (kw) {
+      const hay = [v.demand.code, v.student ? v.student.name : '', v.demand.grade].join(' ').toLowerCase();
+      if (hay.indexOf(kw) < 0) return false;
+    }
+    if (ft && v.demand.selectedTeacherId !== ft) return false;
+    if (fb && v.demand.confirmedBy !== fb) return false;
+    if (ftype === 'new' && !(c && !c.isChange)) return false;
+    if (ftype === 'change' && !(c && c.isChange)) return false;
+    return true;
+  });
+
+  Proto.renderRows('taskRows', enriched, x => {
+    const v = x.v, c = x.c, d = v.demand;
+    const t = c ? c.teacher : null;
+    const cur = c ? c.currentTeacher : null;
+    const canAssign = S.can('student.assignFinal') && c && c.blocking.length === 0 && !c.alreadySame;
+    const canRevoke = S.can('demand.confirm');
+    const act = canAssign
+      ? `<button class="btn btn-sm btn-primary" onclick="openAssign('${d.id}')">正式分配</button>`
+      : `<button class="btn btn-sm" onclick="openAssign('${d.id}')">查看检查</button>`;
+    const extra = (!canAssign && canRevoke)
+      ? `<button class="btn-link" onclick="askRevoke('${d.id}')">退回教务重选</button>` : '';
+    const statusHtml = c && c.alreadySame
+      ? `<span class="tag tag-blue">已是当前教师</span>`
+      : (c && c.blocking.length
+        ? `<span class="tag tag-red">检查未通过</span>
+           <div class="small" style="color:var(--danger)">${esc(c.blocking.map(i => i.label).join('、'))}</div>`
+        : `<span class="tag tag-${S.DEMAND_TONE[d.status]}">${d.status}</span>
+           ${c && c.isChange ? '<div class="small" style="color:var(--warning)">将结束原关系</div>' : ''}`);
+    return `<tr>
+      <td class="mono small">${esc(d.code)}
+        <div class="small muted">${esc(d.grade)} · ${esc(d.textbook)}</div></td>
+      <td>
+        <div class="strong nowrap-cell">${esc(v.student ? v.student.name : '—')}</div>
+        <div class="small muted nowrap-cell">当前教师：${esc(cur ? cur.name : '未分配')}</div>
+      </td>
+      <td>
+        <div class="strong nowrap-cell">${esc(t ? t.name : '—')}</div>
+        <div class="small muted nowrap-cell">${esc(t ? t.cooperationStatus : '')} · 账号${esc(c ? c.accountStatus : '—')}</div>
+      </td>
+      <td class="small nowrap-cell">${esc(d.confirmedBy || '—')}</td>
+      <td class="small muted nowrap-cell">${esc((d.confirmedAt || '').slice(0, 16) || '—')}</td>
+      <td>${statusHtml}</td>
+      <td class="nowrap-cell">
+        ${act}
+        <a class="btn-link" href="demand-detail.html?id=${d.id}&as=${ROLE}">详情</a>
+        ${extra}
+      </td>
+    </tr>`;
+  }, 7, '当前没有待分配的学员。教务确认最终教师后会出现在这里。');
+
+  document.getElementById('taskFoot').textContent =
+    `共 ${enriched.length} 条待分配（全部 ${list.length} 条）；` +
+    `教务只能确认人选，正式分配由${S.ROLE_LABEL.admin} / ${S.ROLE_LABEL.ops}执行，不能互相代替。`;
+}
+
+function resetFilter() {
+  ['f_kw', 'f_teacher', 'f_by', 'f_type'].forEach(id => {
+    const e = document.getElementById(id);
+    e.value = id === 'f_kw' ? '' : '';
+  });
+  render();
+}
+
+/* ---------- Tab2 ---------- */
+function renderLog() {
+  const kw = document.getElementById('l_kw').value.trim().toLowerCase();
+  const lt = document.getElementById('l_type').value;
+  const lb = document.getElementById('l_by').value;
+  const list = assignLogs().filter(x => {
+    if (kw) {
+      const hay = [x.demand.code, x.student ? x.student.name : '',
+      x.teacher ? x.teacher.name : '', x.prevTeacher ? x.prevTeacher.name : ''].join(' ').toLowerCase();
+      if (hay.indexOf(kw) < 0) return false;
+    }
+    if (lt === 'new' && x.isChange) return false;
+    if (lt === 'change' && !x.isChange) return false;
+    if (lb && x.demand.assignedBy !== lb) return false;
+    return true;
+  });
+  Proto.renderRows('logRows', list, x => {
+    const d = x.demand;
+    return `<tr>
+      <td class="mono small">${esc(d.code)}</td>
+      <td class="strong nowrap-cell">${esc(x.student ? x.student.name : '—')}</td>
+      <td class="nowrap-cell">${esc(x.teacher ? x.teacher.name : '—')}</td>
+      <td>${x.isChange ? '<span class="tag tag-amber">更换教师</span>' : '<span class="tag tag-green">首次分配</span>'}</td>
+      <td class="small nowrap-cell">${esc(x.prevTeacher ? x.prevTeacher.name : '—')}</td>
+      <td class="small nowrap-cell">${esc(d.assignedBy || '—')}</td>
+      <td class="small muted nowrap-cell">${esc((d.assignedAt || '').slice(0, 16) || '—')}</td>
+      <td class="small">${esc(x.relation ? x.relation.id + ' · ' + (x.relation.assignReason || '') : '—')}
+        ${x.isChange ? `<div class="small muted">原关系已结束，历史课程归属不变</div>` : ''}</td>
+    </tr>`;
+  }, 8, '还没有分配记录。管理员正式分配后会出现在这里。');
+
+  const changeCount = list.filter(x => x.isChange).length;
+  document.getElementById('logFoot').textContent =
+    `共 ${list.length} 条分配记录，其中更换教师 ${changeCount} 条；每条记录都能追溯到需求编号、责任关系与操作人。`;
+}
+
+function resetLogFilter() {
+  ['l_kw', 'l_type', 'l_by'].forEach(id => { document.getElementById(id).value = ''; });
+  renderLog();
+}
+
+/* ---------- 筛选下拉 ---------- */
+function initFilters() {
+  const ts = {}, bys = {};
+  tasks().forEach(v => {
+    if (v.demand.selectedTeacherId) ts[v.demand.selectedTeacherId] = S.teacher(v.demand.selectedTeacherId).name;
+    if (v.demand.confirmedBy) bys[v.demand.confirmedBy] = 1;
+  });
+  const abys = {};
+  assignLogs().forEach(x => { if (x.demand.assignedBy) abys[x.demand.assignedBy] = 1; });
+  const opt = m => Object.keys(m).map(k => `<option value="${esc(k)}">${esc(m[k])}</option>`).join('');
+  document.getElementById('f_teacher').innerHTML = '<option value="">全部教师</option>' + opt(ts);
+  document.getElementById('f_by').innerHTML = '<option value="">全部</option>' +
+    Object.keys(bys).map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
+  document.getElementById('l_by').innerHTML = '<option value="">全部</option>' +
+    Object.keys(abys).map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
+}
+
+/* ---------- 正式分配弹窗 ---------- */
+let curId = '';
+function openAssign(id) {
+  curId = id;
+  const v = S.demandView(id);
+  const c = S.assignCheck(id);
+  document.getElementById('asErr').innerHTML = '';
+  document.getElementById('asDate').value = S.TODAY;
+  document.getElementById('asReason').value = '';
+
+  const d = v.demand, t = c ? c.teacher : null;
+  document.getElementById('asTitle').textContent = '正式分配：' + (v.student ? v.student.name : '');
+  document.getElementById('asSum').innerHTML = `<div class="card" style="box-shadow:none"><div class="card-body">
+    <div class="sum">
+      <div><span class="k">需求编号</span> ${esc(d.code)} · ${esc(d.grade)} · ${esc(d.textbook)}</div>
+      <div><span class="k">学员</span> ${esc(v.student ? v.student.name : '—')}
+        （当前教师：${esc(c && c.currentTeacher ? c.currentTeacher.name : '未分配')}）</div>
+      <div><span class="k">确认教师</span> ${esc(t ? t.name : '—')}
+        （教务 ${esc(d.confirmedBy || '—')} 于 ${esc((d.confirmedAt || '').slice(0, 16))} 确认）</div>
+      <div><span class="k">确认理由</span> ${esc(d.confirmReason || '—')}</div>
+      <div><span class="k">学习需求</span> ${d.learningNeeds.map(n => `<span class="need-tag">${esc(n)}</span>`).join('')}</div>
+    </div></div></div>`;
+
+  document.getElementById('asChecks').innerHTML = (c ? c.items : []).map(i => `
+    <div class="chk ${i.ok ? '' : (i.blocking ? 'block' : '')}">
+      <div class="chk-ico ${i.ok ? 'ok' : (i.blocking ? 'no' : 'info')}">${i.ok ? '✓' : (i.blocking ? '!' : 'i')}</div>
+      <div style="min-width:0">
+        <div class="chk-label">${esc(i.label)}</div>
+        <div class="chk-value">${esc(i.value)}</div>
+        ${i.hint ? `<div class="chk-hint">${esc(i.hint)}</div>` : ''}
+      </div>
+    </div>`).join('');
+
+  const perm = S.can('student.assignFinal');
+  const tip = !perm
+    ? `<div class="alert alert-danger mt12"><span class="ico">!</span>
+        <div>当前角色「<b>${esc(S.ROLE_LABEL[ROLE])}</b>」没有正式分配权限。
+          教务只能确认人选，正式建立师生关系必须由${esc(S.ROLE_LABEL.admin)}或${esc(S.ROLE_LABEL.ops)}执行。</div></div>`
+    : !c ? '' : (c.alreadySame
+    ? `<div class="alert alert-warn mt12"><span class="ico">!</span>
+        <div>学员当前已由「<b>${esc(c.currentTeacher.name)}</b>」负责，与确认教师一致，不需要重复分配。</div></div>`
+    : (c.blocking.length
+      ? `<div class="alert alert-danger mt12"><span class="ico">!</span>
+          <div>有 ${c.blocking.length} 项检查未通过，正式分配会被拒绝。请退回教务处理后再分配。</div></div>`
+      : (c.isChange
+        ? `<div class="alert alert-warn mt12"><span class="ico">!</span>
+            <div>本次为<b>更换教师</b>：系统会先结束「${esc(c.currentTeacher.name)}」的责任关系，
+              再为「${esc(c.teacher.name)}」创建新关系；<b>已完成的课程仍归属原教师</b>，历史不会被改写。</div></div>`
+        : `<div class="alert alert-success mt12"><span class="ico">✓</span>
+            <div>检查全部通过。分配后将为「${esc(c.teacher.name)}」新建一条责任关系，
+              关系上会记录需求编号 ${esc(d.code)}。</div></div>`)));
+  document.getElementById('asTip').innerHTML = tip;
+
+  const can = !!perm && !!c && c.blocking.length === 0 && !c.alreadySame;
+  const btn = document.getElementById('asOk');
+  btn.disabled = !can;
+  btn.className = 'btn ' + (can ? 'btn-primary' : '');
+  btn.textContent = !perm ? '当前角色无分配权限'
+    : (can ? '确认正式分配' : (c && c.alreadySame ? '无需重复分配' : '检查未通过'));
+  Proto.openModal('assignModal');
+}
+
+function doAssign() {
+  const err = document.getElementById('asErr');
+  try {
+    const out = S.assignDemand(curId, {
+      reason: document.getElementById('asReason').value.trim(),
+      effectiveAt: document.getElementById('asDate').value || S.TODAY
+    });
+    Proto.closeModal('assignModal');
+    const msg = out.isChange
+      ? `已正式分配：${out.student.name} 由「${out.prevTeacher.name}」更换为「${out.teacher.name}」，原关系已结束`
+      : `已正式分配：${out.student.name} → ${out.teacher.name}（关系 ${out.relation.id}）`;
+    Proto.toast(msg, 'ok');
+    renderAll();
+  } catch (e) {
+    err.innerHTML = `<div class="alert alert-danger mt12"><span class="ico">!</span>
+      <div>${esc(e.message)}</div></div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+/* ---------- 退回教务（管理员不能改确认结果，只能撤销确认） ---------- */
+function askRevoke(id) {
+  curId = id;
+  const v = S.demandView(id);
+  document.getElementById('rTitle').textContent = '撤销教务确认';
+  document.getElementById('rDesc').textContent =
+    `撤销后需求会回到「待教务确认」，由 ${v.demand.confirmedBy || '教务'} 重新选择教师；历史响应与确认记录全部保留。`;
+  document.getElementById('rReason').value = '';
+  document.getElementById('rErr').innerHTML = '';
+  document.getElementById('rOk').textContent = '确认撤销';
+  document.getElementById('rOk').onclick = doRevoke;
+  Proto.openModal('reasonModal');
+}
+
+function doRevoke() {
+  const reason = document.getElementById('rReason').value.trim();
+  try {
+    S.revokeConfirm(curId, { reason: reason });
+    Proto.closeModal('reasonModal');
+    Proto.toast('已撤销教务确认，退回重新选择教师', 'ok');
+    renderAll();
+  } catch (e) {
+    document.getElementById('rErr').innerHTML =
+      `<div class="alert alert-danger mt12"><span class="ico">!</span><div>${esc(e.message)}</div></div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+/* ---------- 调度 ---------- */
+function setTab() {
+  const isTask = TAB === 'task';
+  document.getElementById('tabTask').classList.toggle('active', isTask);
+  document.getElementById('tabLog').classList.toggle('active', !isTask);
+  document.getElementById('pTask').classList.toggle('active', isTask);
+  document.getElementById('pLog').classList.toggle('active', !isTask);
+  document.getElementById('crumb').innerHTML = isTask
+    ? '教学资源分配<span class="sep">/</span>待分配学员'
+    : '教学资源分配<span class="sep">/</span>分配记录';
+  document.getElementById('pageTitle').textContent = isTask ? '待分配学员' : '分配记录';
+  document.getElementById('tabActions').innerHTML = isTask
+    ? `<a class="btn btn-sm" href="demand-list.html?as=${ROLE}">需求池</a>`
+    : `<a class="btn btn-sm" href="assign-task.html?tab=task&as=${ROLE}">回去分配</a>`;
+}
+
+function renderAll() {
+  initFilters();
+  setTab();
+  renderStats();
+  if (TAB === 'task') render(); else renderLog();
+}
+
+renderAll();
+</script>
+</body>
+</html>

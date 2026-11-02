@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>教师响应管理</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .quick { display: flex; gap: 6px; flex-wrap: wrap; }
+  .quick .btn.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .nowrap-cell { white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content" id="page">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教务管理 · 学员接单<span class="sep">/</span>教师响应管理</div>
+          <h1 class="page-title">教师响应管理</h1>
+          <div class="page-sub" id="pageSub">—</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="demand-list.html">学员需求池</a>
+        </div>
+      </div>
+
+      <div class="grid g5 mb16" id="stats"></div>
+
+      <div class="card filter">
+        <div class="field"><label>学员 / 教师 / 需求编号</label>
+          <input class="input" id="f_kw" placeholder="输入关键词" oninput="render()"></div>
+        <div class="field"><label>响应状态</label>
+          <select class="select" id="f_status" onchange="render()"><option value="">全部状态</option></select></div>
+        <div class="field"><label>教师</label>
+          <select class="select" id="f_teacher" onchange="render()"><option value="">全部教师</option></select></div>
+        <div class="field"><label>需求状态</label>
+          <select class="select" id="f_demand" onchange="render()"><option value="">全部需求</option></select></div>
+        <div class="field" style="align-self:end"><button class="btn" onclick="resetFilter()">重置</button></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">全部响应记录</div>
+          <div class="quick" id="quick"></div>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr>
+              <th style="width:120px">需求编号</th>
+              <th>学员</th>
+              <th>需求状态</th>
+              <th>响应教师</th>
+              <th>擅长年级 / 教材</th>
+              <th class="right">当前学员</th>
+              <th style="width:96px">响应状态</th>
+              <th style="width:112px">响应时间</th>
+              <th>教师备注</th>
+              <th>拒绝 / 撤回原因</th>
+              <th style="width:88px">操作</th>
+            </tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <div class="card-foot flex aic between">
+          <span class="small muted" id="listCount">—</span>
+          <span class="small muted">响应只表达意向，不等于师生关系；确认结果由教务在需求详情里决定</span>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const Q = new URLSearchParams(location.search);
+const ROLE = Q.get('as') || 'staff';
+Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: 'response-manage' });
+const OPERATOR = { admin: '张敏', staff: '陈静', ops: '王敏', teacher: '李婉' };
+Store.setSession({ role: ROLE, operatorName: OPERATOR[ROLE] || '陈静' });
+const S = Store;
+
+let quickStatus = '';
+
+(function init() {
+  const st = document.getElementById('f_status');
+  S.RESP_STATUS.forEach(s => st.insertAdjacentHTML('beforeend', `<option>${s}</option>`));
+  const dt = document.getElementById('f_demand');
+  S.DEMAND_STATUS.forEach(s => dt.insertAdjacentHTML('beforeend', `<option>${s}</option>`));
+  const te = document.getElementById('f_teacher');
+  S.teachers().forEach(t => te.insertAdjacentHTML('beforeend', `<option value="${t.id}">${t.name}</option>`));
+  renderQuick();
+})();
+
+function allResponses() {
+  const out = [];
+  S.demands({}).forEach(v => {
+    v.responses.forEach(r => out.push({
+      demand: v.demand, student: v.student, teacher: r.teacher,
+      response: r.response, stat: r.stat, valid: r.valid
+    }));
+  });
+  return out.sort((a, b) => (a.response.respondedAt < b.response.respondedAt ? 1 : -1));
+}
+
+function renderQuick() {
+  const list = allResponses();
+  const cnt = {};
+  S.RESP_STATUS.forEach(s => cnt[s] = 0);
+  list.forEach(x => cnt[x.response.status] = (cnt[x.response.status] || 0) + 1);
+  const items = [{ key: '', label: '全部', n: list.length }]
+    .concat(S.RESP_STATUS.map(s => ({ key: s, label: s, n: cnt[s] || 0 })));
+  document.getElementById('quick').innerHTML = items.map(q =>
+    `<button class="btn btn-sm ${q.key === quickStatus ? 'on' : ''}"
+      onclick="setQuick('${q.key}')">${q.label} ${q.n}</button>`).join('');
+}
+
+function setQuick(k) {
+  quickStatus = k;
+  document.getElementById('f_status').value = k;
+  renderQuick();
+  render();
+}
+
+function resetFilter() {
+  ['f_kw'].forEach(id => document.getElementById(id).value = '');
+  ['f_status', 'f_teacher', 'f_demand'].forEach(id => document.getElementById(id).value = '');
+  quickStatus = '';
+  renderQuick();
+  render();
+}
+
+function statCard(label, n, note) {
+  return `<div class="card stat">
+    <div class="stat-label">${label}</div>
+    <div class="stat-value">${n}</div>
+    <div class="stat-foot">${note}</div></div>`;
+}
+
+function render() {
+  const list = allResponses();
+  const cnt = {};
+  S.RESP_STATUS.forEach(s => cnt[s] = 0);
+  list.forEach(x => cnt[x.response.status] = (cnt[x.response.status] || 0) + 1);
+  document.getElementById('stats').innerHTML =
+    statCard('已响应', cnt[S.RESP.YES] || 0, '有效候选，可被教务确认') +
+    statCard('暂不接单', cnt[S.RESP.NO] || 0, '记录了拒绝原因') +
+    statCard('已撤回', cnt[S.RESP.WITHDRAWN] || 0, '保留撤回时间与原因') +
+    statCard('已选中', cnt[S.RESP.SELECTED] || 0, '教务确认的人选') +
+    statCard('未选中', cnt[S.RESP.NOT_SELECTED] || 0, '本轮未被选中，记录保留');
+
+  document.getElementById('pageSub').textContent =
+    `共 ${list.length} 条响应记录 · 覆盖 ${new Set(list.map(x => x.demand.id)).size} 条需求 · ` +
+    `${new Set(list.map(x => x.teacher ? x.teacher.id : '')).size} 位教师`;
+
+  const f = {
+    kw: document.getElementById('f_kw').value.trim(),
+    status: document.getElementById('f_status').value,
+    teacher: document.getElementById('f_teacher').value,
+    demand: document.getElementById('f_demand').value
+  };
+  const rows = list.filter(x => {
+    if (f.status && x.response.status !== f.status) return false;
+    if (f.teacher && (!x.teacher || x.teacher.id !== f.teacher)) return false;
+    if (f.demand && x.demand.status !== f.demand) return false;
+    if (f.kw) {
+      const hay = [x.demand.code, x.student ? x.student.name : '', x.teacher ? x.teacher.name : '',
+        x.response.remark, x.response.declineReason].join(' ').toLowerCase();
+      if (hay.indexOf(f.kw.toLowerCase()) < 0) return false;
+    }
+    return true;
+  });
+
+  document.getElementById('listCount').textContent = `筛选结果 ${rows.length} 条 / 共 ${list.length} 条`;
+
+  Proto.renderRows('rows', rows, x => {
+    const t = x.teacher, r = x.response;
+    return `<tr>
+      <td class="mono small"><a href="demand-detail.html?id=${x.demand.id}&as=${ROLE}">${x.demand.code}</a></td>
+      <td class="strong nowrap-cell">${x.student ? x.student.name : '—'}
+        <div class="small muted">${x.demand.grade} · ${x.demand.textbook}</div></td>
+      <td><span class="tag tag-${S.DEMAND_TONE[x.demand.status]}">${x.demand.status}</span></td>
+      <td class="strong nowrap-cell">${t ? t.name : r.teacherId}
+        ${t ? `<div class="small muted">${t.code} · ${t.cooperationStatus}</div>` : ''}</td>
+      <td class="small">${t ? t.grades.join('、') : ''}<div class="muted">${t ? t.textbooks.join('、') : ''}</div></td>
+      <td class="right mono">${x.stat ? x.stat.currentStudents : '—'}</td>
+      <td><span class="tag tag-${S.RESP_TONE[r.status]}">${r.status}</span></td>
+      <td class="small muted nowrap-cell">${r.respondedAt.slice(5, 16)}
+        ${r.withdrawnAt ? `<div class="small" style="color:var(--warning)">撤回 ${r.withdrawnAt.slice(5, 16)}</div>` : ''}</td>
+      <td class="small">${r.remark || '—'}</td>
+      <td class="small" style="color:var(--text-3)">${r.declineReason || r.withdrawReason || '—'}</td>
+      <td><a class="btn-link" href="demand-detail.html?id=${x.demand.id}&as=${ROLE}">查看需求</a></td>
+    </tr>`;
+  }, 11, '暂无响应记录');
+}
+
+render();
+</script>
+</body>
+</html>

@@ -25,6 +25,14 @@ const Proto = (() => {
         { id: 'schedule-calendar', label: '课程排课', href: 'admin/schedule-calendar.html' },
         { id: 'course-list', label: '课程记录', href: 'admin/course-list.html' },
       ]},
+      { group: '教务管理 · 学员接单', items: [
+        { id: 'demand-list', label: '学员需求池', href: 'admin/demand-list.html' },
+        { id: 'response-manage', label: '教师响应管理', href: 'admin/response-manage.html' },
+      ]},
+      { group: '教学资源分配', items: [
+        { id: 'assign-task', label: '待分配学员', href: 'admin/assign-task.html' },
+        { id: 'wordbook-request', label: '词库开通申请', href: 'admin/wordbook-request.html' },
+      ]},
       { group: '商品订单', items: [
         { id: 'product-list', label: '课程商品', href: 'admin/product-list.html' },
         { id: 'order-list', label: '订单管理', href: 'admin/order-list.html' },
@@ -50,12 +58,33 @@ const Proto = (() => {
         { id: 'my-students', label: '我的学员', href: 'teacher/my-students.html' },
         { id: 'teaching-record', label: '教学记录', href: 'teacher/teaching-record.html' },
       ]},
+      { group: '接单中心', items: [
+        { id: 'demand-open', label: '待响应需求', href: 'teacher/demand-center.html?tab=open' },
+        { id: 'demand-mine', label: '我的响应', href: 'teacher/demand-center.html?tab=mine' },
+        { id: 'demand-wbreq', label: '词库申请', href: 'teacher/demand-center.html?tab=wbreq' },
+      ]},
       { group: '教学管理', items: [
         { id: 'student-profile', label: '学员学习档案', href: 'teacher/student-profile.html' },
         { id: 'word-setup', label: '单词训练', href: 'teacher/word-training-setup.html' },
         { id: 'article-training', label: '文章训练', href: 'teacher/article-training.html' },
         { id: 'leitner', label: '莱特纳复习', href: 'teacher/leitner.html' },
         { id: 'memory21', label: '21 天记忆复习', href: 'teacher/memory21.html' },
+      ]},
+    ],
+    /* 管理员：只管「正式分配」和「词库开通」，不参与教务确认，也不建需求 */
+    ops: [
+      { group: '教学资源分配', items: [
+        { id: 'assign-task', label: '待分配学员', href: 'admin/assign-task.html?tab=task' },
+        { id: 'wordbook-request', label: '待处理词库申请', href: 'admin/wordbook-request.html?tab=pending' },
+        { id: 'assign-log', label: '分配记录', href: 'admin/assign-task.html?tab=log' },
+        { id: 'wordbook-grant', label: '词库授权记录', href: 'admin/wordbook-request.html?tab=grant' },
+      ]},
+      { group: '教学管理', items: [
+        { id: 'student-list', label: '学员管理', href: 'admin/student-list.html' },
+        { id: 'teacher-list', label: '教师管理', href: 'admin/teacher-list.html' },
+      ]},
+      { group: '资源中心', items: [
+        { id: 'wordbook-list', label: '词库管理', href: 'resource/wordbook-list.html' },
       ]},
     ],
     agent: [
@@ -74,6 +103,8 @@ const Proto = (() => {
 
   const ROLE_INFO = {
     admin: { name: '张敏（机构管理员）', org: '启航英语 · 城东校区', avatar: '张', cls: '' },
+    staff: { name: '陈静（教务负责人）', org: '启航英语 · 城东校区', avatar: '陈', cls: 'b' },
+    ops: { name: '王敏（教学资源管理员）', org: '启航英语 · 城东校区', avatar: '王', cls: 'c' },
     teacher: { name: '李婉（教师）', org: '启航英语 · 城东校区', avatar: '李', cls: 'g' },
     agent: { name: '王磊（招生代理）', org: '启航英语 · 城东校区', avatar: '王', cls: 'a' },
   };
@@ -128,7 +159,10 @@ const Proto = (() => {
   }
 
   function roleName(role) {
-    return { admin: '老板/教务', teacher: '教师', agent: '代理', parent: '家长' }[role] || role;
+    return {
+      admin: '老板/机构管理', staff: '教务负责人', ops: '管理员',
+      teacher: '教师', agent: '代理', parent: '家长'
+    }[role] || role;
   }
 
   /* ---------------- 通用工具 ---------------- */

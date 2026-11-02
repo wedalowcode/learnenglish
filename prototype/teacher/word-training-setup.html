@@ -11,7 +11,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar" id="topbar"></header>
-    <main class="content">
+    <main class="content" id="page">
 
       <div class="page-head">
         <div>
@@ -104,6 +104,14 @@ let studentId = Q.get('student') || 'S2026001';
 let courseId = Q.get('course') || '';        // 课程上下文：从课程工作台进入时携带
 let selected = null;
 
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+/* 以学员的负责教师身份进入页面：词库授权只对自己的学员开放 */
+(function initSession() {
+  const stu = Store.student(studentId);
+  if (stu) Store.setSession({ role: 'teacher', operatorName: stu.teacherName || '李婉', teacherId: stu.teacher || 'T001' });
+})();
+
 const STATUS_TAG = {
   '未开始': 'tag-slate', '进行中': 'tag-blue', '已完成': 'tag-green', '已中断': 'tag-amber', '已取消': 'tag-slate'
 };
@@ -139,26 +147,39 @@ function bookStat(bookId) {
 }
 
 function render() {
-  /* 只列「启用且真的有关联单词」的词库：批量导入进来的词库会直接出现在这里 */
-  const books = Store.wordbooks()
+  /* 词库来源 = 该学员已授权的词库（授权由管理员开通或审核申请产生） */
+  const all = Store.teachingWordbooks(studentId)
     .filter(b => b.status === '启用')
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  Proto.renderRows('rows', books, b => {
-    const has = b.wordCount > 0;
-    const s = has ? bookStat(b.id) : { trained: 0, mastered: 0, review: 0 };
-    const dis = has ? '' : 'style="opacity:.55;cursor:not-allowed"';
-    return `<tr ${has ? `onclick="pick('${b.id}')"` : `onclick="Proto.toast('这个词库还没有单词，先到资源中心导入词表','warn')"`} style="cursor:pointer" ${dis}>
-      <td><input type="radio" name="book" ${selected === b.id ? 'checked' : ''} ${has ? '' : 'disabled'}
-        onclick="event.stopPropagation();${has ? `pick('${b.id}')` : ''}"></td>
-      <td class="strong">${b.name}${b.sourceFile ? `<div class="small muted">${b.sourceFile}</div>` : ''}</td>
-      <td class="small">${[b.bookVersion, b.grade, b.term].filter(Boolean).join(' / ') || '<span class="muted">未指定</span>'}</td>
-      <td class="right mono">${b.wordCount}</td>
-      <td class="right mono">${has ? s.trained : '—'}</td>
-      <td class="right mono" style="color:var(--success)">${has ? s.mastered : '—'}</td>
-      <td class="right mono" style="color:var(--warning)">${has ? s.review : '—'}</td>
-      <td>${has ? `<span class="tag tag-green">启用</span>` : `<span class="tag tag-slate">空词库</span>`}</td>
-    </tr>`;
-  }, 12);
+  const totalEnabled = Store.wordbooks().filter(b => b.status === '启用').length;
+
+  if (!all.length) {
+    document.getElementById('rows').innerHTML = `<tr><td colspan="8">
+      <div class="empty"><div class="e-ico">▤</div>
+        <p>学员「<b>${esc(Store.student(studentId).name)}</b>」还没有任何词库授权，无法开始训练。<br>
+          <span class="small muted">全机构共有 ${totalEnabled} 个启用词库；请到
+          <a class="btn-link" href="demand-center.html?tab=wbreq">接单中心 · 词库申请</a> 提交申请，
+          管理员审核通过后词库会出现在这里。</span></p></div></td></tr>`;
+    document.getElementById('startBtn').disabled = true;
+    document.getElementById('selInfo').textContent = '未选择词库';
+  } else {
+    Proto.renderRows('rows', all, b => {
+      const s = bookStat(b.id);
+      return `<tr onclick="pick('${b.id}')" style="cursor:pointer">
+        <td><input type="radio" name="book" ${selected === b.id ? 'checked' : ''}
+          onclick="event.stopPropagation();pick('${b.id}')"></td>
+        <td class="strong">${b.name}${b.sourceFile ? `<div class="small muted">${b.sourceFile}</div>` : ''}</td>
+        <td class="small">${[b.bookVersion, b.grade, b.term].filter(Boolean).join(' / ') || '<span class="muted">未指定</span>'}</td>
+        <td class="right mono">${b.wordCount}</td>
+        <td class="right mono">${s.trained}</td>
+        <td class="right mono" style="color:var(--success)">${s.mastered}</td>
+        <td class="right mono" style="color:var(--warning)">${s.review}</td>
+        <td><span class="tag tag-green">已授权</span></td>
+      </tr>`;
+    }, 8);
+    document.getElementById('wbNote') && (document.getElementById('wbNote').textContent =
+      `该学员已获授权 ${all.length} 个词库（全机构启用 ${totalEnabled} 个）；需要新词库请到接单中心提交申请。`);
+  }
 
   renderResume();
   renderTasks();

@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>需求详情</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; }
+  .info-item { display: flex; gap: 10px; font-size: 13px; padding: 5px 0; border-bottom: 1px dashed var(--border); }
+  .info-item .k { color: var(--text-3); flex: 0 0 92px; }
+  .info-item .v { color: var(--text); flex: 1; word-break: break-word; }
+  .need-tag {
+    display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 4px;
+    background: var(--primary-soft); color: var(--primary-dark); margin: 1px 3px 1px 0;
+  }
+  .timeline { position: relative; padding-left: 18px; }
+  .timeline::before {
+    content: ''; position: absolute; left: 5px; top: 6px; bottom: 6px;
+    width: 1px; background: var(--border-2);
+  }
+  .tl-item { position: relative; padding: 0 0 14px 0; font-size: 12.5px; }
+  .tl-item::before {
+    content: ''; position: absolute; left: -17px; top: 5px; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 2px #fff;
+  }
+  .tl-item .tl-at { color: var(--text-3); font-size: 11.5px; }
+  .tl-item .tl-act { font-weight: 600; color: var(--text); margin-right: 6px; }
+  .resp-row td { vertical-align: top; }
+  .check-line { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; padding: 5px 0; border-bottom: 1px dashed var(--border); }
+  .check-line .cl-label { flex: 1; }
+  .check-line .cl-val { color: var(--text-3); font-size: 11.5px; }
+  .nowrap-cell { white-space: nowrap; }
+  .score-badge {
+    display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px;
+    background: var(--success-soft); color: var(--success); border-radius: 4px; padding: 1px 6px;
+  }
+  .score-badge.warn { background: var(--warning-soft); color: #b45309; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content" id="page"></main>
+  </div>
+</div>
+
+<div class="mask" id="confirmModal">
+  <div class="modal" style="width:640px">
+    <div class="modal-head">
+      <div class="modal-title" id="cfTitle">确认为最终教师</div>
+      <button class="modal-close" onclick="Proto.closeModal('confirmModal')">×</button>
+    </div>
+    <div class="modal-body" style="max-height:70vh;overflow:auto">
+      <div class="alert alert-info mb12"><span class="ico">i</span>
+        <div>确认只是<b>决定人选</b>：需求会进入「待管理员分配」，由管理员正式建立师生负责关系。
+          教务确认不会直接改变学员的当前教师。</div></div>
+      <div id="cfTeacher" class="mb12"></div>
+      <div id="cfChecks"></div>
+      <div class="field mt12"><label>确认理由 <span class="req">*</span></label>
+        <textarea class="textarea" id="cfReason" placeholder="如：该教师带过同年级学员，可授课时间与家长要求完全一致"></textarea></div>
+      <div id="cfErr"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('confirmModal')">取消</button>
+      <button class="btn btn-primary" onclick="doConfirm()">确认并生成待分配任务</button>
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="revokeModal">
+  <div class="modal" style="width:520px">
+    <div class="modal-head">
+      <div class="modal-title">撤销本次确认</div>
+      <button class="modal-close" onclick="Proto.closeModal('revokeModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-warn mb12"><span class="ico">!</span>
+        <div>撤销后需求回到「待教务确认」，可以重新选择教师。
+          <b>原有响应与确认历史全部保留</b>，只是在操作流水里多一条撤销记录。</div></div>
+      <div class="field"><label>撤销原因 <span class="req">*</span></label>
+        <textarea class="textarea" id="rvReason" placeholder="如：教师临时告知 12 月要考试，无法保证课时"></textarea></div>
+      <div id="rvErr"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('revokeModal')">取消</button>
+      <button class="btn btn-danger" onclick="doRevoke()">确认撤销</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const Q = new URLSearchParams(location.search);
+const ROLE = Q.get('as') || 'staff';
+const TID = Q.get('id') || '';
+Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: 'demand-list' });
+
+const OPERATOR = { admin: '张敏', staff: '陈静', ops: '王敏', teacher: '李婉' };
+Store.setSession({ role: ROLE, operatorName: OPERATOR[ROLE] || '陈静' });
+const S = Store;
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function render() {
+  const v = S.demandView(TID);
+  const page = document.getElementById('page');
+  if (!v) {
+    page.innerHTML = `<div class="card mt24"><div class="empty"><div class="e-ico">▤</div>
+      <p>需求 ${esc(TID)} 不存在</p>
+      <div class="mt16"><a class="btn btn-primary" href="demand-list.html">返回需求池</a></div></div></div>`;
+    return;
+  }
+  const d = v.demand, s = v.student;
+  const time = (d.expectedSchedule.weekday.join('/') || '未填') + ' ' + d.expectedSchedule.periods.join('/');
+
+  page.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="crumb">教务管理<span class="sep">/</span>
+          <a href="demand-list.html">学员需求池</a><span class="sep">/</span>${d.code}</div>
+        <h1 class="page-title">${esc(s ? s.name : '—')} 的教师需求
+          <span class="tag tag-${S.DEMAND_TONE[d.status]}" style="font-size:12px;vertical-align:middle">${d.status}</span>
+        </h1>
+        <div class="page-sub">${d.code} · ${d.grade} · ${d.textbook} ·
+          ${d.learningNeeds.join(' / ')} · 期望 ${time}
+          ${d.expectedSchedule.weeklyLessons ? '· 每周 ' + d.expectedSchedule.weeklyLessons + ' 次' : ''}</div>
+      </div>
+      <div class="page-actions" id="headActions"></div>
+    </div>
+
+    ${bannerOf(v)}
+
+    <div class="grid g4 mb16" id="miniStats"></div>
+
+    <div class="flex gap16" style="align-items:flex-start">
+      <div style="flex:1 1 auto; min-width:0">
+        <div class="card mb16">
+          <div class="card-head"><div class="card-title">需求信息</div>
+            <span class="small muted">发布人 ${esc(d.publishedBy || '—')} · ${esc(d.publishedAt || '未发布')}</span></div>
+          <div class="card-body">
+            <div class="info-grid">
+              <div class="info-item"><span class="k">学员</span><span class="v">
+                ${esc(s ? s.name : '—')} ${s ? `<a class="btn-link small" href="student-detail.html">档案</a>` : ''}
+                ${s ? `<span class="small muted">${s.id} · 剩余 ${s.remain} 课时</span>` : ''}</span></div>
+              <div class="info-item"><span class="k">当前教师</span><span class="v">
+                ${v.currentTeacher ? esc(v.currentTeacher.name) : '<span class="tag tag-amber nodot">未分配</span>'}
+                ${v.isChange ? '<span class="small" style="color:var(--warning)">（本需求为更换教师）</span>' : ''}</span></div>
+              <div class="info-item"><span class="k">年级</span><span class="v">${esc(d.grade)}</span></div>
+              <div class="info-item"><span class="k">教材</span><span class="v">${esc(d.textbook)}</span></div>
+              <div class="info-item"><span class="k">学习需求</span><span class="v">
+                ${d.learningNeeds.map(n => `<span class="need-tag">${esc(n)}</span>`).join('')}</span></div>
+              <div class="info-item"><span class="k">期望开始</span><span class="v">${esc(d.expectedStartAt || '待定')}</span></div>
+              <div class="info-item" style="grid-column:1/-1"><span class="k">期望上课</span><span class="v">
+                ${esc(d.expectedSchedule.weekday.join('、') || '未填')} ·
+                ${esc(d.expectedSchedule.periods.join('、') || '未填')}
+                ${d.expectedSchedule.weeklyLessons ? `· 每周 ${d.expectedSchedule.weeklyLessons} 次` : ''}</span></div>
+              <div class="info-item" style="grid-column:1/-1"><span class="k">当前学习情况</span><span class="v">
+                ${esc(d.currentLevel || '—')}</span></div>
+              <div class="info-item" style="grid-column:1/-1"><span class="k">特殊要求</span><span class="v">
+                ${esc(d.specialRequirements || '—')}</span></div>
+              <div class="info-item" style="grid-column:1/-1"><span class="k">备注</span><span class="v">
+                ${esc(d.remark || '—')}</span></div>
+              ${d.cancelReason ? `<div class="info-item" style="grid-column:1/-1"><span class="k">取消原因</span>
+                <span class="v" style="color:var(--danger)">${esc(d.cancelReason)}</span></div>` : ''}
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">教师响应（${v.respondedCount} 位响应 / ${v.declinedCount} 位暂不接单）</div>
+            <span class="small muted">响应只是意向，选择后仍需管理员正式分配</span>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr>
+                <th style="width:150px">教师</th><th style="width:132px">擅长</th>
+                <th class="right" style="width:72px">学员</th><th class="right" style="width:88px">本月授课</th>
+                <th style="width:120px">可授课时间</th><th style="width:96px">响应时间</th>
+                <th>教师备注</th><th style="width:84px">结果</th><th style="width:92px">操作</th>
+              </tr></thead>
+              <tbody id="respRows"></tbody>
+            </table>
+          </div>
+          <div class="card-foot small muted" id="respFoot"></div>
+        </div>
+      </div>
+
+      <div style="flex:0 0 340px">
+        <div class="card mb16">
+          <div class="card-head"><div class="card-title">确认结果</div></div>
+          <div class="card-body">
+            ${confirmCardOf(v)}
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div class="card-title">操作流水</div>
+            <span class="small muted">${v.logs.length} 条</span></div>
+          <div class="card-body">
+            <div class="timeline">
+              ${v.logs.map(l => `<div class="tl-item">
+                <div><span class="tl-act">${S.DEMAND_ACTION_LABEL[l.action] || l.action}</span>
+                  <span class="small muted">${esc(l.operatorName)}</span></div>
+                <div class="small" style="color:var(--text-2)">${esc(l.detail)}</div>
+                <div class="tl-at">${esc(l.at)}</div>
+              </div>`).join('') || '<div class="small muted">暂无记录</div>'}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  renderHeadActions(v);
+  renderMiniStats(v);
+  renderResponses(v);
+}
+
+function bannerOf(v) {
+  const d = v.demand;
+  if (d.status === S.DEMAND.DONE) {
+    return `<div class="alert alert-success mb16"><span class="ico">✓</span>
+      <div>该需求已完成分配：管理员 ${esc(d.assignedBy)} 于 ${esc(d.assignedAt)} 正式建立师生负责关系。
+        学员当前教师为 <b>${esc(v.currentTeacher ? v.currentTeacher.name : '—')}</b>。</div></div>`;
+  }
+  if (d.status === S.DEMAND.CANCELLED) {
+    return `<div class="alert alert-danger mb16"><span class="ico">!</span>
+      <div>该需求已取消：${esc(d.cancelReason)}。响应与操作流水全部保留，不会被删除。</div></div>`;
+  }
+  if (d.status === S.DEMAND.ASSIGN) {
+    return `<div class="alert alert-warn mb16"><span class="ico">!</span>
+      <div>教务已确认 <b>${esc(v.selectedTeacher ? v.selectedTeacher.name : '—')}</b>，
+        等待管理员正式分配。这一步<b>还没有建立师生关系</b>，学员当前教师仍是
+        <b>${esc(v.currentTeacher ? v.currentTeacher.name : '未分配')}</b>。</div></div>`;
+  }
+  if (v.isChange) {
+    return `<div class="alert alert-warn mb16"><span class="ico">!</span>
+      <div>该学员当前由 <b>${esc(v.currentTeacher.name)}</b> 负责。
+        本次分配会走<b>教师更换</b>流程：原关系结束、新关系创建，已完成课程的授课教师保持不变。</div></div>`;
+  }
+  if (d.status === S.DEMAND.DRAFT) {
+    return `<div class="alert alert-info mb16"><span class="ico">i</span>
+      <div>这是草稿，还没有发布。发布后才会进入教师接单中心。</div></div>`;
+  }
+  if (d.status === S.DEMAND.OPEN && !v.respondedCount) {
+    return `<div class="alert alert-info mb16"><span class="ico">i</span>
+      <div>需求已发布，暂时还没有教师响应。可以「重新发布通知」再催一次，
+        或在企微群里同步；<b>无人响应不会自动关闭需求</b>。</div></div>`;
+  }
+  return '';
+}
+
+function renderMiniStats(v) {
+  const d = v.demand;
+  const cards = [
+    { l: '响应教师', n: v.respondedCount, s: `暂不接单 ${v.declinedCount} 位` },
+    { l: '有效候选', n: v.validCount, s: '仍可被确认的响应' },
+    { l: '确认教师', n: v.selectedTeacher ? v.selectedTeacher.name : '—',
+      s: d.confirmedBy ? `由 ${d.confirmedBy} 确认` : '尚未确认' },
+    { l: '正式分配', n: d.assignedAt ? d.assignedBy : '—',
+      s: d.assignedAt ? d.assignedAt.slice(0, 16) : '等管理员处理' }
+  ];
+  document.getElementById('miniStats').innerHTML = cards.map(c => `
+    <div class="card stat">
+      <div class="stat-label">${c.l}</div>
+      <div class="stat-value" style="font-size:${String(c.n).length > 4 ? '18px' : '26px'}">${esc(c.n)}</div>
+      <div class="stat-foot">${esc(c.s)}</div>
+    </div>`).join('');
+}
+
+function renderResponses(v) {
+  Proto.renderRows('respRows', v.responses, r => {
+    const t = r.teacher, st = r.stat;
+    const canPick = [S.RESP.YES].indexOf(r.response.status) >= 0 &&
+      [S.DEMAND.OPEN, S.DEMAND.BIDDING, S.DEMAND.CONFIRM].indexOf(v.demand.status) >= 0;
+    return `<tr class="resp-row">
+      <td class="strong">${esc(t ? t.name : r.response.teacherId)}
+        ${t ? `<div class="small muted">${esc(t.code)} · ${esc(t.school)}</div>
+        <div class="small muted">${esc(t.major)}</div>` : ''}
+        ${r.response.status === S.RESP.SELECTED ? '<div class="small" style="color:var(--success)">当前人选</div>' : ''}</td>
+      <td class="small">${esc(t ? (t.grades.join('、') || '未填') : '')}
+        <div class="muted">${esc(t ? (t.textbooks.join('、') || '') : '')}</div></td>
+      <td class="right mono">${st ? st.currentStudents : '—'}</td>
+      <td class="right mono">${st ? st.monthCourses : '—'}<div class="small muted">${st ? st.monthHours + ' 课时' : ''}</div></td>
+      <td class="small">${esc(t ? S.availabilityText(t) : '')}</td>
+      <td class="small muted nowrap-cell">${esc(r.response.respondedAt.slice(5, 16))}</td>
+      <td class="small">${esc(r.response.remark || (r.response.declineReason ? '暂不接单：' + r.response.declineReason : '—'))}</td>
+      <td><span class="tag tag-${S.RESP_TONE[r.response.status]}">${r.response.status}</span></td>
+      <td>${canPick ? `<button class="btn-link" onclick="openConfirm('${r.response.teacherId}')">确认此人</button>`
+        : r.response.status === S.RESP.SELECTED ? '<span class="small muted">已确认</span>'
+          : '<span class="small muted">—</span>'}</td>
+    </tr>`;
+  }, 9, '还没有教师响应。需求发布后，可授课教师会在接单中心看到它');
+
+  document.getElementById('respFoot').innerHTML =
+    '确认前会逐项检查教师合作状态、账号、学员数量、年级与教材匹配、可授课时间；' +
+    '不匹配项不会永久禁止确认，但必须写明理由。';
+}
+
+function confirmCardOf(v) {
+  const d = v.demand;
+  if (d.status === S.DEMAND.DONE) {
+    return `<div class="desc g1">
+      <div class="info-item"><span class="k">最终教师</span><span class="v">${esc(v.selectedTeacher ? v.selectedTeacher.name : '—')}</span></div>
+      <div class="info-item"><span class="k">确认人</span><span class="v">${esc(d.confirmedBy)} · ${esc(d.confirmedAt)}</span></div>
+      <div class="info-item"><span class="k">确认理由</span><span class="v">${esc(d.confirmReason)}</span></div>
+      <div class="info-item"><span class="k">分配人</span><span class="v">${esc(d.assignedBy)} · ${esc(d.assignedAt)}</span></div>
+    </div>`;
+  }
+  if (d.status === S.DEMAND.ASSIGN) {
+    return `<div class="info-item"><span class="k">确认教师</span><span class="v strong">${esc(v.selectedTeacher ? v.selectedTeacher.name : '—')}</span></div>
+      <div class="info-item"><span class="k">确认人</span><span class="v">${esc(d.confirmedBy)} · ${esc(d.confirmedAt)}</span></div>
+      <div class="info-item"><span class="k">确认理由</span><span class="v small">${esc(d.confirmReason)}</span></div>
+      <div class="mt12 flex gap8">
+        ${S.can('demand.confirm') ? `<button class="btn btn-sm" onclick="openRevoke()">撤销确认</button>` : ''}
+        ${S.can('student.assignFinal')
+          ? `<a class="btn btn-sm btn-primary" href="assign-task.html?as=${ROLE}&id=${d.id}">去正式分配</a>`
+          : `<span class="small muted">等待管理员正式分配</span>`}
+      </div>`;
+  }
+  return `<div class="small muted" style="line-height:1.8">
+    尚未确认最终教师。<br>
+    在左侧响应列表中比较教师能力与时间安排，点「确认此人」填写理由后，
+    需求进入「待管理员分配」。</div>`;
+}
+
+function renderHeadActions(v) {
+  const d = v.demand;
+  const out = [`<a class="btn" href="demand-list.html">返回列表</a>`];
+  if (d.status === S.DEMAND.DRAFT && S.can('demand.publish')) {
+    out.push(`<button class="btn btn-primary" onclick="doPublish()">发布需求</button>`);
+  }
+  if ((d.status === S.DEMAND.OPEN || d.status === S.DEMAND.BIDDING) && S.can('demand.publish')) {
+    out.push(`<button class="btn" onclick="doPublish()">重新发布通知</button>`);
+  }
+  if ((d.status === S.DEMAND.OPEN || d.status === S.DEMAND.BIDDING) && S.can('demand.confirm')) {
+    out.push(`<button class="btn btn-primary" onclick="doStartConfirm()"
+      ${v.validCount ? '' : 'disabled title="还没有教师响应"'}>开始确认</button>`);
+  }
+  document.getElementById('headActions').innerHTML = out.join('');
+}
+
+function doPublish() {
+  try {
+    S.publishDemand(TID, {});
+    Proto.toast('已发布 / 已重发通知', 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function doStartConfirm() {
+  try {
+    S.startConfirm(TID);
+    Proto.toast('已进入教务确认环节', 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+let cfTeacherId = '';
+function openConfirm(teacherId) {
+  cfTeacherId = teacherId;
+  const chk = S.confirmCheck(TID, teacherId);
+  if (!chk) return;
+  document.getElementById('cfTitle').textContent = '确认为最终教师：' + chk.teacher.name;
+  document.getElementById('cfTeacher').innerHTML =
+    `<div class="card" style="box-shadow:none"><div class="card-body">
+      <div class="flex aic gap8 mb8"><b style="font-size:14px">${esc(chk.teacher.name)}</b>
+        <span class="tag tag-${S.COOP_TONE[chk.teacher.cooperationStatus]}">${chk.teacher.cooperationStatus}</span>
+        <span class="small muted">${esc(chk.teacher.school)} · ${esc(chk.teacher.major)}</span></div>
+      <div class="small muted">擅长 ${esc(chk.teacher.grades.join('、'))} · ${esc(chk.teacher.textbooks.join('、'))} ·
+        可授课时间 ${esc(S.availabilityText(chk.teacher))}</div>
+    </div></div>`;
+  document.getElementById('cfChecks').innerHTML = chk.items.map(i => `
+    <div class="check-line">
+      <span style="color:${i.ok ? 'var(--success)' : (i.blocking ? 'var(--danger)' : 'var(--warning)')}">
+        ${i.ok ? '✓' : (i.blocking ? '✗' : '!')}</span>
+      <div class="cl-label">${esc(i.label)}
+        ${!i.ok && i.hint ? `<div class="small" style="color:${i.blocking ? 'var(--danger)' : 'var(--warning)'}">${esc(i.hint)}</div>` : ''}</div>
+      <span class="cl-val">${esc(i.value)}</span>
+    </div>`).join('');
+  document.getElementById('cfErr').innerHTML = '';
+  document.getElementById('cfReason').value = '';
+  document.getElementById('cfReason').placeholder = chk.needReason
+    ? '该教师有 ' + chk.advisory.length + ' 项条件不匹配，请说明为什么仍然选择他/她'
+    : '如：该教师带过同年级学员，可授课时间与家长要求完全一致';
+  Proto.openModal('confirmModal');
+}
+
+function doConfirm() {
+  const reason = document.getElementById('cfReason').value.trim();
+  const err = document.getElementById('cfErr');
+  try {
+    S.confirmDemand(TID, cfTeacherId, { reason: reason });
+    Proto.closeModal('confirmModal');
+    Proto.toast('已确认最终教师，需求进入待管理员分配', 'ok');
+    render();
+  } catch (e) {
+    err.innerHTML = `<div class="alert alert-danger mt12">${esc(e.message)}</div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+function openRevoke() {
+  document.getElementById('rvReason').value = '';
+  document.getElementById('rvErr').innerHTML = '';
+  Proto.openModal('revokeModal');
+}
+function doRevoke() {
+  const reason = document.getElementById('rvReason').value.trim();
+  try {
+    S.revokeConfirm(TID, { reason: reason });
+    Proto.closeModal('revokeModal');
+    Proto.toast('已撤销确认，需求回到待教务确认', 'ok');
+    render();
+  } catch (e) {
+    document.getElementById('rvErr').innerHTML = `<div class="alert alert-danger mt12">${esc(e.message)}</div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+render();
+</script>
+</body>
+</html>
