@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>课程工作台</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .cw-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .cw-stu { font-size:22px; font-weight:700; letter-spacing:-.2px; }
+  .cw-meta { color:var(--text-2); font-size:13px; margin-top:6px; display:flex; gap:14px; flex-wrap:wrap; }
+  .cw-chips { display:flex; gap:8px; flex-wrap:wrap; margin:14px 0 18px; }
+  .cw-chip { border:1px solid var(--line); background:var(--surface); border-radius:10px; padding:8px 12px;
+    font-size:12.5px; cursor:pointer; line-height:1.5; color:var(--text-2); transition:.15s; }
+  .cw-chip:hover { border-color:var(--primary); color:var(--text); }
+  .cw-chip.on { border-color:var(--primary); background:rgba(59,130,246,.08); color:var(--text); }
+  .cw-chip b { color:var(--text); font-weight:600; }
+  .entry-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+  .entry { border:1px solid var(--line); border-radius:12px; padding:14px 16px; background:var(--surface);
+    display:flex; flex-direction:column; gap:6px; min-height:120px; position:relative; }
+  .entry .e-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .entry .e-name { font-weight:600; font-size:14.5px; }
+  .entry .e-sub { font-size:12.5px; color:var(--text-2); line-height:1.6; flex:1; }
+  .entry .e-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .entry.dim { opacity:.62; }
+  .rec-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+  .rec { border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .rec .r-k { font-size:12px; color:var(--text-2); }
+  .rec .r-v { font-size:20px; font-weight:700; margin-top:4px; }
+  .rec .r-f { font-size:11.5px; color:var(--text-3); margin-top:2px; }
+  .flow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12.5px; }
+  .flow .st { padding:4px 10px; border-radius:999px; border:1px solid var(--line); color:var(--text-2); }
+  .flow .st.on { background:rgba(59,130,246,.10); border-color:var(--primary); color:var(--text); font-weight:600; }
+  .flow .st.ok { background:rgba(34,197,94,.10); border-color:var(--green); color:var(--text); font-weight:600; }
+  .flow .ar { color:var(--text-3); }
+  @media (max-width:1080px){ .entry-grid,.rec-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学工作台<span class="sep">/</span>课程工作台</div>
+          <h1 class="page-title" id="ttl">课程工作台</h1>
+          <div class="page-sub" id="sub">今天是 2026-11-02（周一）</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="workbench.html">今日工作台</a>
+          <a class="btn" id="profileBtn" href="student-profile.html">学员档案</a>
+        </div>
+      </div>
+
+      <div class="cw-chips" id="chips"></div>
+
+      <div class="grid g-2-1" style="align-items:start">
+        <div>
+          <!-- 课程头 -->
+          <div class="card">
+            <div class="card-body">
+              <div class="cw-head">
+                <div>
+                  <div class="cw-stu" id="stuName">—</div>
+                  <div class="cw-meta" id="stuMeta"></div>
+                </div>
+                <div style="text-align:right">
+                  <span class="tag" id="cStatus">—</span>
+                  <div class="small muted" style="margin-top:6px" id="cTime"></div>
+                </div>
+              </div>
+              <div class="divider" style="margin:14px 0"></div>
+              <div class="flow" id="flow"></div>
+            </div>
+          </div>
+
+          <!-- 四个教学入口 -->
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">本节课程</div>
+              <span class="small muted">从这里进入的任何教学行为都会自动归属本节课</span>
+            </div>
+            <div class="card-body">
+              <div class="entry-grid" id="entries"></div>
+            </div>
+          </div>
+
+          <!-- 本节课教学记录 -->
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">本节课教学记录</div>
+              <span class="small muted" id="recHint">实时汇总，不含历史课程</span>
+            </div>
+            <div class="card-body">
+              <div class="rec-grid mb12" id="recGrid"></div>
+              <div class="table-wrap">
+                <table class="table compact">
+                  <thead><tr><th>教学环节</th><th class="right">涉及单词 / 句子</th><th class="right">判断记录</th><th>状态</th><th style="width:150px">操作</th></tr></thead>
+                  <tbody id="recRows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- 教师备注 + 完成 -->
+          <div class="card">
+            <div class="card-head"><div class="card-title">教师备注</div>
+              <span class="small muted">保存后会写入本节课记录</span></div>
+            <div class="card-body">
+              <textarea class="input" id="note" rows="3" placeholder="本节课的整体情况、临时调整、需要教务配合的事项…"></textarea>
+              <div class="divider" style="margin:14px 0"></div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <div class="small muted" id="warn"></div>
+                <div style="display:flex;gap:8px">
+                  <button class="btn" onclick="saveNote()">保存备注</button>
+                  <button class="btn btn-primary" id="finishBtn" onclick="askFinish()">保存并完成本节课</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <!-- 课程状态 & 报告状态 -->
+          <div class="card">
+            <div class="card-head"><div class="card-title">课程与报告</div></div>
+            <div class="card-body">
+              <div class="m-row"><span class="k">课程状态</span><span id="sCourse">—</span></div>
+              <div class="m-row"><span class="k">报告状态</span><span id="sReport">—</span></div>
+              <div class="m-row"><span class="k">课时扣减</span><span id="sDeduct">—</span></div>
+              <div class="divider"></div>
+              <div class="small muted mb12">课程完成后不会立刻对家长公开：需要先提交报告，再点「发布」。</div>
+              <a class="btn btn-block" id="reportBtn" href="javascript:;">填写教学报告</a>
+            </div>
+          </div>
+
+          <!-- 今日其他课程 -->
+          <div class="card">
+            <div class="card-head"><div class="card-title">今日其他课程</div>
+              <a class="btn btn-sm" href="workbench.html">全部</a></div>
+            <div class="card-body tight">
+              <table class="table compact"><tbody id="otherRows"></tbody></table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">未完成内容</div>
+              <span class="tag tag-slate nodot" id="unfBadge">0</span></div>
+            <div class="card-body" id="unfBox">
+              <div class="small muted">本节点没有未完成的教学任务。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 完成课程：未完成内容处理 -->
+<div class="mask" id="finModal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head"><div class="modal-title">结束本节课</div>
+      <button class="modal-close" onclick="Proto.closeModal('finModal')">×</button></div>
+    <div class="modal-body">
+      <div id="finSummary"></div>
+      <div class="divider" style="margin:14px 0"></div>
+      <div class="field">
+        <label class="label">剩余内容怎么处理</label>
+        <label class="radio-row"><input type="radio" name="pol" value="保留" checked>
+          <span><b>保留，下次继续</b><span class="small muted">（默认）任务不结束，下节课接着做</span></span></label>
+        <label class="radio-row"><input type="radio" name="pol" value="结束">
+          <span><b>结束本次任务</b><span class="small muted">已做的记录保留，剩余单词回到待训练</span></span></label>
+        <label class="radio-row"><input type="radio" name="pol" value="取消">
+          <span><b>取消剩余内容</b><span class="small muted">任务标记已取消，不再执行</span></span></label>
+      </div>
+      <div class="field" id="reasonField" style="display:none">
+        <label class="label">处理说明<span class="req">*</span></label>
+        <input class="input" id="finReason" placeholder="例如：本节时间结束 / 学员状态不佳 / 临时调整计划">
+      </div>
+      <div class="alert alert-info" style="margin-top:4px">
+        <span class="ico">i</span>
+        <div>完成后会：写入本节课教学记录快照 → 扣减 1 课时 → 生成教学报告草稿（家长暂不可见）。</div>
+      </div>
+      <div class="alert alert-warn" id="deductWarn" style="display:none"><span class="ico">!</span><div id="deductWarnTxt"></div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('finModal')">再想想</button>
+      <button class="btn btn-primary" onclick="doFinish()">确认完成本节课</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'teacher', active: 'course-workbench' });
+
+const Q = new URLSearchParams(location.search);
+const TEACHER = 'T001';
+const CTAG = { '待上课': 'tag-slate', '授课中': 'tag-blue', '已完成': 'tag-green', '未上课': 'tag-amber', '已取消': 'tag-red' };
+const RTAG = { '未生成': 'tag-slate', '编辑中': 'tag-amber', '已提交': 'tag-blue', '已发布': 'tag-green' };
+
+let courseId = Q.get('course') || '';
+let cur = null;          // 当前课程
+let rec = null;          // 课程教学记录
+
+boot();
+
+function boot() {
+  const today = Store.coursesOfTeacher(TEACHER, Store.TODAY);
+  if (!today.length) {
+    document.getElementById('entries').innerHTML =
+      '<div class="empty" style="grid-column:1/-1">今天没有排课</div>';
+    return;
+  }
+  if (!courseId) {
+    const prefer = today.filter(c => c.status === '授课中')[0]
+      || today.filter(c => c.status === '待上课')[0] || today[0];
+    courseId = prefer.id;
+  }
+  const r = Store.openCourse(courseId);
+  if (!r.ok) {                       // 已完成课程：只读回看
+    cur = r.course; rec = r.record;
+  } else {
+    cur = r.course; rec = r.record;
+  }
+  render();
+}
+
+function render() {
+  const stu = Store.student(cur.studentId);
+  const acc = Store.db.accounts.filter(a => a.student === (stu ? stu.name : ''))[0] || null;
+  const order = acc ? acc.buy : 0;
+  const nth = acc ? acc.used + 1 : 0;
+
+  document.getElementById('ttl').textContent = (stu ? stu.name : '—') + ' · ' + (stu ? stu.grade : '') + ' 的这节课';
+  document.getElementById('sub').textContent =
+    Store.TODAY + '（周一）· ' + cur.start + '—' + cur.end + ' · 一对一'
+    + (order ? ' · 第 ' + nth + ' / ' + order + ' 课时' : '');
+  document.getElementById('profileBtn').href = 'student-profile.html?student=' + cur.studentId;
+
+  document.getElementById('stuName').textContent = stu ? stu.name : cur.student;
+  document.getElementById('stuMeta').innerHTML = [
+    stu ? stu.grade : '', '教师 ' + cur.teacher, '学员编号 ' + cur.studentId,
+    acc ? ('剩余 ' + acc.remain + ' 课时') : '无课时账户',
+    cur.meeting === '已生成' ? '腾讯会议已生成' : '会议未生成'
+  ].filter(Boolean).map(t => `<span>${t}</span>`).join('');
+
+  document.getElementById('cStatus').className = 'tag ' + (CTAG[cur.status] || 'tag-slate');
+  document.getElementById('cStatus').textContent = cur.status;
+  document.getElementById('cTime').textContent =
+    (cur.actualStart ? '实际开始 ' + cur.actualStart : '计划 ' + cur.date + ' ' + cur.start);
+
+  /* 状态流转 */
+  const steps = ['待上课', '授课中', '已完成'];
+  document.getElementById('flow').innerHTML = steps.map((s, i) => {
+    const idx = steps.indexOf(cur.status);
+    const cls = cur.status === s ? (s === '已完成' ? 'st ok' : 'st on') : (idx > i ? 'st ok' : 'st');
+    return `<span class="${cls}">${s}</span>` + (i < 2 ? '<span class="ar">→</span>' : '');
+  }).join('') + (cur.status === '未上课' || cur.status === '已取消'
+    ? `<span class="st">${cur.status}</span>` : '');
+
+  document.getElementById('chips').innerHTML = Store.coursesOfTeacher(TEACHER, Store.TODAY).map(c => {
+    const s = Store.student(c.studentId);
+    return `<div class="cw-chip ${c.id === cur.id ? 'on' : ''}" onclick="pick('${c.id}')">
+      <b>${c.start}</b> ${s ? s.name : c.student} · ${c.status}</div>`;
+  }).join('');
+
+  renderEntries();
+  renderRecord();
+  renderSide();
+}
+
+function pick(id) { location.href = 'course-workbench.html?course=' + id; }
+
+/* ---------- 四个教学入口 ---------- */
+function renderEntries() {
+  const sid = cur.studentId, cid = cur.id;
+  const done = cur.status === '已完成';
+  const dueD = Store.leitnerDueDetail(sid);
+  const p21 = Store.plan21TodaySummary(sid);
+  const task = Store.activeTask(sid);
+  const arts = Store.articleTasksOf(sid).filter(t => Store.isOpen(t.status));
+  const tStat = task ? Store.trainTaskStat(task.id) : null;
+  const hasWords = Store.db.wordbooks.filter(b => b.hasWords).length > 0;
+
+  const cards = [];
+
+  /* 1 单词训练 */
+  if (task && task.phase === '预筛选') {
+    cards.push(card('单词训练', '进行中 · 预筛选',
+      `${task.wordbookName}<br>已预筛 ${Object.keys(task.prescreen || {}).length} / ${task.wordIds.length} 个单词`,
+      done ? '' : `继续预筛 →`, `word-training-prescreen.html?task=${task.id}&course=${cid}`));
+  } else if (task && tStat) {
+    const label = task.status === '已中断' ? '已中断（可恢复）' : '进行中 · ' + task.phase;
+    cards.push(card('单词训练', label,
+      `${task.wordbookName}<br>队列 ${tStat.queue} 个 · 强化 ${tStat.trained} · 最后复习 ${tStat.finaled}`,
+      done ? '' : '继续训练 →', `word-training.html?task=${task.id}&course=${cid}`));
+  } else {
+    cards.push(card('单词训练', '未开始', '选择词库，开始新一轮单词训练' + (hasWords ? '' : '（无可用词库）'),
+      done ? '' : '开始 →', `word-training-setup.html?student=${sid}&course=${cid}`));
+  }
+
+  /* 2 莱特纳复习 */
+  cards.push(card('莱特纳复习',
+    dueD.total ? `今日推荐 ${dueD.total} 个` : '今日无到期',
+    `红盒到期 ${dueD.red.length} · 黄盒到期 ${dueD.yellow.length} · 教师指定 ${dueD.manual.length}`,
+    done ? '' : (dueD.total ? '去复习 →' : '查看 →'),
+    `leitner.html?student=${sid}&course=${cid}`));
+
+  /* 3 21 天复习 */
+  cards.push(card('21 天复习',
+    p21.hasPlan ? `第 ${p21.day} / 21 天` : '暂无进行中计划',
+    p21.hasPlan
+      ? `今日应复习 ${p21.due} 个 · 已完成 ${p21.done} · 剩余 ${p21.remain}`
+        + (p21.overdueTasks ? `<br><span style="color:var(--warning)">逾期 ${p21.overdueTasks} 个节点 / ${p21.overdueWords} 个单词</span>` : '')
+      : '需要先创建记忆计划',
+    done ? '' : '去复习 →', `memory21.html?student=${sid}&course=${cid}`));
+
+  /* 4 文章训练 */
+  if (arts.length) {
+    const a = arts[0], st = Store.articleTaskStat(a.id);
+    cards.push(card('文章训练', '进行中',
+      `《${a.articleName}》<br>${st.done} / ${st.total} 句 · 掌握 ${st.mastered} · 待加强 ${st.weak}`,
+      done ? '' : '继续 →', `article-training.html?task=${a.id}&course=${cid}`));
+  } else {
+    cards.push(card('文章训练', '未开始', '选择文章，逐句听读与教师判定',
+      done ? '' : '开始 →', `article-training.html?student=${sid}&course=${cid}`));
+  }
+
+  document.getElementById('entries').innerHTML = cards.join('');
+}
+
+function card(name, state, sub, action, href) {
+  const tone = state.indexOf('进行中') === 0 ? 'tag-blue'
+    : state.indexOf('已中断') === 0 ? 'tag-amber'
+    : state.indexOf('未开始') === 0 || state.indexOf('今日无') === 0 ? 'tag-slate'
+    : state.indexOf('暂无') === 0 ? 'tag-slate' : 'tag-blue';
+  return `<div class="entry ${action ? '' : 'dim'}">
+    <div class="e-top"><span class="e-name">${name}</span>
+      <span class="tag ${tone} nodot">${state}</span></div>
+    <div class="e-sub">${sub}</div>
+    <div class="e-foot"><span></span>
+      ${action ? `<a class="btn btn-sm btn-primary" href="${href}">${action}</a>` : '<span class="small muted">本节课已结束</span>'}
+    </div>
+  </div>`;
+}
+
+/* ---------- 教学记录 ---------- */
+function renderRecord() {
+  rec = Store.recordOfCourse(cur.id) || rec;
+  const s = rec ? Store.recordView(rec) : null;
+  const grid = [
+    ['单词训练', s ? s.trainWords : 0, '个单词 · ' + (s ? s.trainRecords : 0) + ' 条判断'],
+    ['莱特纳复习', s ? s.leitnerWords : 0, '个单词 · ' + (s ? s.leitnerRecords : 0) + ' 条记录'],
+    ['21 天复习', s ? s.plan21Words : 0, '个单词 · ' + (s ? s.plan21Records : 0) + ' 条记录'],
+    ['文章训练', s ? s.articleCount : 0, '篇 · ' + (s ? s.articleSentences : 0) + ' 句完成']
+  ];
+  document.getElementById('recGrid').innerHTML = grid.map(g =>
+    `<div class="rec"><div class="r-k">${g[0]}</div><div class="r-v">${g[1]}</div><div class="r-f">${g[2]}</div></div>`
+  ).join('');
+
+  const rows = [];
+  const cid = cur.id;
+  Store.db.trainTasks.filter(t => t.courseId === cid).forEach(t => {
+    const st = Store.trainTaskStat(t.id);
+    rows.push(row('单词训练 · ' + t.wordbookName, st.trained + ' / ' + st.queue, st.details,
+      t.status + (t.phase ? ' · ' + t.phase : ''), `word-training.html?task=${t.id}&course=${cid}`, t.status));
+  });
+  Store.db.leitnerTasks.filter(t => t.courseId === cid).forEach(t => {
+    const st = Store.leitnerTaskStat(t.id);
+    rows.push(row('莱特纳复习', st.done + ' / ' + st.total, st.records,
+      t.status, `leitner-review.html?task=${t.id}&course=${cid}`, t.status));
+  });
+  Store.db.plan21Tasks.filter(t => t.courseId === cid && t.wordIds.length).forEach(t => {
+    const st = Store.plan21TaskStat(t.id);
+    rows.push(row('21 天复习 · 第 ' + t.day + ' 天', st.done + ' / ' + st.total, st.records,
+      t.status, `memory21-review.html?task=${t.id}&course=${cid}`, t.status));
+  });
+  Store.db.articleTasks.filter(t => t.courseId === cid).forEach(t => {
+    const st = Store.articleTaskStat(t.id);
+    rows.push(row('文章训练 · 《' + t.articleName + '》', st.done + ' / ' + st.total, st.mastered + ' 掌握 / ' + st.weak + ' 待加强',
+      t.status, `article-training.html?task=${t.id}&course=${cid}`, t.status));
+  });
+
+  document.getElementById('recRows').innerHTML = rows.length ? rows.join('')
+    : '<tr><td colspan="5" class="empty">本节课还没有教学动作。从上面任意入口开始即可。</td></tr>';
+
+  if (rec && rec.snapshot) {
+    document.getElementById('recHint').innerHTML =
+      '完成时快照：掌握 ' + rec.snapshot.mastered + ' · 待加强 ' + rec.snapshot.weak;
+  }
+}
+
+function row(name, prog, cnt, state, href, raw) {
+  const tone = raw === '已完成' ? 'tag-green' : raw === '已中断' ? 'tag-amber'
+    : raw === '已取消' ? 'tag-red' : raw === '进行中' ? 'tag-blue' : 'tag-slate';
+  return `<tr>
+    <td class="strong">${name}</td>
+    <td class="right mono">${prog}</td>
+    <td class="right mono">${cnt}</td>
+    <td><span class="tag ${tone} nodot">${state}</span></td>
+    <td class="ops"><a class="btn-link" href="${href}">${raw === '已完成' ? '查看' : '继续'}</a></td>
+  </tr>`;
+}
+
+/* ---------- 右栏 ---------- */
+function renderSide() {
+  const rp = Store.reportOfCourse(cur.id);
+  document.getElementById('sCourse').innerHTML =
+    `<span class="tag ${CTAG[cur.status]} nodot">${cur.status}</span>`;
+  document.getElementById('sReport').innerHTML = rp
+    ? `<span class="tag ${RTAG[rp.status]} nodot">${rp.status}</span>`
+    : '<span class="tag tag-slate nodot">未生成</span>';
+
+  const ds = cur.deductState || '未扣课';
+  document.getElementById('sDeduct').innerHTML = ds === '已扣课'
+    ? '<span class="tag tag-green nodot">已扣课</span>'
+    : ds === '扣课异常' ? '<span class="tag tag-red nodot">扣课异常</span>'
+    : '<span class="tag tag-slate nodot">未扣课</span>';
+
+  const btn = document.getElementById('reportBtn');
+  if (rp) {
+    btn.href = 'course-report.html?report=' + rp.id;
+    btn.textContent = rp.status === '编辑中' ? '填写教学报告'
+      : rp.status === '已提交' ? '查看 / 发布报告' : '查看已发布报告';
+    btn.className = 'btn btn-block ' + (rp.status === '编辑中' ? 'btn-primary' : '');
+  } else {
+    btn.href = 'javascript:;';
+    btn.textContent = '完成课程后可填写报告';
+    btn.className = 'btn btn-block';
+    btn.onclick = () => Proto.toast('先完成本节课，系统才会生成教学报告', 'warn');
+  }
+
+  const others = Store.coursesOfTeacher(TEACHER, Store.TODAY).filter(c => c.id !== cur.id);
+  document.getElementById('otherRows').innerHTML = others.length ? others.map(c => {
+    const s = Store.student(c.studentId);
+    return `<tr><td class="mono">${c.start}</td>
+      <td>${s ? s.name : c.student}</td>
+      <td><span class="tag ${CTAG[c.status]} nodot">${c.status}</span></td>
+      <td class="ops"><a class="btn-link" href="course-workbench.html?course=${c.id}">进入</a></td></tr>`;
+  }).join('') : '<tr><td class="empty">今天没有其他课程</td></tr>';
+
+  /* 未完成内容 */
+  const unf = Store.courseUnfinished(cur.id);
+  document.getElementById('unfBadge').textContent = unf.total;
+  document.getElementById('unfBox').innerHTML = unf.total ? unf.items.map(it =>
+    `<div class="m-row"><span class="k">${it.label}</span>
+      <span><b class="mono">${it.done}</b> / ${it.total} ${it.unit}</span></div>`).join('')
+    + '<div class="small muted" style="margin-top:8px">剩余内容默认「保留，下次继续」。</div>'
+    : '<div class="small muted">本节课没有未完成的教学任务。</div>';
+
+  document.getElementById('note').value = rec ? (rec.teacherNote || '') : '';
+  document.getElementById('finishBtn').disabled = cur.status === '已完成';
+  document.getElementById('finishBtn').textContent = cur.status === '已完成' ? '本节课已完成' : '保存并完成本节课';
+  document.getElementById('warn').textContent = unf.total
+    ? '还有 ' + unf.total + ' 项教学任务未完成，完成课程时可以选择保留下节课继续'
+    : '所有教学任务都已完成';
+}
+
+/* ---------- 动作 ---------- */
+function saveNote() {
+  const r = Store.recordOfCourse(cur.id);
+  if (!r) { Proto.toast('请先进入课程再保存备注', 'err'); return; }
+  r.teacherNote = document.getElementById('note').value;
+  r.updatedAt = Store.stamp();
+  Store.save();
+  Proto.toast('备注已保存');
+}
+
+function askFinish() {
+  if (cur.status === '已完成') { Proto.toast('本节课已完成', 'warn'); return; }
+  const unf = Store.courseUnfinished(cur.id);
+  document.getElementById('finSummary').innerHTML = unf.total
+    ? `<div class="alert alert-warn"><span class="ico">!</span><div>发现 <b>${unf.total}</b> 项未完成的教学任务：</div></div>`
+      + unf.items.map(it => `<div class="m-row"><span class="k">${it.label}</span>
+          <span>已完成 <b class="mono">${it.done}</b> / ${it.total} ${it.unit}　剩余 <b class="mono" style="color:var(--warning)">${it.remain}</b></span></div>`).join('')
+    : '<div class="alert alert-info"><span class="ico">i</span><div>本节课的教学任务都已完成。</div></div>';
+  document.getElementById('reasonField').style.display = 'none';
+  document.getElementById('finReason').value = '';
+  Proto.openModal('finModal');
+}
+
+['pol'].forEach(() => {});
+document.addEventListener('change', e => {
+  if (e.target.name === 'pol') {
+    document.getElementById('reasonField').style.display = e.target.value === '保留' ? 'none' : 'block';
+  }
+});
+
+function doFinish() {
+  const pol = (document.querySelector('input[name=pol]:checked') || {}).value || '保留';
+  const reason = document.getElementById('finReason').value.trim();
+  if (pol !== '保留' && !reason) { Proto.toast('选择「结束」或「取消」时必须填写处理说明', 'err'); return; }
+  let r;
+  try {
+    r = Store.finishCourse(cur.id, {
+      policy: pol, note: document.getElementById('note').value,
+      reason: reason, by: TEACHER
+    });
+  } catch (e) { Proto.toast(e.message, 'err'); return; }
+  if (!r.ok) { Proto.toast(r.reason, 'err'); return; }
+  Proto.closeModal('finModal');
+  const w = r.warnings && r.warnings.length ? '；' + r.warnings[0] : '';
+  Proto.toast('本节课已完成，教学报告已生成' + w, w ? 'warn' : '');
+  setTimeout(() => location.href = 'course-report.html?report=' + r.report.id, 500);
+}
+</script>
+</body>
+</html>

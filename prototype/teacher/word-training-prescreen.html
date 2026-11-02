@@ -148,6 +148,7 @@
 <script src="../assets/js/store.js"></script>
 <script>
 const params = new URLSearchParams(location.search);
+const courseId = params.get('course') || '';   // 课程上下文
 let task = null, words = [], idx = 0, resultData = null;
 
 function boot() {
@@ -163,9 +164,9 @@ function boot() {
       '任务 ' + tid + ' 不存在或已被重置，请重新选择词库开始新的训练。';
     return;
   }
-  if (task.status !== '预筛选中') {
+  if (task.phase !== '预筛选' || !Store.isOpen(task.status)) {
     // 已经完成预筛：直接去看结果 / 继续训练
-    location.replace('word-training.html?task=' + task.id);
+    location.replace('word-training.html?task=' + task.id + (courseId ? '&course=' + courseId : ''));
     return;
   }
 
@@ -308,11 +309,11 @@ function finishEarly() {
   Proto.confirmBox('结束预筛选',
     `当前已作答 ${done} / ${words.length} 个单词。<br><br>
      提前结束会把<b>未作答的单词保留为「未训练」状态</b>，不进入队列，也不影响后续重新预筛。`,
-    '结束并退出', () => location.href = 'word-training-setup.html?student=' + task.studentId);
+    '结束并退出', () => location.href = 'word-training-setup.html?student=' + task.studentId + (courseId ? '&course=' + courseId : ''));
 }
 
 function goTraining() {
-  location.href = 'word-training.html?task=' + task.id;
+  location.href = 'word-training.html?task=' + task.id + (courseId ? '&course=' + courseId : '');
 }
 
 document.addEventListener('keydown', e => {

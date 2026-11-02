@@ -203,7 +203,7 @@
           </div>
         </div>
         <div>
-          <div class="section-title">数据模型（21 张业务表）</div>
+          <div class="section-title">数据模型（24 张业务表）</div>
           <div class="note-list" style="columns:2;column-gap:18px">
             <div>words 基础单词</div>
             <div>wordbooks 词库</div>
@@ -223,6 +223,9 @@
             <div>flows / accounts 课时流水与账户</div>
             <div>flowReversals 冲正记录</div>
             <div>familyChecks 家庭复习勾选</div>
+            <div><b>courses 课程</b></div>
+            <div><b>courseRecords 课程教学记录</b></div>
+            <div><b>reports 教学报告</b></div>
           </div>
           <div class="alert alert-warn mt16"><span class="ico">!</span>
             <div>各层数据<b>分开存储</b>：基础单词、学员状态、莱特纳、21 天、训练过程、文章训练、财务。
@@ -321,6 +324,88 @@
             <a class="btn btn-sm" href="teacher/article-training.html">④ 文章训练</a>
             <a class="btn btn-sm" href="parent/review-words.html">⑤ 家长端词表</a>
             <a class="btn btn-sm" href="admin/hour-flow.html">⑥ 课时流水</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head">
+      <div class="card-title">第三轮迭代 · 课程工作台与教学闭环
+        <span class="hint">课程成为所有教学行为的上下文 · 状态五态统一 · 报告提交发布两道门</span></div>
+      <div class="flex gap8">
+        <span class="badge-role">存储版本 v4</span>
+        <button class="btn btn-sm" onclick="resetStore()">重置演示数据</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div><b>本轮把「功能闭环」升级为「课程闭环」。</b>教师从<b>课程工作台</b>进入单词训练、莱特纳复习、21 天复习、文章训练，
+          所有判断记录都自动带上 <code>courseId</code>，不需要重复选学员；
+          课程结束由系统汇总成本节课教学记录，教师补评价、提交报告、发布后家长才可见。</div></div>
+
+      <div class="grid g2" style="gap:16px">
+        <div>
+          <div class="section-title">这一轮解决的六个问题</div>
+          <div class="note-list">
+            <div style="margin-bottom:9px"><b>1 · 课程工作台（唯一入口）</b><br>
+              课程头（学员 · 第 N 课时 · 时间 · 状态）→ 四个教学入口（各带真实状态与动作）→ 本节课教学记录实时汇总
+              → 教师备注 → 保存并完成。从任一入口进去，<code>courseId</code> 一路透传，判断记录自动归属本节课。</div>
+            <div style="margin-bottom:9px"><b>2 · 状态只用五个词</b><br>
+              任务型对象统一为 <b>未开始 / 进行中 / 已完成 / 已中断 / 已取消</b>；
+              废除 <code>submitted</code>、<code>interrupted</code> 这类布尔拼装。中断必须写原因，并显示「完成 8 / 20 · 剩余 12」。</div>
+            <div style="margin-bottom:9px"><b>3 · 状态与排期分开</b><br>
+              21 天节点用 <code>status</code> 表达生命周期，用 <code>dateState</code>（今日 / 未到期 / 已逾期 / 休息 / 已完成）表达排期，
+              两个维度互不混写；模块内部阶段另用 <code>phase</code>（预筛选 / 强化训练 / 最后复习）。</div>
+            <div style="margin-bottom:9px"><b>4 · 先看现在，再看过去</b><br>
+              单词学习档案顶部新增「当前学习全景」：当前状态、莱特纳盒位与阶段、21 天进度、最近一次训练，
+              下面才是完整时间轴。</div>
+            <div style="margin-bottom:9px"><b>5 · 教学结果，而不只是做过</b><br>
+              文章逐句新增教师判定「掌握 / 待加强」+ 备注，课程结束汇总「总句数 / 确认掌握 / 待加强」直接进报告；
+              两套复习体系顶部说明「为什么今天要复习这些」。</div>
+            <div><b>6 · 未完成内容与可见性</b><br>
+              课程结束时检测未完成任务，三选一：<b>保留，下次继续（默认）</b> / 结束本次任务 / 取消剩余内容（后两者必填说明）。
+              课程完成后报告为「编辑中」，须提交、再发布，家长才可见。</div>
+          </div>
+        </div>
+        <div>
+          <div class="section-title">端到端验证路径（一节课走完）</div>
+          <div class="note-list">
+            <div style="margin-bottom:10px">
+              <b>① 进课堂</b><br>
+              今日工作台 → 今日课程表「进入课堂」→ 课程工作台自动把课程状态改为<b>授课中</b>，
+              课程头显示学员 · 第 N 课时 · 状态，四个入口都带着 <code>?course=</code>。
+            </div>
+            <div style="margin-bottom:10px">
+              <b>② 做教学</b><br>
+              从「单词训练」入口进去建任务 → 预筛 → 强化训练判断几个词 → 回工作台，
+              「本节课教学记录」四格与明细表立刻出现数字，<b>刷新不变</b>。
+            </div>
+            <div style="margin-bottom:10px">
+              <b>③ 结束课程</b><br>
+              点「保存并完成本节课」→ 弹窗列出未完成内容（例：单词训练 5 / 8）→ 选「保留」→ 确认
+              → 课程 <b>已完成</b>、扣 1 课时并生成流水、自动生成报告（<b>编辑中</b>）。
+            </div>
+            <div style="margin-bottom:10px">
+              <b>④ 写报告</b><br>
+              跳到报告页：左栏是自动汇总，右栏是状态步骤条（未生成 → 编辑中 → 已提交 → 已发布）。
+              三段评价没填齐提交会被拒绝；提交后表单变只读，出现「发布给家长」。
+            </div>
+            <div style="margin-bottom:10px">
+              <b>⑤ 家长可见性</b><br>
+              提交但未发布时，家长端只看到「老师正在整理本节课报告」；点发布后家长端才显示完整内容与逐句判定结果。
+            </div>
+            <div>
+              <b>⑥ 中断与恢复</b><br>
+              莱特纳复习点「提前结束」→ 必须填中断原因 → 卡片显示「已中断 · 完成 x / y · 原因」，可点「恢复本次复习」继续。
+            </div>
+          </div>
+          <div class="flex gap8 mt12" style="flex-wrap:wrap">
+            <a class="btn btn-sm btn-primary" href="teacher/course-workbench.html">课程工作台</a>
+            <a class="btn btn-sm" href="teacher/workbench.html">今日工作台</a>
+            <a class="btn btn-sm" href="teacher/teaching-record.html">教学记录</a>
+            <a class="btn btn-sm" href="parent/report.html">家长报告</a>
           </div>
         </div>
       </div>

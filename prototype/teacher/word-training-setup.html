@@ -99,15 +99,17 @@
 Proto.shell({ role: 'teacher', active: 'word-setup' });
 document.getElementById('backend').textContent = Store.backend;
 
-let studentId = new URLSearchParams(location.search).get('student') || 'S2026001';
+const Q = new URLSearchParams(location.search);
+let studentId = Q.get('student') || 'S2026001';
+let courseId = Q.get('course') || '';        // 课程上下文：从课程工作台进入时携带
 let selected = null;
 
 const STATUS_TAG = {
-  '未开始': 'tag-slate', '预筛选中': 'tag-blue', '强化训练中': 'tag-cyan',
-  '最后一轮复习中': 'tag-purple', '已完成': 'tag-green', '已中断': 'tag-amber', '已取消': 'tag-slate'
+  '未开始': 'tag-slate', '进行中': 'tag-blue', '已完成': 'tag-green', '已中断': 'tag-amber', '已取消': 'tag-slate'
 };
+const qs = (extra) => '?' + [extra, courseId ? 'course=' + courseId : ''].filter(Boolean).join('&');
 
-function switchStudent(id) { location.href = 'word-training-setup.html?student=' + id; }
+function switchStudent(id) { location.href = 'word-training-setup.html' + qs('student=' + id); }
 
 function initStudentSelect() {
   const mine = Store.students().filter(s => s.teacher === 'T001');
@@ -259,8 +261,9 @@ function countReview(t) {
 function start() {
   if (!selected) return;
   try {
-    const t = Store.startTrainTask({ studentId, teacherId: 'T001', wordbookId: selected });
-    location.href = 'word-training-prescreen.html?task=' + t.id;
+    const t = Store.startTrainTask({ studentId, teacherId: 'T001', wordbookId: selected, courseId });
+    if (courseId) Store.linkTask(courseId, 'train', t.id);
+    location.href = 'word-training-prescreen.html' + qs('task=' + t.id);
   } catch (e) {
     Proto.toast(e.message, 'err');
   }

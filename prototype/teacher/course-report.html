@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>教学报告</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .rp-steps { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12.5px; }
+  .rp-steps .st { padding:4px 10px; border-radius:999px; border:1px solid var(--line); color:var(--text-2); }
+  .rp-steps .st.on { background:rgba(59,130,246,.10); border-color:var(--primary); color:var(--text); font-weight:600; }
+  .rp-steps .st.ok { background:rgba(34,197,94,.10); border-color:var(--green); color:var(--text); font-weight:600; }
+  .rp-steps .ar { color:var(--text-3); }
+  .mgrid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+  .m { border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .m .k { font-size:12px; color:var(--text-2); }
+  .m .v { font-size:19px; font-weight:700; margin-top:3px; }
+  textarea.readonly { background:rgba(148,163,184,.10); color:var(--text-2); cursor:not-allowed; }
+  textarea.readonly:focus { outline:none; border-color:var(--line); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学工作台<span class="sep">/</span><a href="course-workbench.html">课程工作台</a><span class="sep">/</span>教学报告</div>
+          <h1 class="page-title" id="ttl">教学报告</h1>
+          <div class="page-sub" id="sub">—</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" id="backBtn" href="course-workbench.html">返回课程</a>
+          <a class="btn" id="profileBtn" href="student-profile.html">学员档案</a>
+        </div>
+      </div>
+
+      <div class="grid g-2-1" style="align-items:start">
+        <div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">本节课教学汇总</div>
+              <span class="small muted" id="sumHint">由课程教学记录自动汇总</span></div>
+            <div class="card-body">
+              <div class="mgrid" id="mgrid"></div>
+              <div class="divider" style="margin:14px 0"></div>
+              <div class="table-wrap">
+                <table class="table compact">
+                  <thead><tr><th>教学环节</th><th class="right">完成情况</th><th class="right">结果</th></tr></thead>
+                  <tbody id="sumRows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">教师评价</div>
+              <span class="small muted">三段都必须填写才能提交</span></div>
+            <div class="card-body">
+              <div class="field">
+                <label class="label">本节表现<span class="req">*</span></label>
+                <textarea class="input" id="f1" rows="3" placeholder="本节完成了什么、孩子的状态、明显进步的地方…"></textarea>
+              </div>
+              <div class="field">
+                <label class="label">待加强内容<span class="req">*</span></label>
+                <textarea class="input" id="f2" rows="3" placeholder="哪些词、哪几句、哪个发音还需要练…"></textarea>
+              </div>
+              <div class="field">
+                <label class="label">下节课建议<span class="req">*</span></label>
+                <textarea class="input" id="f3" rows="3" placeholder="下节课先做什么、再做什么…"></textarea>
+              </div>
+              <div class="alert alert-info"><span class="ico">i</span>
+                <div>报告提交后仍不会对家长公开，需要再点一次「发布」。</div></div>
+              <div class="divider" style="margin:14px 0"></div>
+              <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap" id="btns"></div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">报告状态</div></div>
+            <div class="card-body">
+              <div class="rp-steps mb12" id="steps"></div>
+              <div class="m-row"><span class="k">报告编号</span><span class="mono" id="rid">—</span></div>
+              <div class="m-row"><span class="k">课程</span><span id="rcourse">—</span></div>
+              <div class="m-row"><span class="k">课程状态</span><span id="rstatus">—</span></div>
+              <div class="m-row"><span class="k">提交时间</span><span id="rsub">—</span></div>
+              <div class="m-row"><span class="k">发布时间</span><span id="rpub">—</span></div>
+              <div class="divider"></div>
+              <div class="small muted">家长端只会看到「已发布」的报告；「编辑中 / 已提交」对家长不可见。</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">未完成内容处理</div></div>
+            <div class="card-body" id="unfBox"><div class="small muted">无</div></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'teacher', active: 'course-workbench' });
+
+const Q = new URLSearchParams(location.search);
+const RTAG = { '未生成': 'tag-slate', '编辑中': 'tag-amber', '已提交': 'tag-blue', '已发布': 'tag-green' };
+const CTAG = { '待上课': 'tag-slate', '授课中': 'tag-blue', '已完成': 'tag-green', '未上课': 'tag-amber', '已取消': 'tag-red' };
+
+let rp = null, cur = null, rec = null;
+
+(function init() {
+  const rid = Q.get('report');
+  const cid = Q.get('course');
+  rp = rid ? Store.report(rid) : (cid ? Store.reportOfCourse(cid) : null);
+  if (!rp) {
+    document.getElementById('ttl').textContent = '没有可编辑的报告';
+    document.getElementById('sub').textContent = '请先在课程工作台完成一节课，系统会自动生成报告。';
+    document.getElementById('btns').innerHTML = '<a class="btn btn-primary" href="course-workbench.html">去课程工作台</a>';
+    return;
+  }
+  cur = Store.course(rp.courseId);
+  rec = rp.recordId ? Store.courseRecord(rp.recordId) : Store.recordOfCourse(rp.courseId);
+  render();
+})();
+
+function render() {
+  const stu = Store.student(rp.studentId);
+  document.getElementById('ttl').textContent = (cur ? cur.subject || '本节课' : '本节课') + ' · 教学报告';
+  document.getElementById('sub').textContent =
+    (stu ? stu.name : '') + ' · ' + rp.courseDate + ' · 教师 ' + (cur ? cur.teacher : '')
+    + ' · 报告状态 ' + rp.status;
+  document.getElementById('backBtn').href = 'course-workbench.html?course=' + rp.courseId;
+  document.getElementById('profileBtn').href = 'student-profile.html?student=' + rp.studentId;
+
+  /* 汇总 */
+  const s = rec ? Store.recordView(rec) : null;
+  const snap = s;
+  document.getElementById('mgrid').innerHTML = [
+    ['单词训练', s ? s.trainWords : 0, '个'],
+    ['复习单词', s ? (s.leitnerWords + s.plan21Words) : 0, '个'],
+    ['文章句子', s ? s.articleSentences : 0, '句'],
+    ['掌握 / 待加强', (snap ? snap.mastered : 0) + ' / ' + (snap ? snap.weak : 0), '']
+  ].map(m => `<div class="m"><div class="k">${m[0]}</div><div class="v">${m[1]}<small class="muted" style="font-size:12px"> ${m[2]}</small></div></div>`).join('');
+
+  const rows = [];
+  if (s && s.trainWords) rows.push(`<tr><td class="strong">单词训练</td><td class="right mono">${s.trainWords} 个单词</td><td class="right">${s.trainRecords} 条判断</td></tr>`);
+  if (s && s.leitnerWords) rows.push(`<tr><td class="strong">莱特纳复习</td><td class="right mono">${s.leitnerWords} 个单词</td><td class="right">${s.leitnerRecords} 条记录</td></tr>`);
+  if (s && s.plan21Words) rows.push(`<tr><td class="strong">21 天复习</td><td class="right mono">${s.plan21Words} 个单词</td><td class="right">${s.plan21Records} 条记录</td></tr>`);
+  if (s && s.articleCount) rows.push(`<tr><td class="strong">文章训练</td><td class="right mono">${s.articleSentences} 句</td><td class="right">掌握 ${s.articleMastered} · 待加强 ${s.articleWeak}</td></tr>`);
+  document.getElementById('sumRows').innerHTML = rows.length ? rows.join('')
+    : '<tr><td colspan="3" class="empty">本节课没有产生教学记录</td></tr>';
+
+  /* 表单 */
+  const locked = rp.status === '已提交' || rp.status === '已发布';
+  ['f1', 'f2', 'f3'].forEach((id, i) => {
+    const el = document.getElementById(id);
+    el.value = [rp.content.performance, rp.content.weak, rp.content.next][i] || '';
+    el.readOnly = locked;
+    el.classList.toggle('readonly', locked);
+  });
+
+  /* 状态：未生成 → 编辑中 → 已提交 → 已发布（进入本页时「未生成」必然已越过） */
+  const steps = ['未生成', '编辑中', '已提交', '已发布'];
+  const idx = steps.indexOf(rp.status);
+  document.getElementById('steps').innerHTML = steps.map((s2, i) => {
+    const cls = rp.status === s2 ? (s2 === '已发布' ? 'st ok' : 'st on') : (idx > i ? 'st ok' : 'st');
+    return `<span class="${cls}">${s2}</span>` + (i < steps.length - 1 ? '<span class="ar">→</span>' : '');
+  }).join('');
+
+  document.getElementById('rid').textContent = rp.id;
+  document.getElementById('rcourse').innerHTML = cur
+    ? `<a class="btn-link" href="course-workbench.html?course=${cur.id}">${cur.date} ${cur.start}</a>` : '—';
+  document.getElementById('rstatus').innerHTML = cur
+    ? `<span class="tag ${CTAG[cur.status]} nodot">${cur.status}</span>` : '—';
+  document.getElementById('rsub').textContent = rp.submittedAt || '—';
+  document.getElementById('rpub').textContent = rp.publishedAt || '—';
+
+  /* 按钮 */
+  const btns = [];
+  if (rp.status === '编辑中') {
+    btns.push('<button class="btn" onclick="saveDraft()">保存草稿</button>');
+    btns.push('<button class="btn btn-primary" onclick="doSubmit()">提交报告</button>');
+  } else if (rp.status === '已提交') {
+    btns.push('<button class="btn btn-primary" onclick="doPublish()">发布给家长</button>');
+  } else {
+    btns.push('<a class="btn" href="course-workbench.html?course=' + rp.courseId + '">报告已发布</a>');
+  }
+  document.getElementById('btns').innerHTML = btns.join('');
+
+  /* 未完成处理 */
+  const unf = rec && rec.unfinished ? rec.unfinished : [];
+  document.getElementById('unfBox').innerHTML = unf.length
+    ? `<div class="small mb12">完成课程时选择：<b>${rec.unfinishedPolicy}</b></div>`
+      + unf.map(it => `<div class="m-row"><span class="k">${it.label}</span>
+        <span class="small">${it.done} / ${it.total}　${it.status}</span></div>`).join('')
+    : '<div class="small muted">本节课没有未完成的教学任务。</div>';
+}
+
+function collect() {
+  return {
+    performance: document.getElementById('f1').value.trim(),
+    weak: document.getElementById('f2').value.trim(),
+    next: document.getElementById('f3').value.trim()
+  };
+}
+
+function saveDraft() {
+  try {
+    Store.saveReportDraft(rp.id, collect(), 'T001');
+    Proto.toast('草稿已保存');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+function doSubmit() {
+  try {
+    Store.saveReportDraft(rp.id, collect(), 'T001');
+    const r = Store.submitReport(rp.id, 'T001');
+    if (!r.ok) { Proto.toast(r.reason, 'err'); return; }
+    Proto.toast('报告已提交，确认无误后可以发布给家长');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+function doPublish() {
+  Proto.confirmBox('发布给家长',
+    '发布后家长端立即可见本节课报告与待复习单词，且不能再修改内容。<br><br>确认发布吗？',
+    '确认发布', () => {
+      try {
+        const r = Store.publishReport(rp.id, 'T001');
+        if (!r.ok) { Proto.toast(r.reason, 'err'); return; }
+        Proto.toast('已发布，家长现在可以看到本节课报告');
+        render();
+      } catch (e) { Proto.toast(e.message, 'err'); }
+    });
+}
+</script>
+</body>
+</html>

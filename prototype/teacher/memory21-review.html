@@ -64,6 +64,8 @@
 <script src="../assets/js/store.js"></script>
 <script>
 const q = new URLSearchParams(location.search);
+const courseId = q.get('course') || '';      // 课程上下文：判断记录归属本节课
+const cq = courseId ? '&course=' + courseId : '';
 let task = null, plan = null, list = [], i = 0, revealed = false;
 let fixTarget = null;
 
@@ -179,7 +181,7 @@ function next() { if (i < list.length - 1) { i++; revealed = false; render(); } 
 function ans(v) {
   const id = list[i];
   try {
-    Store.plan21Judge(task.id, id, v, 'T001');
+    Store.plan21Judge(task.id, id, v, 'T001', courseId);
   } catch (e) {
     Proto.toast(e.message, 'err');
     refresh();
@@ -210,7 +212,7 @@ function doFix() {
   if (!picked) { Proto.toast('请选择修正后的结果', 'err'); return; }
   if (!note) { Proto.toast('修正必须填写原因', 'err'); return; }
   try {
-    const r = Store.plan21Correct(task.id, fixTarget, picked.value, note, 'T001');
+    const r = Store.plan21Correct(task.id, fixTarget, picked.value, note, 'T001', courseId);
     Proto.closeModal('fixModal');
     Proto.toast(`已修正：${RESULT_LABEL[r.from]} → ${RESULT_LABEL[r.to]}（已追加修正记录）`, 'ok');
     fixTarget = null;
@@ -230,7 +232,7 @@ function finishEarly() {
 function finishNow() {
   const s = stat();
   if (s.complete) { renderDone(); return; }
-  const r = Store.finish21Task(task.id, { reason: '教师提前结束' });
+  const r = Store.finish21Task(task.id, { reason: '教师提前结束', by: 'T001' });
   if (!r.ok) Proto.toast(r.reason, 'warn');
   renderDone();
 }
@@ -277,8 +279,8 @@ function renderDone() {
         </div>
 
         ${s.complete ? '' : `<div class="alert alert-warn mb12"><span class="ico">!</span>
-          <div>本节点<b>尚未全部完成</b>：剩余 ${s.remain} 个单词仍保留为未完成状态，
-            节点状态为「${task.status === 'miss' ? '漏做' : '今日未完成'}」，可稍后继续。</div></div>`}
+          <div>本节点<b>已中断</b>（状态：${task.status}）：剩余 ${s.remain} 个单词仍保留为未完成状态，
+            中断原因：<b>${task.interruptReason || '—'}</b>，可稍后继续。</div></div>`}
 
         <div class="alert alert-info mb12"><span class="ico">i</span>
           <div>完成度按<b>唯一 wordId</b> 计算，修正记录不会让完成数虚增。

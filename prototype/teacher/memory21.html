@@ -54,6 +54,9 @@
           <div class="card">
             <div class="card-head"><div class="card-title" id="todayTitle">今日复习任务</div>
               <a class="btn btn-sm btn-primary" id="goReview2">开始复习</a></div>
+            <div class="card-body" id="todayReason" style="padding-bottom:0">
+              <div class="small muted">加载中…</div>
+            </div>
             <div class="card-body tight">
               <table class="table compact">
                 <thead><tr><th>单词</th><th>音标</th><th>中文释义</th><th>加入日期</th><th>上次复习</th><th>上次结果</th></tr></thead>
@@ -170,6 +173,8 @@ Proto.shell({ role: 'teacher', active: 'memory21' });
 
 const q = new URLSearchParams(location.search);
 let studentId = q.get('student') || 'S2026001';
+const courseId = new URLSearchParams(location.search).get('course') || '';  // 课程上下文
+const cq = courseId ? '&course=' + courseId : '';
 let planId = q.get('plan') || '';
 let plan = null;
 
@@ -235,8 +240,11 @@ function render() {
 
   document.getElementById('days').innerHTML = p.tasks.map(t => {
     const doneN = Store.plan21TaskStat(t.id).done;
-    const cls = t.status === 'done' ? 'done' : t.status === 'today' ? 'today'
-      : t.status === 'miss' ? 'miss' : t.status === 'rest' ? '' : 'plan';
+    const cls = Store.isDone(t.status) ? 'done'
+      : t.dateState === '今日' ? 'today'
+      : t.dateState === '已逾期' ? 'miss'
+      : t.dateState === '休息' ? '' : 'plan';
+    const clsByStatus = cls;
     return `<div class="day ${cls}" onclick="showNode('${t.id}')">
       <b>第 ${t.day} 天</b>${t.date.slice(5)}
       <div>${t.wordIds.length ? `${doneN} / ${t.wordIds.length}` : '休息'}</div>
@@ -248,15 +256,32 @@ function render() {
   document.getElementById('todayTitle').innerHTML =
     `今日复习任务<span class="hint">第 ${today ? today.day : p.currentDay} 天 · ${Store.TODAY}</span>`;
   const href = today
-    ? `memory21-review.html?task=${today.id}`
+    ? `memory21-review.html?task=${today.id}${cq}`
     : `memory21.html?student=${studentId}&plan=${planId}`;
   ['goReview', 'goReview2', 'goReview3'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.href = href;
   });
-  document.getElementById('todayFoot').textContent = today
-    ? `共 ${today.wordIds.length} 个单词，已完成 ${p.todayDone} 个${today.status === 'done' ? ' · 今日任务已完成' : ''}`
-    : '今天不是计划的复习节点（休息日）';
+  const sm = Store.plan21TodaySummary(studentId);
+  document.getElementById('todayFoot').innerHTML = sm.hasPlan
+    ? `当前：第 <b>${sm.day}</b> / 21 天　·　今日应复习 <b>${sm.due}</b> 个　·　已完成 <b>${sm.done}</b> 个　·　剩余 <b>${sm.remain}</b> 个`
+      + (sm.overdueTasks ? `　·　<span style="color:var(--warning)">历史逾期 ${sm.overdueTasks} 个节点 / ${sm.overdueWords} 个单词</span>` : '')
+    : '暂无进行中的 21 天计划';
+
+  const reasonBox = document.getElementById('todayReason');
+  if (reasonBox) {
+    reasonBox.innerHTML = sm.hasPlan
+      ? `<div class="grid g3">
+          <div><div class="stat-label">当前进度</div><div class="bc-num">第 ${sm.day} <small>/ 21 天</small></div></div>
+          <div><div class="stat-label">今日应复习</div><div class="bc-num" style="color:var(--primary)">${sm.due} <small>个</small></div></div>
+          <div><div class="stat-label">已完成 / 剩余</div><div class="bc-num">${sm.done} <small>/</small> ${sm.remain}</div></div>
+        </div>
+        <div class="alert alert-info mt12"><span class="ico">i</span>
+          <div>今日单词来自计划第 <b>${today ? today.day : sm.day}</b> 天的节点清单（共 ${sm.due} 个），
+            节点完成度按<b>唯一单词</b>计算；计划整体完成率 ${sm.rate}%。
+            ${sm.overdueTasks ? '历史逾期节点不会自动补做，需要教师手动进入补做。' : ''}</div></div>`
+      : '<div class="small muted">创建计划后这里会显示「为什么今天要复习这些词」。</div>';
+  }
 
   Proto.renderRows('todayWords', today ? today.wordIds.map(id => {
     const recs = Store.plan21Records(plan.id, id).sort((a, b) => a.at < b.at ? 1 : -1);
@@ -291,10 +316,8 @@ function render() {
       <td class="right mono">${t.wordIds.length}</td>
       <td class="right mono">${stat.done}</td>
       <td><span class="bar-row" style="width:110px"><span class="bar ${rate === 100 ? 'green' : 'amber'}" style="flex:1"><i style="width:${rate}%"></i></span><span class="val">${rate}%</span></span></td>
-      <td>${t.status === 'done' ? '<span class="tag tag-green">已完成</span>'
-        : t.status === 'miss' ? '<span class="tag tag-red">已逾期</span>'
-        : t.status === 'today' ? '<span class="tag tag-blue">进行中</span>'
-        : '<span class="tag tag-slate">未开始</span>'}</td>
+      <td><span class="tag tag-${Store.statusTone(t.status)}">${t.status}</span>
+        ${t.dateState === '已逾期' ? '<span class="tag tag-red nodot" style="margin-left:4px">已逾期</span>' : ''}</td>
       <td class="small">${recs.length ? ((Store.teacher(recs[0].teacherId) || {}).name || '—') : '—'}</td>
     </tr>`;
   }, 7, '暂无历史复习记录');
@@ -329,7 +352,7 @@ function showNode(taskId) {
   Proto.confirmBox(`第 ${t.day} 天 · ${t.date}`,
     `${t.wordIds.length ? `计划单词 ${t.wordIds.length} 个，已完成 ${stat.done} 个${stat.corrections ? '（含修正 ' + stat.corrections + ' 次）' : ''}` : '休息日，无复习任务'}
      ${words.length ? '<br><br>' + words.join('、') : ''}
-     ${t.wordIds.length && t.date === Store.TODAY ? '<br><br><a class="btn btn-sm btn-primary" href="memory21-review.html?task=' + t.id + '">进入今日复习</a>' : ''}`,
+     ${t.wordIds.length && t.date === Store.TODAY ? '<br><br><a class="btn btn-sm btn-primary" href="memory21-review.html?task=' + t.id + cq + '">进入今日复习</a>' : ''}`,
     '知道了', () => {});
 }
 

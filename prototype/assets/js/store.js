@@ -2,12 +2,13 @@
    统一模拟数据层 Store
    ------------------------------------------------------------
    第一轮：建立学习域唯一数据源。
-   第二轮（本版）加固业务完整性，原则：
-     1. 所有业务校验在 Store 层执行，页面按钮不作为防线。
-     2. 首次判断与误判修正严格分离（judge / correct 两套接口）。
-     3. 历史记录只追加、不覆盖；修正保留原结果、新结果、时间、教师、原因。
-     4. 完成进度一律按「唯一 wordId」计数，不允许用原始记录条数。
-     5. 任何 ok:true 都代表数据已真实写入并已持久化。
+   第二轮：加固业务完整性（judge/correct 分离、唯一 wordId 计数）。
+   第三轮（本版）从「功能闭环」转向「课程闭环」，原则：
+     1. 课程是所有教学行为的上下文：每条判断记录都归属到当时那节课。
+     2. 任务型对象只用一套状态词表：未开始 / 进行中 / 已完成 / 已中断 / 已取消。
+        模块内阶段（预筛选、强化训练、最后复习）放在 phase，不再混进 status。
+     3. 聚合层 courseRecords 只存「关联 + 汇总快照」，不复制教学明细。
+     4. 课程状态与教学报告状态完全分离，报告未发布家长不可见。
    分层存储（互不覆盖）：
      基础单词 words / 词库 wordbooks / 关系 wordbookWords
      学员状态 studentWordStates
@@ -15,6 +16,7 @@
      21 天 plans21 + plan21Tasks + plan21Records
      训练 trainTasks + trainDetails + prescreens
      文章训练 articleTasks + articleTaskDetails
+     课程 courses + courseRecords + reports
      财务 flows + accounts + flowReversals
      家长辅助 familyChecks（不改变正式学习状态）
    依赖：data.js 中的 DB（人员/商品/课程/词库资源等基础演示数据）
@@ -23,9 +25,40 @@
   'use strict';
 
   var W = typeof window !== 'undefined' ? window : globalThis;
-  var KEY = 'ee_proto_store_v3';
-  var VERSION = 3;
+  var KEY = 'ee_proto_store_v4';
+  var VERSION = 4;
   var TODAY = '2026-11-02';
+
+  /* ---------------- 统一状态词表 ----------------
+     所有「任务型对象」（训练任务 / 莱特纳任务 / 21 天节点 / 文章训练 / 课程）
+     共用这五个状态，禁止再用布尔字段拼凑业务状态
+     （例如 已完成 + interrupted:true 这种自相矛盾的组合）。
+     模块内部的阶段（预筛选 / 强化训练 / 最后复习）属于 phase，不属于 status。 */
+  var STATUS = {
+    PENDING: '未开始',
+    ACTIVE: '进行中',
+    DONE: '已完成',
+    INTERRUPTED: '已中断',
+    CANCELLED: '已取消'
+  };
+  var STATUS_TONE = {
+    '未开始': 'slate', '进行中': 'blue', '已完成': 'green', '已中断': 'amber', '已取消': 'red'
+  };
+  /** 允许继续操作的状态（未开始 / 进行中 / 已中断可恢复） */
+  var OPEN_STATUS = [STATUS.PENDING, STATUS.ACTIVE, STATUS.INTERRUPTED];
+  function isActive(s) { return s === STATUS.ACTIVE; }
+  function isOpen(s) { return OPEN_STATUS.indexOf(s) >= 0; }
+  function isDone(s) { return s === STATUS.DONE; }
+  function statusTone(s) { return STATUS_TONE[s] || 'slate'; }
+
+  /* 课程状态（与任务状态分开，因为课程有「授课中」这一业务语义） */
+  var COURSE_STATUS = {
+    PENDING: '待上课', ONGOING: '授课中', DONE: '已完成', MISSED: '未上课', CANCELLED: '已取消'
+  };
+  /* 教学报告状态：课程完成后不会自动对家长公开 */
+  var REPORT_STATUS = {
+    NONE: '未生成', DRAFT: '编辑中', SUBMITTED: '已提交', PUBLISHED: '已发布'
+  };
 
   /* ---------------- 存储适配（三级降级） ---------------- */
   var SS = (function () {
@@ -368,13 +401,99 @@
     var flows = clone(B.flows || []);
     var accounts = clone(B.accounts || []);
 
+    /* 11. 课程：从机构域基础数据接管为可写表，此后课程状态由 Store 维护 */
+    var courses = clone(B.courses || []);
+
+    /* 12. 课程教学记录（聚合层）：只存关联与完成时汇总快照，不复制教学明细 */
+    var courseRecords = [];
+    var reports = [];
+    var CRS = 0, RPS = 0;
+
+    /* 12.1 一节历史课（10-31 已完成）——记录 + 已发布报告，供家长端查看 */
+    (function () {
+      var c = courses.filter(function (x) { return x.id === 'C20261031001'; })[0];
+      if (!c) return;
+      CRS = 1; RPS = 1;
+      courseRecords.push({
+        id: 'CR20261031001', courseId: c.id,
+        studentId: 'S2026001', teacherId: 'T001',
+        planStart: c.date + ' ' + c.start, planEnd: c.date + ' ' + c.end,
+        actualStart: c.date + ' 19:00', actualEnd: c.date + ' 20:02',
+        status: STATUS.DONE,
+        links: { trainTaskIds: [], leitnerTaskIds: [], plan21TaskIds: [], articleTaskIds: [] },
+        snapshot: {
+          courseId: c.id,
+          trainWords: 23, trainRecords: 23,
+          leitnerWords: 8, leitnerRecords: 8,
+          plan21Words: 8, plan21Records: 8,
+          articleCount: 1, articleSentences: 8,
+          articleMastered: 6, articleWeak: 2,
+          mastered: 21, weak: 9, totalActions: 47, empty: false
+        },
+        unfinishedPolicy: '保留', unfinished: [],
+        teacherNote: '本节点读速度提升明显，连读仍需巩固。',
+        reportId: 'RP20261101001',
+        createdAt: c.date + ' 19:00', updatedAt: c.date + ' 20:02'
+      });
+      reports.push({
+        id: 'RP20261101001', courseId: c.id, recordId: 'CR20261031001',
+        studentId: 'S2026001', teacherId: 'T001', courseDate: c.date,
+        title: 'Unit 3 词汇 + 短文精读',
+        status: REPORT_STATUS.PUBLISHED,
+        content: {
+          performance: '本节完成 Unit 3 词汇强化 23 个，短文《My First Day at School》8 句跟读。最后复习 8 个词的发音与拼写明显稳定。',
+          weak: '第 3、6 句连读不自然；question / answer 的重音位置需再练。',
+          next: '下节课先做 8 个待复习单词的莱特纳复习，再进入 Unit 4 新词预筛。'
+        },
+        createdAt: c.date + ' 20:05', submittedAt: c.date + ' 20:12', publishedAt: c.date + ' 20:15',
+        submittedBy: 'T001', publishedBy: 'T001'
+      });
+    })();
+
+    /* 12.2 今天 09:00 那节课（已完成授课，报告仍在编辑中——家长不可见） */
+    (function () {
+      var c = courses.filter(function (x) { return x.id === 'C20261102001'; })[0];
+      if (!c) return;
+      CRS++; RPS++;
+      courseRecords.push({
+        id: 'CR20261102001', courseId: c.id,
+        studentId: 'S2026001', teacherId: 'T001',
+        planStart: c.date + ' ' + c.start, planEnd: c.date + ' ' + c.end,
+        actualStart: c.date + ' 09:00', actualEnd: c.date + ' 10:05',
+        status: STATUS.DONE,
+        links: { trainTaskIds: [], leitnerTaskIds: [], plan21TaskIds: [], articleTaskIds: [] },
+        snapshot: {
+          courseId: c.id,
+          trainWords: 14, trainRecords: 14,
+          leitnerWords: 6, leitnerRecords: 6,
+          plan21Words: 0, plan21Records: 0,
+          articleCount: 0, articleSentences: 0,
+          articleMastered: 0, articleWeak: 0,
+          mastered: 11, weak: 3, totalActions: 20, empty: false
+        },
+        unfinishedPolicy: '保留', unfinished: [],
+        teacherNote: '本节课按计划完成，family / question 两个词反复出错。',
+        reportId: 'RP20261102001',
+        createdAt: c.date + ' 09:00', updatedAt: c.date + ' 10:05'
+      });
+      reports.push({
+        id: 'RP20261102001', courseId: c.id, recordId: 'CR20261102001',
+        studentId: 'S2026001', teacherId: 'T001', courseDate: c.date,
+        title: 'Unit 1 词汇强化（第 2 轮）',
+        status: REPORT_STATUS.DRAFT,
+        content: { performance: '', weak: '', next: '' },
+        createdAt: c.date + ' 10:06', submittedAt: null, publishedAt: null,
+        submittedBy: '', publishedBy: ''
+      });
+    })();
+
     return {
       version: VERSION,
       today: TODAY,
       meta: {
         seq: {
           TR: 0, LT: 0, P21: 0, LS: 20, PR: 0, TD: 0, LO: 0, SW: 40, P21R: 400,
-          AT: ATS, ATD: 0, FV: 0, FC: 0
+          AT: ATS, ATD: 0, FV: 0, FC: 0, CR: CRS, RP: RPS
         },
         builtAt: stamp()
       },
@@ -398,12 +517,135 @@
       plan21Records: plan21Records,
       articleTasks: articleTasks,
       articleTaskDetails: articleTaskDetails,
+      courses: courses,
+      courseRecords: courseRecords,
+      reports: reports,
       flows: flows,
       accounts: accounts,
       flowReversals: [],
       familyChecks: [],
       config: config
     };
+  }
+
+  /* ---------------- 数据规范化 ----------------
+     把任何来源的旧状态收敛到统一词表。buildSeed 与 load 都会跑一遍，
+     保证「内存里不存在第二套状态语义」。
+     旧 → 新 映射：
+       预筛选中 / 强化训练中 / 最后一轮复习中 → 进行中 + phase
+       提前结束 → 已中断（原因保留在 endReason）
+       已完成 + interrupted:true → 已中断（布尔字段直接丢弃）
+       21 天 today / plan / miss / rest → status + dateState 两个独立维度 */
+  function normalizeDb(d) {
+    d.courses = d.courses || [];
+    d.courseRecords = d.courseRecords || [];
+    d.reports = d.reports || [];
+    d.meta = d.meta || { seq: {} };
+    d.meta.seq = d.meta.seq || {};
+
+    var stuByName = {}, teaByName = {};
+    (d.students || []).forEach(function (s) { stuByName[s.name] = s.id; });
+    (d.teachers || []).forEach(function (t) { teaByName[t.name] = t.id; });
+
+    /* 课程 */
+    d.courses.forEach(function (c) {
+      c.studentId = c.studentId || stuByName[c.student] || '';
+      c.teacherId = c.teacherId || teaByName[c.teacher] || '';
+      if (c.status === '待处理') {          // 旧语义：扣课异常，本质是「课上完了但课时没扣成」
+        c.status = COURSE_STATUS.DONE;
+        c.deductState = '扣课异常';
+      }
+      if (!c.deductState) c.deductState = c.deduct === '已扣课' ? '已扣课' : '未扣课';
+      if (c.status === '未上课') c.deductState = '未扣课';
+      if (c.status === '已取消') c.deductState = '未扣课';
+      c.recordId = c.recordId || '';
+    });
+
+    /* 训练任务 */
+    (d.trainTasks || []).forEach(function (t) {
+      var legacy = t.status;
+      if (legacy === '预筛选中') { t.status = STATUS.PENDING; t.phase = '预筛选'; }
+      else if (legacy === '强化训练中') { t.status = STATUS.ACTIVE; t.phase = '强化训练'; }
+      else if (legacy === '最后一轮复习中') { t.status = STATUS.ACTIVE; t.phase = '最后复习'; }
+      else if (legacy === '已中断') { t.status = STATUS.INTERRUPTED; t.phase = t.phase || '强化训练'; }
+      else if (legacy === '已取消') { t.status = STATUS.CANCELLED; t.phase = t.phase || '强化训练'; }
+      else if (legacy === '已完成') { t.status = STATUS.DONE; t.phase = '已提交'; }
+      if (!t.phase) t.phase = '预筛选';
+      if (!t.status) t.status = STATUS.PENDING;
+      delete t.submitted;                    // 由 status 表达，不再保留布尔
+      t.courseId = t.courseId || '';
+    });
+
+    /* 莱特纳任务 */
+    (d.leitnerTasks || []).forEach(function (t) {
+      if (t.status === '已完成' && t.interrupted) t.status = STATUS.INTERRUPTED;
+      if (!t.status || t.status === '进行中') t.status = t.completedAt ? STATUS.DONE : STATUS.ACTIVE;
+      if (t.status === '未完成') t.status = STATUS.ACTIVE;
+      delete t.interrupted;                  // 禁止用布尔字段拼凑业务状态
+      t.courseId = t.courseId || '';
+    });
+
+    /* 21 天节点：status 是生命周期，dateState 是排期，两者不再混用 */
+    (d.plan21Tasks || []).forEach(function (t) {
+      var doneIds = {};
+      (d.plan21Records || []).forEach(function (r) {
+        if (r.taskId === t.id) doneIds[r.wordId] = 1;
+      });
+      var done = Object.keys(doneIds).length;
+      var total = (t.wordIds || []).length;
+      if (t.status === 'done') t.status = STATUS.DONE;
+      else if (t.status === 'rest') t.status = total ? STATUS.PENDING : STATUS.PENDING;
+      else if (t.status === 'miss') t.status = done > 0 ? STATUS.INTERRUPTED : STATUS.PENDING;
+      else if (t.status === 'today') t.status = done > 0 ? STATUS.ACTIVE : STATUS.PENDING;
+      else if (t.status === 'plan') t.status = STATUS.PENDING;
+      if (done >= total && total > 0) t.status = STATUS.DONE;
+      t.dateState = !total ? '休息'
+        : isDone(t.status) ? '已完成'
+        : t.date === TODAY ? '今日'
+        : t.date < TODAY ? '已逾期'
+        : '未到期';
+      t.courseId = t.courseId || '';
+    });
+
+    /* 文章训练 */
+    (d.articleTasks || []).forEach(function (t) {
+      if (t.status === '提前结束') t.status = STATUS.INTERRUPTED;
+      if (!t.status) t.status = STATUS.ACTIVE;
+      t.courseId = t.courseId || '';
+      (d.articleTaskDetails || []).forEach(function (x) {
+        if (x.taskId !== t.id) return;
+        if (x.verdict === undefined) x.verdict = x.teacherConfirm === '通过' ? '掌握' : '';
+        x.verdictLog = x.verdictLog || [];
+      });
+    });
+
+    /* 记录级 courseId：没有归属课程的旧记录保留空串，不做假归属 */
+    ['trainDetails', 'leitnerRecords', 'plan21Records', 'prescreens'].forEach(function (k) {
+      (d[k] || []).forEach(function (r) { if (r.courseId === undefined) r.courseId = ''; });
+    });
+
+    /* 课程记录与报告互指 */
+    var SNAP_KEYS = ['trainWords', 'trainRecords', 'leitnerWords', 'leitnerRecords',
+      'plan21Words', 'plan21Records', 'articleCount', 'articleSentences',
+      'articleMastered', 'articleWeak', 'mastered', 'weak', 'totalActions'];
+    d.courseRecords.forEach(function (r) {
+      r.links = r.links || { trainTaskIds: [], leitnerTaskIds: [], plan21TaskIds: [], articleTaskIds: [] };
+      var c = d.courses.filter(function (x) { return x.id === r.courseId; })[0];
+      if (c) c.recordId = r.id;
+      if (r.reportId) {
+        var rp = d.reports.filter(function (x) { return x.id === r.reportId; })[0];
+        if (rp) rp.recordId = r.id;
+      }
+      /* 旧快照字段不全时补 0，避免页面出现 NaN / undefined */
+      if (r.snapshot) {
+        SNAP_KEYS.forEach(function (k) {
+          if (typeof r.snapshot[k] !== 'number') r.snapshot[k] = 0;
+        });
+        if (r.snapshot.courseId === undefined) r.snapshot.courseId = r.courseId;
+      }
+    });
+
+    return d;
   }
 
   /* ---------------- 载入 / 保存 ---------------- */
@@ -414,10 +656,13 @@
       var raw = SS.getItem(KEY);
       if (raw) {
         var o = JSON.parse(raw);
-        if (o && o.version === VERSION && Array.isArray(o.words) && o.words.length) { db = o; return db; }
+        if (o && o.version === VERSION && Array.isArray(o.words) && o.words.length) {
+          db = normalizeDb(o);
+          return db;
+        }
       }
     } catch (e) { /* 损坏则重建 */ }
-    db = buildSeed();
+    db = normalizeDb(buildSeed());
     save();
     return db;
   }
@@ -427,7 +672,7 @@
   }
 
   function reset() {
-    db = buildSeed();
+    db = normalizeDb(buildSeed());
     save();
     return db;
   }
@@ -497,16 +742,15 @@
   }
 
   /* ---------------- 训练任务 ---------------- */
-  var ACTIVE = ['预筛选中', '强化训练中', '最后一轮复习中', '已中断'];
-
   function trainTask(id) {
     return db.trainTasks.filter(function (t) { return t.id === id; })[0] || null;
   }
 
+  /** 未关闭的任务（未开始 / 进行中 / 已中断可恢复） */
   function activeTask(studentId, bookId) {
     return db.trainTasks.filter(function (t) {
       return t.studentId === studentId
-        && ACTIVE.indexOf(t.status) >= 0
+        && isOpen(t.status)
         && (!bookId || t.wordbookId === bookId);
     }).sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; })[0] || null;
   }
@@ -518,7 +762,7 @@
 
   /**
    * 创建训练任务（进入预筛选阶段）
-   * @param {{studentId,teacherId,wordbookId,rangeWordIds?}} opt
+   * @param {{studentId,teacherId,wordbookId,rangeWordIds?,courseId?}} opt
    */
   function startTrainTask(opt) {
     var bk = wordbook(opt.wordbookId);
@@ -527,17 +771,22 @@
 
     // 同一学员同一词库存在未完成任务时，直接复用，避免出现两个并行任务
     var ex = activeTask(opt.studentId, bk.id);
-    if (ex) return ex;
+    if (ex) {
+      if (opt.courseId && !ex.courseId) ex.courseId = opt.courseId;
+      return ex;
+    }
 
     var ids = opt.rangeWordIds || bk.wordIds.slice();
     var t = {
       id: 'TR' + TODAY.replace(/-/g, '') + seq('TR', 2),
       studentId: opt.studentId,
       teacherId: opt.teacherId || 'T001',
+      courseId: opt.courseId || '',
       wordbookId: bk.id,
       wordbookName: bk.name,
       createdAt: stamp(),
-      status: '预筛选中',
+      status: STATUS.PENDING,     // 统一状态：已创建但还没有任何教学动作
+      phase: '预筛选',             // 模块内阶段（预筛选 / 强化训练 / 最后复习 / 已提交）
       wordIds: ids,              // 本次候选（词库全部/选定范围）
       knownWordIds: [],           // 初筛认识
       queueWordIds: [],           // 进入强化训练
@@ -553,8 +802,7 @@
       pausedAt: null,
       finishedAt: null,
       interruptReason: '',
-      joins: { leitner: [], plan21: [], planIds: [], green: [] },
-      submitted: false
+      joins: { leitner: [], plan21: [], planIds: [], green: [] }
     };
     db.trainTasks.push(t);
     save();
@@ -565,14 +813,18 @@
   function prescreenAnswer(taskId, wordId, known) {
     var t = trainTask(taskId);
     if (!t) throw new Error('任务不存在');
-    if (t.status !== '预筛选中') throw new Error('当前阶段不允许修改预筛选结果');
+    if (t.phase !== '预筛选') throw new Error('当前阶段不允许修改预筛选结果');
+    if (isDone(t.status)) throw new Error('任务已提交，不能修改预筛选结果');
+    if (t.status === STATUS.CANCELLED) throw new Error('任务已取消，不能继续操作');
     var at = stamp();
     t.prescreen[wordId] = { known: !!known, at: at };
+    if (t.status === STATUS.PENDING || t.status === STATUS.INTERRUPTED) t.status = STATUS.ACTIVE;
     // 预筛选记录独立成表（任务级 + 学员级都能追溯）
     db.prescreens.push({
       id: 'PS' + seq('PR', 4),
       taskId: taskId, studentId: t.studentId, wordbookId: t.wordbookId,
-      wordId: wordId, known: !!known, at: at, teacherId: t.teacherId
+      wordId: wordId, known: !!known, at: at, teacherId: t.teacherId,
+      courseId: t.courseId || ''
     });
     setWordState(t.studentId, wordId,
       known ? '初筛认识' : '待强化训练',
@@ -606,7 +858,8 @@
     t.remainWordIds = remain;
     t.screenedCount = known.length + unknown.length;
     t.unscreenedWordIds = unscreened;
-    t.status = '强化训练中';
+    t.status = STATUS.ACTIVE;
+    t.phase = '强化训练';
     t.groupIndex = 0;
     t.wordIndex = 0;
 
@@ -693,15 +946,15 @@
 
   /**
    * 强化训练判断（首次判断专用）
-   * 校验：任务处于强化训练阶段、单词属于本次队列、同任务同词只能一条首次记录
+   * 校验：任务处于「进行中 + 强化训练」、单词属于本次队列、同任务同词只能一条首次记录
    */
-  function trainJudge(taskId, wordId, result, mode, groupIndex) {
+  function trainJudge(taskId, wordId, result, mode, groupIndex, courseId) {
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
-    if (t.status === '已中断') fail('任务已中断，请先恢复训练后再操作');
-    if (t.status === '已取消') fail('任务已取消，不能继续操作');
-    if (t.status !== '强化训练中') fail('当前阶段不允许提交强化训练结果');
-    if (t.submitted || t.status === '已完成') fail('任务已提交，不能修改判断结果');
+    if (isDone(t.status)) fail('任务已提交，不能修改判断结果');
+    if (t.status === STATUS.CANCELLED) fail('任务已取消，不能继续操作');
+    if (t.status === STATUS.INTERRUPTED) fail('任务已中断，请先恢复训练后再操作');
+    if (t.phase !== '强化训练') fail('当前阶段不允许提交强化训练结果（当前：' + t.phase + '）');
 
     if ((t.queueWordIds || []).indexOf(wordId) < 0) fail('该单词不属于本次训练队列，不能提交');
     if (!result || ['yes', 'no', 'mid'].indexOf(result) < 0) fail('判断结果不合法');
@@ -717,6 +970,7 @@
       taskId: taskId, studentId: t.studentId, wordId: wordId,
       groupIndex: groupIndex, mode: mode || t.mode, round: 1,
       result: result, at: at, teacherId: t.teacherId,
+      courseId: courseId || '',
       correction: false
     });
     setWordState(t.studentId, wordId, '待最后复习', { lastTrainAt: at, lastTaskId: taskId });
@@ -728,11 +982,12 @@
    * 误判修正：追加一条新记录，不覆盖原始记录（PRD 11.9）
    * 校验：必须已提交过首次判断；必须填写原因；已提交任务禁止修改
    */
-  function trainCorrect(taskId, wordId, result, note, groupIndex) {
+  function trainCorrect(taskId, wordId, result, note, groupIndex, courseId) {
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
-    if (t.submitted || t.status === '已完成') fail('任务已提交，不能修改判断结果');
-    if (t.status === '已取消') fail('任务已取消，不能修改判断结果');
+    if (isDone(t.status)) fail('任务已提交，不能修改判断结果');
+    if (t.status === STATUS.CANCELLED) fail('任务已取消，不能修改判断结果');
+    if (t.status === STATUS.INTERRUPTED) fail('任务已中断，请先恢复训练后再修正');
     if (!result || ['yes', 'no', 'mid'].indexOf(result) < 0) fail('修正结果不合法');
     if (!isStr(note) || !note.trim()) fail('误判修正必须填写原因');
     if ((t.queueWordIds || []).indexOf(wordId) < 0) fail('该单词不属于本次训练队列');
@@ -755,6 +1010,7 @@
       groupIndex: groupIndex === undefined ? old.groupIndex : groupIndex,
       mode: old.mode, round: round,
       result: result, at: at, teacherId: t.teacherId,
+      courseId: courseId || '',
       correction: true, correctionFrom: old.result,
       originalResult: first.result, correctionNote: note.trim()
     });
@@ -785,25 +1041,36 @@
   function resumeTask(taskId) {
     var t = trainTask(taskId);
     if (!t) return null;
+    if (isDone(t.status)) fail('任务已提交，不能恢复');
+    if (t.status === STATUS.CANCELLED) fail('任务已取消，不能恢复');
     t.pausedAt = null;
     t.resumeCount = (t.resumeCount || 0) + 1;
     t.lastResumeAt = stamp();
-    if (t.status === '已中断') t.status = t.finalIndex > 0 || Object.keys(t.finalResults).length ? '最后一轮复习中' : '强化训练中';
+    if (t.status === STATUS.INTERRUPTED) t.status = STATUS.ACTIVE;  // phase 保持不变
     save();
     return t;
   }
 
-  /** 中途结束：已产生的记录保留，未完成单词仍为待训练 */
+  /**
+   * 中途结束
+   * 状态改为「已中断」（不再出现「已完成 + interrupted:true」这种自相矛盾的数据），
+   * 已产生的记录保留，未完成单词仍为待训练，剩余数量落到 remainWordIds。
+   */
   function endTask(taskId, reason, note) {
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
-    if (t.submitted || t.status === '已完成') fail('任务已提交，不能再改为中断');
-    if (t.status === '已取消') fail('任务已取消，不能再改为中断');
+    if (isDone(t.status)) fail('任务已提交，不能再改为中断');
+    if (t.status === STATUS.CANCELLED) fail('任务已取消，不能再改为中断');
     if (!isStr(reason) || !reason.trim()) fail('中断训练必须填写原因');
-    t.status = '已中断';
-    t.interruptReason = reason;
+    var stat = trainTaskStat(taskId);
+    t.status = STATUS.INTERRUPTED;
+    t.interruptReason = reason.trim();
     t.interruptNote = note || '';
     t.finishedAt = stamp();
+    t.remainWordIds = stat ? (stat.trainedMissing || []).concat(stat.finalMissing || []).filter(function (v, i, a) {
+      return a.indexOf(v) === i;
+    }) : [];
+    t.endStats = stat ? { queue: stat.queue, trained: stat.trained, finaled: stat.finaled } : null;
     // 未完成单词：没有判断结果的一律回到「待强化训练」
     (t.queueWordIds || []).forEach(function (id) {
       if (!t.results[id]) setWordState(t.studentId, id, '待强化训练', { lastTaskId: taskId });
@@ -815,8 +1082,9 @@
   function cancelTask(taskId) {
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
-    if (t.submitted || t.status === '已完成') fail('任务已提交，不能取消');
-    t.status = '已取消';
+    if (isDone(t.status)) fail('任务已提交，不能取消');
+    if (t.status === STATUS.CANCELLED) fail('任务已取消，不能重复取消');
+    t.status = STATUS.CANCELLED;
     t.finishedAt = stamp();
     save();
     return t;
@@ -826,11 +1094,12 @@
   function toFinalStage(taskId) {
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
-    if (t.status === '已中断') return { ok: false, reason: '任务已中断，请先恢复训练', missing: [] };
-    if (t.status === '已完成' || t.submitted) return { ok: false, reason: '任务已提交', missing: [] };
+    if (t.status === STATUS.INTERRUPTED) return { ok: false, reason: '任务已中断，请先恢复训练', missing: [] };
+    if (isDone(t.status)) return { ok: false, reason: '任务已提交', missing: [] };
     var missing = (t.queueWordIds || []).filter(function (id) { return !trainFirstDetail(taskId, id); });
     if (missing.length) return { ok: false, missing: missing, reason: '还有 ' + missing.length + ' 个单词未完成强化训练判断' };
-    t.status = '最后一轮复习中';
+    t.status = STATUS.ACTIVE;
+    t.phase = '最后复习';
     t.finalIndex = 0;
     save();
     return { ok: true, task: t };
@@ -840,12 +1109,13 @@
    * 最后一轮复习判断（首次判断专用）
    * 校验：阶段正确、单词属于本次队列、同词不可重复首次判断
    */
-  function finalJudge(taskId, wordId, result) {
+  function finalJudge(taskId, wordId, result, courseId) {
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
-    if (t.status === '已中断') fail('任务已中断，请先恢复训练后再操作');
-    if (t.status !== '最后一轮复习中') fail('当前阶段不允许提交最后一轮复习结果');
-    if (t.submitted) fail('任务已提交，不能修改判断结果');
+    if (t.status === STATUS.INTERRUPTED) fail('任务已中断，请先恢复训练后再操作');
+    if (t.status === STATUS.CANCELLED) fail('任务已取消，不能继续操作');
+    if (isDone(t.status)) fail('任务已提交，不能修改判断结果');
+    if (t.phase !== '最后复习') fail('当前阶段不允许提交最后一轮复习结果');
     if ((t.queueWordIds || []).indexOf(wordId) < 0) fail('该单词不属于本次训练队列');
     if (!result || ['yes', 'no', 'mid'].indexOf(result) < 0) fail('判断结果不合法');
 
@@ -856,17 +1126,21 @@
     // 最后一轮只能处理已通过强化训练的词
     if (!trainFirstDetail(taskId, wordId)) fail('该单词尚未完成强化训练判断，不能进入最后复习');
 
-    t.finalResults[wordId] = { result: result, at: stamp(), correctedFrom: null, corrections: 0 };
+    t.finalResults[wordId] = {
+      result: result, at: stamp(), correctedFrom: null, corrections: 0,
+      courseId: courseId || ''
+    };
     save();
     return t;
   }
 
   /** 最后一轮复习修正：必填原因，保留原值 */
-  function finalCorrect(taskId, wordId, result, note) {
+  function finalCorrect(taskId, wordId, result, note, courseId) {
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
-    if (t.submitted) fail('任务已提交，不能修改判断结果');
-    if (t.status !== '最后一轮复习中') fail('当前阶段不允许修改最后复习结果');
+    if (isDone(t.status)) fail('任务已提交，不能修改判断结果');
+    if (t.status === STATUS.INTERRUPTED) fail('任务已中断，请先恢复训练后再修正');
+    if (t.phase !== '最后复习') fail('当前阶段不允许修改最后复习结果');
     if (!result || ['yes', 'no', 'mid'].indexOf(result) < 0) fail('修正结果不合法');
     if (!isStr(note) || !note.trim()) fail('修正必须填写原因');
     var old = t.finalResults[wordId];
@@ -876,6 +1150,8 @@
     t.finalResults[wordId] = {
       result: result, at: stamp(), correctedFrom: old.result,
       corrections: (old.corrections || 0) + 1,
+      /* 误判修正继承被修正记录所属的课程，除非显式指定 */
+      courseId: courseId || old.courseId || '',
       correctionLog: (old.correctionLog || []).concat([{
         from: old.result, to: result, note: note.trim(), at: stamp(), by: t.teacherId
       }])
@@ -899,6 +1175,15 @@
   function boxName(boxId) {
     var m = boxMeta(boxId);
     return m ? m.name : boxId;
+  }
+
+  /** 盒子所处阶段序号：红盒 0 → 黄盒 1/2/3 → 绿盒 4 */
+  function boxStage(boxId) {
+    if (boxId === 'red') return 0;
+    var y = db.leitnerConfig.yellow.filter(function (x) { return x.id === boxId; })[0];
+    if (y) return y.seq;
+    if (boxId === 'green') return db.leitnerConfig.yellow.length + 1;
+    return 0;
   }
 
   function leitnerStates(studentId) {
@@ -1088,10 +1373,12 @@
    * 莱特纳单词判断（首次判断专用）
    * 校验：任务存在且进行中、单词属于本任务、同任务同词只能一条首次记录
    */
-  function leitnerJudge(taskId, wordId, result, teacherId) {
+  function leitnerJudge(taskId, wordId, result, teacherId, courseId) {
     var t = leitnerTask(taskId);
     if (!t) fail('复习任务不存在');
-    if (t.status !== '进行中') fail('该复习任务已结束，不能继续提交');
+    if (isDone(t.status)) fail('该复习任务已完成，不能继续提交');
+    if (t.status === STATUS.CANCELLED) fail('该复习任务已取消，不能继续提交');
+    if (t.status === STATUS.INTERRUPTED) fail('该复习任务已中断，请先恢复后再操作');
     if (!result || ['yes', 'no', 'mid'].indexOf(result) < 0) fail('判断结果不合法');
     if (t.wordIds.indexOf(wordId) < 0) fail('该单词不属于本次复习任务，不能提交');
 
@@ -1116,6 +1403,7 @@
       taskId: taskId, studentId: t.studentId, wordId: wordId,
       boxFrom: from, boxTo: calc.to, result: result, nextDue: calc.nextDue,
       at: stamp(), teacherId: teacherId || t.teacherId, applyMode: '按配置',
+      courseId: courseId || '',
       round: 1, correction: false
     });
 
@@ -1133,12 +1421,13 @@
    * 关键：以首次记录里的 boxFrom 为基准重算目标盒子，
    *       而不是在当前（已被推进的）盒子上再推一次，避免盒子被重复推进。
    */
-  function leitnerCorrect(taskId, wordId, result, note, teacherId) {
+  function leitnerCorrect(taskId, wordId, result, note, teacherId, courseId) {
     var t = leitnerTask(taskId);
     if (!t) fail('复习任务不存在');
-    if (!result || ['yes', 'no', 'mid'].indexOf(result) < 0) fail('修正结果不合法');
+    if (t.status === STATUS.CANCELLED) fail('复习任务已取消，不能修正');
     if (!isStr(note) || !note.trim()) fail('修正必须填写原因');
     if (!isStr(teacherId)) fail('修正必须记录操作教师');
+    if (!result || ['yes', 'no', 'mid'].indexOf(result) < 0) fail('修正结果不合法');
 
     var first = leitnerFirstRecord(taskId, wordId);
     if (!first) fail('该单词本轮尚无判断记录，请先做首次判断');
@@ -1169,6 +1458,7 @@
       taskId: taskId, studentId: t.studentId, wordId: wordId,
       boxFrom: first.boxFrom, boxTo: calc.to, result: result, nextDue: calc.nextDue,
       at: stamp(), teacherId: teacherId, applyMode: '修正（按配置重算）',
+      courseId: courseId || '',
       round: round, correction: true,
       correctionFrom: eff.result, correctionNote: note.trim(),
       originalResult: first.result, boxBeforeCorrect: beforeBox
@@ -1186,23 +1476,50 @@
     };
   }
 
-  function finishLeitnerTask(taskId, teacherId) {
+  /**
+   * 结束莱特纳复习任务
+   * 全部单词判完 → 已完成；还有剩余 → 已中断（记录原因与剩余数量），
+   * 不再使用「已完成 + interrupted:true」这种自相矛盾的组合。
+   */
+  function finishLeitnerTask(taskId, teacherId, opt) {
+    opt = opt || {};
     var t = leitnerTask(taskId);
     if (!t) fail('复习任务不存在');
-    if (t.status === '已完成') {
+    if (isDone(t.status)) {
       return { ok: false, reason: '该复习任务已完成，不能重复提交', stat: leitnerTaskStat(taskId) };
     }
+    if (t.status === STATUS.CANCELLED) {
+      return { ok: false, reason: '该复习任务已取消，不能提交', stat: leitnerTaskStat(taskId) };
+    }
     var stat = leitnerTaskStat(taskId);
-    t.status = '已完成';
-    t.completedAt = stamp();
     t.remainWordIds = stat.remainWordIds.slice();
-    t.interrupted = !stat.complete;
     t.stats = {
       total: stat.total, done: stat.done, records: stat.records,
       yes: stat.yes, no: stat.no, mid: stat.mid, corrections: stat.corrections
     };
+    t.completedAt = stamp();
+    t.closedBy = teacherId || t.teacherId;
+    if (stat.complete) {
+      t.status = STATUS.DONE;
+      t.interruptReason = '';
+    } else {
+      if (!isStr(opt.reason) || !opt.reason.trim()) fail('还有 ' + stat.remain + ' 个单词未复习，必须填写中断原因');
+      t.status = STATUS.INTERRUPTED;
+      t.interruptReason = opt.reason.trim();
+    }
     save();
-    return { ok: true, task: t, stat: stat };
+    return { ok: true, task: t, stat: stat, complete: stat.complete };
+  }
+
+  /** 恢复中断的莱特纳任务：状态回到进行中，已判记录不变 */
+  function resumeLeitnerTask(taskId) {
+    var t = leitnerTask(taskId);
+    if (!t) fail('复习任务不存在');
+    if (t.status !== STATUS.INTERRUPTED) fail('只有已中断的复习任务可以恢复');
+    t.status = STATUS.ACTIVE;
+    t.interruptReason = '';
+    save();
+    return t;
   }
 
   function leitnerTask(id) {
@@ -1213,7 +1530,7 @@
    * 创建莱特纳复习任务
    * 校验：单词必须属于该学员的莱特纳体系；去重；拒绝空任务
    */
-  function createLeitnerTask(studentId, wordIds, teacherId, source) {
+  function createLeitnerTask(studentId, wordIds, teacherId, source, courseId) {
     if (!isStr(studentId)) fail('必须指定学员');
     var ids = cleanWordIds(wordIds).filter(function (id) {
       return !!leitnerState(studentId, id);
@@ -1224,12 +1541,14 @@
       id: 'LT' + TODAY.replace(/-/g, '') + seq('LT', 2),
       studentId: studentId,
       teacherId: teacherId || 'T001',
+      courseId: courseId || '',
       wordIds: ids,
       boxes: [],
       source: source || '系统推荐',
       createdAt: stamp(),
-      status: '进行中',
+      status: STATUS.ACTIVE,
       completedAt: null,
+      interruptReason: '',
       remainWordIds: [],
       corrections: 0,
       stats: null
@@ -1265,6 +1584,16 @@
       .sort(function (a, b) { return a.day - b.day; });
   }
   function plan21Task(id) { return db.plan21Tasks.filter(function (t) { return t.id === id; })[0] || null; }
+
+  /** 节点排期状态（与生命周期 status 分开：一个说「做到哪一步」，一个说「该哪天做」） */
+  function nodeDateState(t) {
+    var total = (t.wordIds || []).length;
+    if (!total) return '休息';
+    if (isDone(t.status)) return '已完成';
+    if (t.date === TODAY) return '今日';
+    if (t.date < TODAY) return '已逾期';
+    return '未到期';
+  }
 
   function plan21Today(planId) {
     return plan21Tasks(planId).filter(function (t) { return t.date === TODAY && t.wordIds.length; })[0] || null;
@@ -1312,6 +1641,8 @@
     });
     return {
       taskId: taskId,
+      status: t.status,
+      dateState: t.dateState,
       total: t.wordIds.length,          // 本节点应复习单词数
       done: doneIds.length,             // 已判断的唯一单词数
       remain: t.wordIds.length - doneIds.length,
@@ -1393,7 +1724,9 @@
         id: 'P21T' + seq('P21', 4),
         planId: plan.id, day: d, date: date,
         wordIds: cleanWordIds(raw),   // 节点内不允许 undefined / 重复 ID
-        status: date === TODAY ? 'today' : 'plan',
+        status: STATUS.PENDING,
+        dateState: date === TODAY ? '今日' : date < TODAY ? '已逾期' : '未到期',
+        courseId: opt.courseId || '',
         completedAt: null, remainWordIds: [], teacherId: opt.by || 'T001'
       });
     });
@@ -1418,7 +1751,7 @@
    *   3. 节点必须处于允许操作的状态（已完成节点禁止普通提交）
    *   4. 同一节点同一 wordId 只能有一条首次判断记录，已判断必须走 plan21Correct
    */
-  function plan21Judge(taskId, wordId, result, teacherId) {
+  function plan21Judge(taskId, wordId, result, teacherId, courseId) {
     var t = plan21Task(taskId);
     if (!t) fail('复习节点不存在');
     var plan = plan21(t.planId);
@@ -1428,8 +1761,9 @@
     if (!t.wordIds || !t.wordIds.length) fail('该节点没有需要复习的单词');
     if (t.wordIds.indexOf(wordId) < 0) fail('该单词不属于本次复习节点，不能提交');
 
-    if (t.status === 'done') fail('本节点已完成，如需修改请使用「修正」');
-    if (t.status === 'rest') fail('休息节点不能提交复习结果');
+    if (isDone(t.status)) fail('本节点已完成，如需修改请使用「修正」');
+    if (t.status === STATUS.CANCELLED) fail('本节点已取消，不能继续提交');
+    if (t.dateState === '休息') fail('休息节点不能提交复习结果');
     if (plan.status === '已完成' || plan.status === '已取消') fail('计划已结束，不能继续提交');
 
     if (plan21FirstRecord(taskId, wordId)) {
@@ -1441,20 +1775,22 @@
       id: 'P21R' + seq('P21R', 4),
       taskId: taskId, planId: t.planId, studentId: plan.studentId,
       wordId: wordId, day: t.day, result: result, at: at,
-      teacherId: teacherId || 'T001', round: 1, correction: false
+      teacherId: teacherId || 'T001', round: 1, correction: false,
+      courseId: courseId || ''
     });
 
     // 节点状态按唯一 wordId 数量重算
     var stat = plan21TaskStat(taskId);
     if (stat.complete) {
-      t.status = 'done';
+      t.status = STATUS.DONE;
       t.completedAt = at;
       t.remainWordIds = [];
     } else {
-      t.status = 'today';
+      t.status = STATUS.ACTIVE;
       t.completedAt = null;
       t.remainWordIds = stat.remainWordIds;
     }
+    t.dateState = nodeDateState(t);
     save();
     return t;
   }
@@ -1464,7 +1800,7 @@
    * 只追加新记录，不删除、不覆盖原始记录；原记录的 result 保持原值
    * @param {string} note 修正原因，必填
    */
-  function plan21Correct(taskId, wordId, result, note, teacherId) {
+  function plan21Correct(taskId, wordId, result, note, teacherId, courseId) {
     var t = plan21Task(taskId);
     if (!t) fail('复习节点不存在');
     var plan = plan21(t.planId);
@@ -1492,13 +1828,15 @@
       taskId: taskId, planId: t.planId, studentId: plan.studentId,
       wordId: wordId, day: t.day, result: result, at: at,
       teacherId: teacherId, round: round,
+      courseId: courseId || '',
       correction: true, correctionFrom: eff.result,
       originalResult: first.result, correctionNote: note.trim()
     });
 
     // 修正不改变完成度（唯一 wordId 不变），只刷新节点状态
     var stat = plan21TaskStat(taskId);
-    if (stat.complete) { t.status = 'done'; t.completedAt = t.completedAt || at; t.remainWordIds = []; }
+    if (stat.complete) { t.status = STATUS.DONE; t.completedAt = t.completedAt || at; t.remainWordIds = []; }
+    t.dateState = nodeDateState(t);
     save();
     return { task: t, from: eff.result, to: result, round: round, stat: stat };
   }
@@ -1513,23 +1851,28 @@
     opt = opt || {};
     var stat = plan21TaskStat(taskId);
 
-    if (t.status === 'done' && !opt.reopen) {
+    if (isDone(t.status) && !opt.reopen) {
       return { ok: false, reason: '本节点已完成，不能重复结束', stat: stat, task: t };
+    }
+    if (t.status === STATUS.CANCELLED) {
+      return { ok: false, reason: '本节点已取消，不能结束', stat: stat, task: t };
     }
 
     var at = stamp();
     t.remainWordIds = stat.remainWordIds.slice();
-    t.interrupted = !stat.complete;
     t.finishedAt = at;
+    t.closedBy = opt.by || t.teacherId || '';
     if (stat.complete) {
-      t.status = 'done';
+      t.status = STATUS.DONE;
       t.completedAt = t.completedAt || at;
+      t.interruptReason = '';
     } else {
-      // 未完成：保留剩余单词，按日期决定是漏做还是今日未完成
-      t.status = t.date < TODAY ? 'miss' : 'today';
+      // 未完成即「已中断」：保留剩余单词，逾期与否由 dateState 单独表达
+      t.status = STATUS.INTERRUPTED;
       t.completedAt = null;
-      t.interruptReason = opt.reason || '';
+      t.interruptReason = (opt.reason && opt.reason.trim()) || '本节课程结束，剩余单词下次继续';
     }
+    t.dateState = nodeDateState(t);
     save();
     return { ok: true, task: t, stat: stat, complete: stat.complete };
   }
@@ -1551,13 +1894,16 @@
     opt = opt || {};
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
-    if (t.submitted || t.status === '已完成') {
+    if (isDone(t.status)) {
       return { ok: false, reason: '该训练任务已提交，不能重复提交' };
     }
-    if (t.status === '已中断') {
+    if (t.status === STATUS.CANCELLED) {
+      return { ok: false, reason: '任务已取消，不能提交' };
+    }
+    if (t.status === STATUS.INTERRUPTED) {
       return { ok: false, reason: '任务已中断，请先恢复训练完成后再提交' };
     }
-    if (t.status !== '最后一轮复习中') {
+    if (t.phase !== '最后复习') {
       return { ok: false, reason: '请先完成最后一轮复习再提交' };
     }
 
@@ -1581,8 +1927,8 @@
     // 需要复习的单词 = 不认识 + 暂不确定（PRD 11.7），通过的单词不加入
     var need = cleanWordIds(review.concat(mid));
     t.joins = { leitner: [], plan21: [], planIds: [], green: [] };
-    t.submitted = true;
-    t.status = '已完成';
+    t.status = STATUS.DONE;
+    t.phase = '已提交';
     t.finishedAt = stamp();
 
     var warnings = [];
@@ -1677,8 +2023,32 @@
 
   function articleActiveTask(studentId, articleId) {
     return db.articleTasks.filter(function (t) {
-      return t.studentId === studentId && t.articleId === articleId && t.status === '进行中';
+      return t.studentId === studentId && t.articleId === articleId && isActive(t.status);
     }).sort(function (a, b) { return a.startedAt < b.startedAt ? 1 : -1; })[0] || null;
+  }
+
+  /** 文章任务统计：跟读完成数 / 教师判定掌握 / 待加强 */
+  function articleTaskStat(taskId) {
+    var t = articleTask(taskId);
+    if (!t) return null;
+    var ds = articleTaskDetails(taskId);
+    var read = ds.filter(function (d) { return d.readDone; });
+    var mastered = ds.filter(function (d) { return d.verdict === '掌握'; });
+    var weak = ds.filter(function (d) { return d.verdict === '待加强'; });
+    var judged = ds.filter(function (d) { return d.verdict === '掌握' || d.verdict === '待加强'; });
+    return {
+      taskId: taskId,
+      status: t.status,
+      total: t.totalSentences,
+      done: read.length,          // 已完成跟读（做了什么）
+      remain: t.totalSentences - read.length,
+      mastered: mastered.length,  // 教师确认掌握（学得怎么样）
+      weak: weak.length,
+      judged: judged.length,
+      unjudged: t.totalSentences - judged.length,
+      audioDone: !!t.audioDone,
+      complete: read.length >= t.totalSentences && !!t.audioDone
+    };
   }
 
   /**
@@ -1713,7 +2083,7 @@
       doneSentences: 0,
       evaluation: '',
       note: '',
-      status: '进行中',
+      status: STATUS.ACTIVE,
       endReason: '',
       sentences: sents,
       by: opt.by || '李婉'
@@ -1726,7 +2096,9 @@
         taskId: t.id, studentId: t.studentId,
         sentenceId: s.id, seq: s.seq, en: s.en,
         audioPlayed: false, cnViewed: false, readDone: false,
-        teacherConfirm: '', at: null, teacherId: t.teacherId
+        teacherConfirm: '', verdict: '', verdictNote: '', verdictLog: [],
+        courseId: t.courseId,
+        at: null, teacherId: t.teacherId
       });
     });
     save();
@@ -1740,13 +2112,14 @@
   }
 
   /**
-   * 记录单句操作（播放音频 / 查看中文 / 跟读完成 / 教师确认）
+   * 记录单句操作（播放音频 / 查看中文 / 跟读完成）与教师判定（掌握 / 待加强）
    * 只写文章训练自己的表，绝不触碰单词掌握状态
+   * @param {{audioPlayed?,cnViewed?,readDone?,teacherConfirm?,verdict?,verdictNote?,teacherId?}} patch
    */
   function articleSentenceLog(taskId, sentenceId, patch) {
     var t = articleTask(taskId);
     if (!t) fail('文章训练任务不存在');
-    if (t.status !== '进行中') fail('该训练已结束，不能继续记录');
+    if (!isActive(t.status)) fail('该训练已结束，不能继续记录');
     var d = articleDetail(taskId, sentenceId);
     if (!d) fail('该句子不属于本次训练');
 
@@ -1755,6 +2128,21 @@
       if (patch[k] !== undefined) d[k] = !!patch[k];
     });
     if (patch.teacherConfirm !== undefined) d.teacherConfirm = patch.teacherConfirm;
+
+    /* 教师判定：未训练 / 已练习 / 掌握 / 待加强 —— 只记录判定结果，不改单词档案 */
+    if (patch.verdict !== undefined) {
+      if (['', '掌握', '待加强'].indexOf(patch.verdict) < 0) fail('教师判定只能是「掌握」或「待加强」');
+      if (patch.verdict && d.verdict !== patch.verdict) {
+        d.verdictLog = d.verdictLog || [];
+        d.verdictLog.push({
+          from: d.verdict || '未判定', to: patch.verdict,
+          note: (patch.verdictNote || '').trim(), at: stamp(),
+          by: patch.teacherId || t.teacherId
+        });
+      }
+      d.verdict = patch.verdict;
+    }
+    if (patch.verdictNote !== undefined) d.verdictNote = patch.verdictNote;
     d.at = stamp();
     d.teacherId = patch.teacherId || d.teacherId;
 
@@ -1767,7 +2155,7 @@
   function setArticleAudioDone(taskId, done) {
     var t = articleTask(taskId);
     if (!t) fail('文章训练任务不存在');
-    if (t.status !== '进行中') fail('该训练已结束，不能修改');
+    if (!isActive(t.status)) fail('该训练已结束，不能修改');
     t.audioDone = !!done;
     save();
     return t;
@@ -1775,26 +2163,36 @@
 
   /**
    * 保存/结束文章训练
-   * 提前结束时：已记录句子保留，未完成句子保持未完成，不静默补齐
+   * 全部句子跟读完 + 完整音频完成 → 已完成；否则 → 已中断（原因必填），
+   * 已记录句子保留，未完成句子保持未完成，不静默补齐。
    */
   function finishArticleTask(taskId, opt) {
     opt = opt || {};
     var t = articleTask(taskId);
     if (!t) fail('文章训练任务不存在');
-    if (t.status !== '进行中') {
+    if (!isActive(t.status)) {
       return { ok: false, reason: '该文章训练已结束，不能重复提交', task: t };
     }
-    t.doneSentences = articleTaskDetails(taskId).filter(function (x) { return x.readDone; }).length;
+    var stat = articleTaskStat(taskId);
+    t.doneSentences = stat.done;
     t.evaluation = opt.evaluation || t.evaluation || '';
     t.note = opt.note || t.note || '';
     t.finishedAt = stamp();
-    t.status = t.doneSentences >= t.totalSentences && t.audioDone ? '已完成' : '提前结束';
+    t.closedBy = opt.by || t.teacherId || '';
     t.endReason = opt.endReason || '';
+    if (stat.complete) {
+      t.status = STATUS.DONE;
+    } else {
+      if (!isStr(t.endReason) || !t.endReason.trim()) fail('还有 ' + stat.remain + ' 句未完成，必须填写结束原因');
+      t.status = STATUS.INTERRUPTED;
+    }
     save();
     return {
       ok: true, task: t,
       total: t.totalSentences, done: t.doneSentences,
-      remain: t.totalSentences - t.doneSentences
+      remain: t.totalSentences - t.doneSentences,
+      mastered: stat.mastered, weak: stat.weak,
+      complete: stat.complete
     };
   }
 
@@ -1888,6 +2286,555 @@
     return db.flowReversals.filter(function (r) { return r.flowId === flowId; })
       .sort(function (a, b) { return a.at < b.at ? 1 : -1; });
   }
+
+  /* ---------------- 课程：教师端所有教学行为的上下文 ---------------- */
+  function courses() { return db.courses; }
+  function course(id) { return db.courses.filter(function (c) { return c.id === id; })[0] || null; }
+  function coursesOf(studentId) {
+    return db.courses.filter(function (c) { return c.studentId === studentId; })
+      .sort(function (a, b) { return (a.date + a.start) < (b.date + b.start) ? 1 : -1; });
+  }
+  function coursesOfTeacher(teacherId, date) {
+    return db.courses.filter(function (c) {
+      return (!teacherId || c.teacherId === teacherId) && (!date || c.date === date);
+    }).sort(function (a, b) { return a.start < b.start ? -1 : 1; });
+  }
+  function courseStat(teacherId, date) {
+    var list = coursesOfTeacher(teacherId, date);
+    var by = {};
+    list.forEach(function (c) { by[c.status] = (by[c.status] || 0) + 1; });
+    return {
+      total: list.length, by: by,
+      done: by[COURSE_STATUS.DONE] || 0,
+      pending: by[COURSE_STATUS.PENDING] || 0,
+      ongoing: by[COURSE_STATUS.ONGOING] || 0
+    };
+  }
+
+  function courseRecord(recordId) {
+    return db.courseRecords.filter(function (r) { return r.id === recordId; })[0] || null;
+  }
+  function recordOfCourse(courseId) {
+    return db.courseRecords.filter(function (r) { return r.courseId === courseId; })[0] || null;
+  }
+  function recordsOfTeacher(teacherId) {
+    return db.courseRecords.filter(function (r) { return r.teacherId === teacherId; })
+      .sort(function (a, b) { return a.planStart < b.planStart ? 1 : -1; });
+  }
+
+  /**
+   * 进入课程工作台：课程从「待上课」变为「授课中」，同时建立（或复用）课程教学记录
+   * 进入课堂本身不扣课时——扣课时发生在完成课程时
+   */
+  function openCourse(courseId, opt) {
+    opt = opt || {};
+    var c = course(courseId);
+    if (!c) fail('课程不存在');
+    if (c.status === COURSE_STATUS.CANCELLED) fail('该课程已取消，不能进入');
+    if (c.status === COURSE_STATUS.MISSED) fail('该课程标记为未上课，不能进入授课');
+    if (c.status === COURSE_STATUS.DONE && !opt.allowDone) {
+      var done = recordOfCourse(courseId);
+      return { ok: false, reason: '本节课已完成', course: c, record: done, report: done ? report(done.reportId) : null };
+    }
+
+    if (c.status === COURSE_STATUS.PENDING) {
+      c.status = COURSE_STATUS.ONGOING;
+      c.actualStart = stamp();
+    }
+
+    var r = recordOfCourse(courseId);
+    if (!r) {
+      r = {
+        id: 'CR' + courseId.replace(/\D/g, '').slice(0, 8) + seq('CR', 2),
+        courseId: c.id, studentId: c.studentId, teacherId: c.teacherId,
+        planStart: c.date + ' ' + c.start, planEnd: c.date + ' ' + c.end,
+        actualStart: c.actualStart || stamp(), actualEnd: null,
+        status: STATUS.ACTIVE,
+        links: { trainTaskIds: [], leitnerTaskIds: [], plan21TaskIds: [], articleTaskIds: [] },
+        snapshot: null, unfinishedPolicy: '', unfinished: [],
+        teacherNote: '', reportId: '',
+        createdAt: stamp(), updatedAt: stamp()
+      };
+      db.courseRecords.push(r);
+      c.recordId = r.id;
+    }
+    save();
+    return { ok: true, course: c, record: r, report: r.reportId ? report(r.reportId) : null };
+  }
+
+  /** 关联教学任务到本节课（同一任务只关联一次） */
+  function linkTask(courseId, kind, taskId) {
+    var r = recordOfCourse(courseId);
+    if (!r || !taskId) return null;
+    var key = kind === 'train' ? 'trainTaskIds'
+      : kind === 'leitner' ? 'leitnerTaskIds'
+      : kind === 'plan21' ? 'plan21TaskIds' : 'articleTaskIds';
+    r.links[key] = r.links[key] || [];
+    if (r.links[key].indexOf(taskId) < 0) r.links[key].push(taskId);
+    r.updatedAt = stamp();
+    save();
+    return r;
+  }
+
+  /**
+   * 本节课教学记录汇总（实时计算，不落库）
+   * 依据是每条判断记录上的 courseId —— 任务可以跨课继续，但记录归属于当时那节课
+   */
+  function recordSummary(recordOrId) {
+    var r = typeof recordOrId === 'string' ? courseRecord(recordOrId) : recordOrId;
+    if (!r) return null;
+    var cid = r.courseId;
+
+    var td = db.trainDetails.filter(function (d) { return d.courseId === cid; });
+    var lr = db.leitnerRecords.filter(function (x) { return x.courseId === cid; });
+    var pr = db.plan21Records.filter(function (x) { return x.courseId === cid; });
+    var at = db.articleTasks.filter(function (x) { return x.courseId === cid; });
+    var ads = db.articleTaskDetails.filter(function (x) { return x.courseId === cid; });
+
+    var trainIds = uniqWordIds(td);
+    var leitnerIds = uniqWordIds(lr);
+    var planIds = uniqWordIds(pr);
+
+    // 有效结果：同一单词取最后一条判断
+    var effL = {}, effP = {};
+    lr.forEach(function (x) { effL[x.wordId] = x; });
+    pr.forEach(function (x) { effP[x.wordId] = x; });
+
+    var mastered = [], weak = [];
+    Object.keys(effL).forEach(function (id) { (effL[id].result === 'yes' ? mastered : weak).push(id); });
+    Object.keys(effP).forEach(function (id) {
+      var v = effP[id].result === 'yes' ? mastered : weak;
+      if (v.indexOf(id) < 0) v.push(id);
+    });
+    ads.forEach(function (d) {
+      if (d.verdict === '掌握' && mastered.indexOf(d.sentenceId) < 0) mastered.push(d.sentenceId);
+      if (d.verdict === '待加强' && weak.indexOf(d.sentenceId) < 0) weak.push(d.sentenceId);
+    });
+
+    return {
+      courseId: cid,
+      trainWords: trainIds.length,
+      trainRecords: td.length,
+      leitnerWords: leitnerIds.length,
+      leitnerRecords: lr.length,
+      plan21Words: planIds.length,
+      plan21Records: pr.length,
+      articleCount: at.length,
+      articleSentences: ads.filter(function (x) { return x.readDone; }).length,
+      articleMastered: ads.filter(function (x) { return x.verdict === '掌握'; }).length,
+      articleWeak: ads.filter(function (x) { return x.verdict === '待加强'; }).length,
+      mastered: mastered.length,
+      weak: weak.length,
+      totalActions: td.length + lr.length + pr.length + ads.filter(function (x) { return x.readDone; }).length,
+      empty: !(td.length || lr.length || pr.length || ads.filter(function (x) { return x.readDone; }).length)
+    };
+  }
+
+  /**
+   * 页面统一口径：课程已完成 → 读完成时的快照（不再随明细变化）
+   *               课程进行中 → 实时汇总
+   * 避免同一节课在报告页与工作台显示出两套数字。
+   */
+  function recordView(recordOrId) {
+    var r = typeof recordOrId === 'string' ? courseRecord(recordOrId) : recordOrId;
+    if (!r) return null;
+    if (r.status === STATUS.DONE && r.snapshot) return r.snapshot;
+    return recordSummary(r);
+  }
+
+  /** 本节课程里还没做完的教学任务 */
+  function courseUnfinished(courseId) {
+    var c = course(courseId);
+    if (!c) return { items: [], total: 0 };
+    var items = [];
+
+    db.trainTasks.forEach(function (t) {
+      if (t.courseId !== courseId || !isOpen(t.status)) return;
+      var s = trainTaskStat(t.id);
+      items.push({
+        kind: 'train', taskId: t.id, label: '单词训练 · ' + t.wordbookName,
+        total: s.queue, done: s.trained, remain: s.queue - s.trained,
+        status: t.status, phase: t.phase,
+        unit: '个单词', raw: t
+      });
+    });
+    db.leitnerTasks.forEach(function (t) {
+      if (t.courseId !== courseId || !isOpen(t.status)) return;
+      var s = leitnerTaskStat(t.id);
+      items.push({
+        kind: 'leitner', taskId: t.id, label: '莱特纳复习',
+        total: s.total, done: s.done, remain: s.remain,
+        status: t.status, unit: '个单词', raw: t
+      });
+    });
+    db.plan21Tasks.forEach(function (t) {
+      if (t.courseId !== courseId || !isOpen(t.status) || !t.wordIds.length) return;
+      var s = plan21TaskStat(t.id);
+      items.push({
+        kind: 'plan21', taskId: t.id, label: '21 天复习 · 第 ' + t.day + ' 天',
+        total: s.total, done: s.done, remain: s.remain,
+        status: t.status, unit: '个单词', raw: t
+      });
+    });
+    db.articleTasks.forEach(function (t) {
+      if (t.courseId !== courseId || !isActive(t.status)) return;
+      var s = articleTaskStat(t.id);
+      items.push({
+        kind: 'article', taskId: t.id, label: '文章训练 · 《' + t.articleName + '》',
+        total: s.total, done: s.done, remain: s.remain,
+        status: t.status, unit: '句', raw: t
+      });
+    });
+
+    return { items: items, total: items.length };
+  }
+
+  /** 关闭单个未完成任务：结束（保留已做记录）或取消（不再执行） */
+  function closeUnfinished(item, policy, reason, by) {
+    if (item.kind === 'train') {
+      if (policy === '取消') { item.raw.status = STATUS.CANCELLED; item.raw.finishedAt = stamp(); }
+      else endTask(item.taskId, reason, '');
+    } else if (item.kind === 'leitner') {
+      if (policy === '取消') { item.raw.status = STATUS.CANCELLED; item.raw.completedAt = stamp(); }
+      else finishLeitnerTask(item.taskId, by, { reason: reason });
+    } else if (item.kind === 'plan21') {
+      if (policy === '取消') { item.raw.status = STATUS.CANCELLED; item.raw.completedAt = stamp(); }
+      else finish21Task(item.taskId, { reason: reason, by: by });
+    } else if (item.kind === 'article') {
+      if (policy === '取消') { item.raw.status = STATUS.CANCELLED; item.raw.finishedAt = stamp(); }
+      else finishArticleTask(item.taskId, { endReason: reason, by: by });
+    }
+  }
+
+  /** 完成课程时扣 1 课时（余额不足不阻断授课，但标记扣课异常并提示教务） */
+  function deductCourse(courseId, by) {
+    var c = course(courseId);
+    if (!c) fail('课程不存在');
+    var stu = student(c.studentId);
+    if (!stu) return { ok: false, reason: '课程未关联有效学员，无法扣课' };
+    var acc = db.accounts.filter(function (a) { return a.student === stu.name; })[0];
+    if (!acc) {
+      c.deductState = '扣课异常';
+      save();
+      return { ok: false, reason: '该学员没有课时账户' };
+    }
+    if (acc.remain < 1) {
+      c.deductState = '扣课异常';
+      save();
+      return { ok: false, reason: '课时余额不足（剩余 ' + acc.remain + ' 课时），已标记扣课异常' };
+    }
+    var before = acc.remain;
+    acc.remain = before - 1;
+    acc.used = (acc.used || 0) + 1;
+    var f = {
+      id: 'FL' + TODAY.replace(/-/g, '') + ('000' + (db.flows.length + 1)).slice(-3),
+      student: stu.name, account: acc.id, type: '正常扣课',
+      delta: -1, before: before, after: acc.remain,
+      ref: c.id + ' 课程完成', op: by || '系统', time: stamp(),
+      note: '课程完成后自动扣课', courseId: c.id
+    };
+    db.flows.push(f);
+    c.deductState = '已扣课';
+    c.deduct = '已扣课';
+    save();
+    return { ok: true, flow: f, account: acc, remaining: acc.remain };
+  }
+
+  /**
+   * 完成本节课
+   * 流程：检测未完成 → 按策略处理 → 写汇总快照 → 扣课时 → 生成教学报告（编辑中）
+   * @param {{policy?:'保留'|'结束'|'取消', note?:string, reason?:string, by?:string}} opt
+   */
+  function finishCourse(courseId, opt) {
+    opt = opt || {};
+    var c = course(courseId);
+    if (!c) fail('课程不存在');
+
+    /* 参数校验先于状态校验：非法入参属于调用方错误，任何状态下都应直接抛出 */
+    var policy = opt.policy || '保留';
+    if (['保留', '结束', '取消'].indexOf(policy) < 0) fail('未完成内容的处理方式不合法');
+
+    if (c.status === COURSE_STATUS.CANCELLED) return { ok: false, reason: '课程已取消，不能完成' };
+    if (c.status === COURSE_STATUS.MISSED) return { ok: false, reason: '课程标记为未上课，不能完成' };
+    if (c.status === COURSE_STATUS.DONE) return { ok: false, reason: '本节课已完成，不能重复完成', record: recordOfCourse(courseId) };
+
+    var unf = courseUnfinished(courseId);
+    var reason = (opt.reason && opt.reason.trim()) || '本节课程结束';
+
+    if (policy !== '保留') {
+      unf.items.forEach(function (it) { closeUnfinished(it, policy, reason, opt.by || c.teacher || '教师'); });
+    }
+
+    var r = recordOfCourse(courseId);
+    if (!r) {
+      r = openCourse(courseId, { allowDone: true }).record;
+    }
+    r.status = STATUS.DONE;
+    r.actualEnd = stamp();
+    r.unfinishedPolicy = policy;
+    r.unfinished = unf.items.map(function (it) {
+      var s = null;
+      if (it.kind === 'train') s = trainTaskStat(it.taskId);
+      else if (it.kind === 'leitner') s = leitnerTaskStat(it.taskId);
+      else if (it.kind === 'plan21') s = plan21TaskStat(it.taskId);
+      else s = articleTaskStat(it.taskId);
+      return {
+        kind: it.kind, taskId: it.taskId, label: it.label,
+        total: it.total, done: it.done, remain: it.remain,
+        status: it.raw.status
+      };
+    });
+    r.teacherNote = opt.note === undefined ? (r.teacherNote || '') : opt.note;
+    r.snapshot = recordSummary(r);
+    r.updatedAt = stamp();
+
+    c.status = COURSE_STATUS.DONE;
+    c.actualEnd = r.actualEnd;
+    c.recordId = r.id;
+
+    var deduct = deductCourse(courseId, opt.by || c.teacher || '系统');
+
+    var rp = report(r.reportId);
+    if (!rp) {
+      rp = {
+        id: 'RP' + courseId.replace(/\D/g, '').slice(0, 8) + seq('RP', 2),
+        courseId: c.id, recordId: r.id, studentId: c.studentId, teacherId: c.teacherId,
+        courseDate: c.date, title: (c.subject || '本节课程') + ' · ' + c.date,
+        status: REPORT_STATUS.DRAFT,
+        content: { performance: '', weak: '', next: '' },
+        createdAt: stamp(), submittedAt: null, publishedAt: null,
+        submittedBy: '', publishedBy: ''
+      };
+      db.reports.push(rp);
+      r.reportId = rp.id;
+    }
+    save();
+    return {
+      ok: true, course: c, record: r, report: rp, deduct: deduct,
+      unfinished: unf.items, policy: policy,
+      warnings: deduct.ok ? [] : [deduct.reason]
+    };
+  }
+
+  /* ---------------- 教学报告：课程完成后不自动对家长公开 ---------------- */
+  function reports() { return db.reports; }
+  function report(id) { return db.reports.filter(function (r) { return r.id === id; })[0] || null; }
+  function reportOfCourse(courseId) {
+    return db.reports.filter(function (r) { return r.courseId === courseId; })[0] || null;
+  }
+  function reportsOf(studentId) {
+    return db.reports.filter(function (r) { return r.studentId === studentId; })
+      .sort(function (a, b) { return a.courseDate < b.courseDate ? 1 : -1; });
+  }
+  /** 家长可见的只有「已发布」 */
+  function publishedReportsOf(studentId) {
+    return reportsOf(studentId).filter(function (r) { return r.status === REPORT_STATUS.PUBLISHED; });
+  }
+  function reportStat(teacherId) {
+    var list = db.reports.filter(function (r) { return !teacherId || r.teacherId === teacherId; });
+    var by = {};
+    list.forEach(function (r) { by[r.status] = (by[r.status] || 0) + 1; });
+    return { total: list.length, by: by, draft: by[REPORT_STATUS.DRAFT] || 0, submitted: by[REPORT_STATUS.SUBMITTED] || 0, published: by[REPORT_STATUS.PUBLISHED] || 0 };
+  }
+
+  function saveReportDraft(reportId, patch, by) {
+    var rp = report(reportId);
+    if (!rp) fail('报告不存在');
+    if (rp.status === REPORT_STATUS.PUBLISHED) fail('报告已发布，不能再修改');
+    patch = patch || {};
+    ['performance', 'weak', 'next'].forEach(function (k) {
+      if (patch[k] !== undefined) rp.content[k] = patch[k];
+    });
+    if (patch.title !== undefined) rp.title = patch.title;
+    rp.updatedAt = stamp();
+    rp.updatedBy = by || rp.teacherId;
+    save();
+    return rp;
+  }
+
+  /** 提交报告：课程必须已完成，三段内容不能为空 */
+  function submitReport(reportId, by) {
+    var rp = report(reportId);
+    if (!rp) fail('报告不存在');
+    if (rp.status === REPORT_STATUS.PUBLISHED) return { ok: false, reason: '报告已发布，不能重复提交' };
+    if (rp.status === REPORT_STATUS.SUBMITTED) return { ok: false, reason: '报告已提交，等待发布', report: rp };
+    var c = course(rp.courseId);
+    if (!c || c.status !== COURSE_STATUS.DONE) fail('课程尚未完成，不能提交教学报告');
+
+    var miss = [];
+    if (!isStr(rp.content.performance) || !rp.content.performance.trim()) miss.push('本节表现');
+    if (!isStr(rp.content.weak) || !rp.content.weak.trim()) miss.push('待加强内容');
+    if (!isStr(rp.content.next) || !rp.content.next.trim()) miss.push('下节课建议');
+    if (miss.length) fail('请先填写：' + miss.join('、'));
+
+    rp.status = REPORT_STATUS.SUBMITTED;
+    rp.submittedAt = stamp();
+    rp.submittedBy = by || rp.teacherId;
+    save();
+    return { ok: true, report: rp };
+  }
+
+  /** 发布给家长：必须先提交 */
+  function publishReport(reportId, by) {
+    var rp = report(reportId);
+    if (!rp) fail('报告不存在');
+    if (rp.status === REPORT_STATUS.PUBLISHED) return { ok: false, reason: '报告已发布', report: rp };
+    if (rp.status !== REPORT_STATUS.SUBMITTED) fail('报告尚未提交，不能直接发布');
+    rp.status = REPORT_STATUS.PUBLISHED;
+    rp.publishedAt = stamp();
+    rp.publishedBy = by || rp.teacherId;
+    save();
+    return { ok: true, report: rp };
+  }
+
+  /* ---------------- 复习来源：解释「为什么今天要复习这些词」 ---------------- */
+  function leitnerDueDetail(studentId) {
+    var items = [], seen = {};
+    leitnerStates(studentId).forEach(function (s) {
+      if (s.box === 'graduated') return;
+      if (seen[s.wordId]) return;
+      var group = '', reason = '';
+      if (s.box === 'red') {
+        group = 'red'; reason = '红盒未掌握，今日必复习';
+      } else if (isDue(s)) {
+        group = 'yellow'; reason = '达到复习间隔（' + (s.dueAt || '今日') + ' 到期）';
+      } else if (s.manualToday) {
+        group = 'manual'; reason = '教师手动加入今日复习';
+      } else if (s.dueAt && s.dueAt < TODAY) {
+        group = 'yellow'; reason = '已逾期（' + s.dueAt + ' 应复习）';
+      }
+      if (!group) return;
+      seen[s.wordId] = 1;
+      items.push({
+        wordId: s.wordId, group: group, reason: reason,
+        box: s.box, boxName: boxName(s.box),
+        boxStage: boxStage(s.box),
+        dueAt: s.dueAt, lastResult: s.lastResult || ''
+      });
+    });
+    return {
+      items: items,
+      red: items.filter(function (i) { return i.group === 'red'; }),
+      yellow: items.filter(function (i) { return i.group === 'yellow'; }),
+      manual: items.filter(function (i) { return i.group === 'manual'; }),
+      total: items.length
+    };
+  }
+
+  function plan21TodaySummary(studentId) {
+    var plans = plansOf(studentId).filter(function (p) { return p.status === '进行中'; });
+    if (!plans.length) {
+      return { hasPlan: false, planId: '', day: 0, due: 0, done: 0, remain: 0, overdueTasks: 0, overdueWords: 0 };
+    }
+    var plan = plans[0];
+    var tasks = plan21Tasks(plan.id);
+    var today = tasks.filter(function (t) { return t.date === TODAY && t.wordIds.length; })[0];
+    var overdue = tasks.filter(function (t) {
+      return t.date < TODAY && t.wordIds.length && !isDone(t.status);
+    });
+    var prog = plan21Progress(plan);
+    var due = today ? today.wordIds.length : 0;
+    var done = today ? plan21TaskStat(today.id).done : 0;
+    return {
+      hasPlan: true, planId: plan.id, planName: plan.name,
+      day: prog.currentDay, totalDays: 21,
+      due: due, done: done, remain: Math.max(0, due - done),
+      todayTaskId: today ? today.id : '',
+      overdueTasks: overdue.length,
+      overdueWords: overdue.reduce(function (n, t) { return n + plan21TaskStat(t.id).remain; }, 0),
+      rate: prog.rate
+    };
+  }
+
+  /* ---------------- 单词学习全景：先看「现在什么状态」，再看「过去发生了什么」 ---------------- */
+  function wordPanorama(studentId, wordId) {
+    var w = word(wordId);
+    if (!w) return null;
+    var st = wordState(studentId, wordId);
+    var ls = leitnerState(studentId, wordId);
+    var ps = plansOf(studentId).filter(function (p) { return p.status === '进行中'; });
+    var inPlan = null;
+    ps.forEach(function (p) {
+      if (p.wordIds.indexOf(wordId) < 0 || inPlan) return;
+      var nodes = plan21Tasks(p.id).filter(function (t) { return t.wordIds.indexOf(wordId) >= 0; });
+      var nextNode = nodes.filter(function (t) { return !isDone(t.status) && t.date >= TODAY; })[0]
+        || nodes.filter(function (t) { return !isDone(t.status); })[0];
+      inPlan = {
+        planId: p.id, planName: p.name,
+        day: plan21Progress(p).currentDay,
+        nodes: nodes.length,
+        doneNodes: nodes.filter(function (t) { return isDone(t.status); }).length,
+        nextDate: nextNode ? nextNode.date : '',
+        nextDay: nextNode ? nextNode.day : 0
+      };
+    });
+
+    var lastTrain = db.trainDetails.filter(function (d) {
+      return d.studentId === studentId && d.wordId === wordId;
+    }).sort(function (a, b) { return a.at < b.at ? 1 : -1; })[0] || null;
+
+    /* 时间轴：预筛 → 强化 → 最后复习 → 莱特纳 → 21 天 → 教师调整，统一按时间倒序 */
+    var tl = [];
+    db.prescreens.filter(function (p) { return p.studentId === studentId && p.wordId === wordId; })
+      .forEach(function (p) {
+        tl.push({ at: p.at, type: '预筛选', text: p.known ? '预筛选：认识，未进入训练队列' : '预筛选：不认识，进入强化训练', tone: p.known ? 'green' : 'blue' });
+      });
+    db.trainDetails.filter(function (d) { return d.studentId === studentId && d.wordId === wordId; })
+      .forEach(function (d) {
+        var label = d.result === 'yes' ? '认识' : d.result === 'mid' ? '暂不确定' : '不认识';
+        if (d.correction) {
+          tl.push({ at: d.at, type: '强化训练 · 修正', text: '由「' + zh(d.correctionFrom) + '」修正为「' + label + '」，原因：' + (d.correctionNote || '—'), tone: 'amber' });
+        } else {
+          tl.push({ at: d.at, type: '强化训练', text: '教师判断：' + label, tone: d.result === 'yes' ? 'green' : 'amber' });
+        }
+      });
+    db.trainTasks.filter(function (t) { return t.studentId === studentId; }).forEach(function (t) {
+      var r = t.finalResults && t.finalResults[wordId];
+      if (!r) return;
+      tl.push({ at: r.at, type: '最后复习', text: '教师判断：' + zh(r.result), tone: r.result === 'yes' ? 'green' : 'amber' });
+    });
+    db.leitnerRecords.filter(function (r) { return r.studentId === studentId && r.wordId === wordId; })
+      .forEach(function (r) {
+        tl.push({
+          at: r.at, type: '莱特纳复习',
+          text: (r.correction ? '修正：' : '') + boxName(r.boxFrom) + ' → ' + boxName(r.boxTo) + '（' + zh(r.result) + '）' + (r.correctionNote ? '，原因：' + r.correctionNote : ''),
+          tone: r.result === 'yes' ? 'green' : 'amber'
+        });
+      });
+    db.leitnerOps.filter(function (o) { return o.studentId === studentId && o.wordId === wordId; })
+      .forEach(function (o) {
+        tl.push({ at: o.at || o.time, type: '教师调整', text: o.action + (o.fromBox ? '：' + boxName(o.fromBox) + ' → ' + boxName(o.toBox) : '') + (o.reason ? '，原因：' + o.reason : ''), tone: 'slate' });
+      });
+    db.plan21Records.filter(function (r) { return r.studentId === studentId && r.wordId === wordId; })
+      .forEach(function (r) {
+        tl.push({
+          at: r.at, type: '21 天 · 第 ' + r.day + ' 天',
+          text: (r.correction ? '修正：' : '') + '教师判断：' + zh(r.result) + (r.correctionNote ? '，原因：' + r.correctionNote : ''),
+          tone: r.result === 'yes' ? 'green' : 'amber'
+        });
+      });
+    tl.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+
+    return {
+      word: w,
+      state: st ? st.state : '未训练',
+      note: st ? st.note : '',
+      leitner: ls && ls.box !== 'graduated' ? {
+        inSystem: true, box: ls.box, boxName: boxName(ls.box),
+        stage: boxStage(ls.box),
+        dueAt: ls.dueAt, lastResult: ls.lastResult || '',
+        overdue: !!(ls.dueAt && ls.dueAt < TODAY)
+      } : { inSystem: false },
+      plan21: inPlan,
+      lastTrain: lastTrain ? {
+        at: lastTrain.at, result: lastTrain.result,
+        taskId: lastTrain.taskId, corrected: !!lastTrain.correction
+      } : null,
+      timeline: tl
+    };
+  }
+
+  function zh(v) { return v === 'yes' ? '认识' : v === 'mid' ? '暂不确定' : '不认识'; }
 
   /* ---------------- 家长端：复习词表（派生 + 辅助勾选） ---------------- */
   /**
@@ -2070,15 +3017,17 @@
     toFinalStage: toFinalStage, finalJudge: finalJudge, finalCorrect: finalCorrect,
     completeTask: completeTask,
     /* 莱特纳 */
-    leitnerConfig: leitnerConfig, boxMeta: boxMeta, boxName: boxName,
+    leitnerConfig: leitnerConfig, boxMeta: boxMeta, boxName: boxName, boxStage: boxStage,
     leitnerStates: leitnerStates, leitnerState: leitnerState, leitnerBoxWords: leitnerBoxWords,
     leitnerDue: leitnerDue, isDue: isDue, leitnerOps: leitnerOps,
     addToGreen: addToGreen, removeFromGreen: removeFromGreen, moveBox: moveBox,
     createLeitnerTask: createLeitnerTask, leitnerTask: leitnerTask,
     leitnerJudge: leitnerJudge, leitnerCorrect: leitnerCorrect, finishLeitnerTask: finishLeitnerTask,
+    resumeLeitnerTask: resumeLeitnerTask,
     leitnerTaskStat: leitnerTaskStat, leitnerFirstRecord: leitnerFirstRecord,
     leitnerTaskRecords: leitnerTaskRecords,
     leitnerRecordsOf: leitnerRecordsOf, leitnerTasksOf: leitnerTasksOf,
+    leitnerDueDetail: leitnerDueDetail,
     /* 21 天 */
     plansOf: plansOf, plan21: plan21, plan21Tasks: plan21Tasks, plan21Task: plan21Task,
     plan21Today: plan21Today, plan21Records: plan21Records, plan21Progress: plan21Progress,
@@ -2086,11 +3035,24 @@
     plan21Effective: plan21Effective, plan21FirstRecord: plan21FirstRecord,
     create21Plan: create21Plan, plan21Judge: plan21Judge,
     plan21Correct: plan21Correct, finish21Task: finish21Task,
+    plan21TodaySummary: plan21TodaySummary,
     /* 文章训练 */
     articleTask: articleTask, articleTasksOf: articleTasksOf, articleTaskDetails: articleTaskDetails,
     articleActiveTask: articleActiveTask, startArticleTask: startArticleTask,
     articleSentenceLog: articleSentenceLog, setArticleAudioDone: setArticleAudioDone,
-    finishArticleTask: finishArticleTask,
+    articleDetail: articleDetail,
+    finishArticleTask: finishArticleTask, articleTaskStat: articleTaskStat,
+    /* 课程与报告 */
+    courses: courses, course: course, coursesOf: coursesOf, coursesOfTeacher: coursesOfTeacher,
+    courseStat: courseStat, courseRecord: courseRecord, recordOfCourse: recordOfCourse,
+    recordsOfTeacher: recordsOfTeacher, openCourse: openCourse, linkTask: linkTask,
+    recordSummary: recordSummary, recordView: recordView, courseUnfinished: courseUnfinished,
+    finishCourse: finishCourse, deductCourse: deductCourse,
+    reports: reports, report: report, reportOfCourse: reportOfCourse, reportsOf: reportsOf,
+    publishedReportsOf: publishedReportsOf, reportStat: reportStat,
+    saveReportDraft: saveReportDraft, submitReport: submitReport, publishReport: publishReport,
+    /* 单词全景 */
+    wordPanorama: wordPanorama,
     /* 财务 */
     flows: flows, flow: flow, accounts: accounts, account: account,
     reverseFlow: reverseFlow, reversalsOf: reversalsOf, reversedHours: reversedHours,
@@ -2098,6 +3060,9 @@
     /* 家长端 */
     reviewWords: reviewWords, familyCheck: familyCheck, familyChecksOf: familyChecksOf,
     toggleFamilyCheck: toggleFamilyCheck,
+    /* 状态词表 */
+    STATUS: STATUS, COURSE_STATUS: COURSE_STATUS, REPORT_STATUS: REPORT_STATUS,
+    statusTone: statusTone, isOpen: isOpen, isDone: isDone, isActive: isActive,
     /* 统计 */
     stats: stats,
     /* 工具 */

@@ -135,6 +135,7 @@
 <script src="../assets/js/store.js"></script>
 <script>
 const params = new URLSearchParams(location.search);
+const courseId = params.get('course') || '';   // 课程上下文：判断记录会归属到本节课
 let task = null, groups = [], ids = [], view = 'group';
 let gi = 0, wi = 0, revealed = false, fixTarget = null, submitting = false;
 
@@ -155,11 +156,13 @@ function boot() {
   document.getElementById('topTitle').textContent = '单词训练 · ' + stu.name;
   document.getElementById('backLink').href = 'word-training-setup.html?student=' + task.studentId;
 
-  // 依据任务状态决定进入哪个视图（刷新恢复的关键）
-  if (task.status === '已完成') view = 'summary';
+  // 依据统一状态（status）与阶段（phase）决定进入哪个视图（刷新恢复的关键）
+  if (Store.isDone(task.status)) view = 'summary';
+  else if (task.status === '已取消') view = 'summary';
   else if (task.status === '已中断') view = 'interrupted';
-  else if (task.status === '最后一轮复习中') view = Object.keys(task.finalResults).length >= ids.length ? 'finalDone' : 'final';
-  else view = allDone(gi) ? 'groupDone' : 'group';
+  else if (task.phase === '最后复习') {
+    view = Object.keys(task.finalResults).length >= ids.length ? 'finalDone' : 'final';
+  } else view = allDone(gi) ? 'groupDone' : 'group';
 
   render();
 }
@@ -298,7 +301,7 @@ function move(d) {
 function judge(v) {
   const id = curGroup()[wi];
   try {
-    Store.trainJudge(task.id, id, v, task.mode, gi);
+    Store.trainJudge(task.id, id, v, task.mode, gi, courseId);
   } catch (e) {
     Proto.toast(e.message, 'err');
     task = Store.trainTask(task.id);
@@ -443,7 +446,7 @@ function finalReveal() { revealed = true; render(); }
 function finalJudge(v) {
   const id = ids[task.finalIndex || 0];
   try {
-    Store.finalJudge(task.id, id, v);
+    Store.finalJudge(task.id, id, v, courseId);
   } catch (e) {
     Proto.toast(e.message, 'err');
     task = Store.trainTask(task.id);
@@ -487,7 +490,7 @@ function doFinalFix() {
   if (!picked) { Proto.toast('请选择修正后的结果', 'err'); return; }
   if (!note) { Proto.toast('修正必须填写原因', 'err'); return; }
   try {
-    Store.finalCorrect(task.id, finalFixTarget, picked.value, note);
+    Store.finalCorrect(task.id, finalFixTarget, picked.value, note, courseId);
     Proto.closeModal('finalFixModal');
     Proto.toast('已修正最后一轮复习结果（原始判断保留）', 'ok');
     task = Store.trainTask(task.id);
@@ -716,7 +719,7 @@ function doFix() {
   if (!to) { Proto.toast('请选择修正后的结果', 'err'); return; }
   if (!note) { Proto.toast('请填写修正原因', 'err'); return; }
   try {
-    Store.trainCorrect(task.id, fixTarget, to, note, (task.results[fixTarget] || {}).groupIndex);
+    Store.trainCorrect(task.id, fixTarget, to, note, (task.results[fixTarget] || {}).groupIndex, courseId);
   } catch (e) {
     Proto.toast(e.message, 'err');
     return;
@@ -744,7 +747,7 @@ function doPause() {
 function saveExit() {
   task = Store.pauseTask(task.id);
   Proto.toast('已保存并退出，可从词库选择页继续', 'ok');
-  setTimeout(() => location.href = 'word-training-setup.html?student=' + task.studentId, 500);
+  setTimeout(() => location.href = 'word-training-setup.html?student=' + task.studentId + (courseId ? '&course=' + courseId : ''), 500);
 }
 
 function doEnd() {

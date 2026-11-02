@@ -28,6 +28,20 @@
 
       <div class="grid g4 mb16" id="statCards"></div>
 
+      <!-- 今日推荐：解释「为什么今天要复习这些词」 -->
+      <div class="card mb16">
+        <div class="card-head">
+          <div class="card-title">今日推荐<span class="hint">为什么今天要复习这些词</span></div>
+          <span class="tag tag-blue nodot" id="dueTotalTag">—</span>
+        </div>
+        <div class="card-body">
+          <div class="grid g3" id="dueReasons"></div>
+          <div class="alert alert-info mt16"><span class="ico">i</span>
+            <div id="dueExplain">推荐规则：红盒 = 未掌握，今天必须复习；黄盒 = 达到配置的复习间隔；
+              教师指定 = 教师手动加入今日复习（例如课上发现遗忘）。三组会去重，同一个单词只出现一次。</div></div>
+        </div>
+      </div>
+
       <!-- 红盒子 -->
       <div class="card mb16">
         <div class="card-head">
@@ -209,12 +223,14 @@ Proto.shell({ role: 'teacher', active: 'leitner' });
 
 const q = new URLSearchParams(location.search);
 let studentId = q.get('student') || 'S2026001';
+const courseId = new URLSearchParams(location.search).get('course') || '';  // 课程上下文
+const cq = courseId ? '&course=' + courseId : '';
 let reasonAction = null;
 
 const RESULT_LABEL = { yes: '认识', no: '不认识', mid: '暂不确定' };
 const RESULT_TAG = { yes: 'tag-green', no: 'tag-red', mid: 'tag-amber' };
 
-function switchStudent(id) { location.href = 'leitner.html?student=' + id; }
+function switchStudent(id) { location.href = 'leitner.html?student=' + id + (courseId ? '&course=' + courseId : ''); }
 function w(id) { return Store.word(id); }
 function en(id) { return (Store.word(id) || {}).en || id; }
 
@@ -234,7 +250,7 @@ function render() {
   const effToday = {};
   todayAll.forEach(r => { effToday[r.wordId] = r; });
   const todayRecs = Object.keys(effToday).map(id => effToday[id]);
-  const lastTask = tasks.filter(t => t.status === '已完成')[0];
+  const lastTask = tasks.filter(t => Store.isDone(t.status))[0];
 
   document.getElementById('statCards').innerHTML = `
     <div class="card stat"><div class="stat-label">今日待复习</div>
@@ -249,8 +265,10 @@ function render() {
       <div class="stat-value">${st.leitnerTotal}<small>个</small></div>
       <div class="stat-foot">红 ${st.leitnerRed} · 黄 ${st.leitnerYellow} · 绿 ${st.leitnerGreen}（不重复计数）</div></div>
     <div class="card stat"><div class="stat-label">最近一次复习</div>
-      <div class="stat-value" style="font-size:16px">${lastTask ? lastTask.completedAt.slice(5) : '—'}</div>
+      <div class="stat-value" style="font-size:16px">${lastTask && lastTask.completedAt ? lastTask.completedAt.slice(5) : '—'}</div>
       <div class="stat-foot">${lastTask ? `认识 ${(lastTask.stats || {}).yes || 0} · 不认识 ${(lastTask.stats || {}).no || 0} · 不确定 ${(lastTask.stats || {}).mid || 0}` : '暂无复习记录'}</div></div>`;
+
+  renderDueReason(due);
 
   renderRed(due);
   renderYellow(due);
@@ -258,8 +276,36 @@ function render() {
   renderHistory(tasks);
   renderOps();
 
-  document.getElementById('goRed').href = 'leitner-review.html?student=' + studentId + '&scope=red';
-  document.getElementById('goGreen').href = 'leitner-review.html?student=' + studentId + '&scope=green';
+  document.getElementById('goRed').href = 'leitner-review.html?student=' + studentId + '&scope=red' + cq;
+  document.getElementById('goGreen').href = 'leitner-review.html?student=' + studentId + '&scope=green' + cq;
+}
+
+/* 今日推荐来源：每个分组给出来源与规则，避免"系统随便推了几个词" */
+function renderDueReason(due) {
+  const d = Store.leitnerDueDetail(studentId);
+  document.getElementById('dueTotalTag').textContent = '推荐复习 ' + d.total + ' 个单词';
+  const groups = [
+    { key: '红盒', list: d.red, why: '未掌握，今天必复习', tone: 'red' },
+    { key: '黄盒到期', list: d.yellow, why: '达到复习间隔', tone: 'amber' },
+    { key: '教师指定', list: d.manual, why: '手动加入今日复习', tone: 'blue' }
+  ];
+  document.getElementById('dueReasons').innerHTML = groups.map(g => `
+    <div class="card stat" style="box-shadow:none">
+      <div class="stat-label">${g.key}</div>
+      <div class="stat-value" style="color:var(--${g.tone === 'red' ? 'danger' : g.tone === 'amber' ? 'warning' : 'primary'})">
+        ${g.list.length}<small>个</small></div>
+      <div class="stat-foot">${g.why}</div>
+      <div class="mini-words" style="justify-content:flex-start;margin-top:8px">
+        ${g.list.slice(0, 12).map(x => `<span class="mini-word" style="cursor:pointer"
+          onclick="openWordHistory('${x.wordId}')" title="${x.reason}">${en(x.wordId)}</span>`).join('')
+          || '<span class="muted small">无</span>'}
+        ${g.list.length > 12 ? `<span class="muted small">+${g.list.length - 12}</span>` : ''}
+      </div>
+    </div>`).join('');
+  if (!d.total) {
+    document.getElementById('dueExplain').innerHTML =
+      '今天没有到期的单词：红盒为空、黄盒都没到间隔、也没有教师手动指定的词。可以按需进入绿盒复习。';
+  }
 }
 
 function renderRed(due) {
@@ -306,7 +352,7 @@ function renderYellow(due) {
       <div class="flex gap8 mt12">
         <button class="btn btn-sm grow" onclick="event.stopPropagation();openWords('${y.id}')">查看单词</button>
         <a class="btn btn-sm grow btn-primary" onclick="event.stopPropagation()"
-          href="leitner-review.html?student=${studentId}&scope=${y.id}">进入复习</a>
+          href="leitner-review.html?student=${studentId}&scope=${y.id}${cq}">进入复习</a>
       </div>
     </div>`;
   }).join('');
@@ -362,7 +408,7 @@ function openWords(box) {
   const isRed = box === 'red';
   const words = Store.leitnerBoxWords(studentId, box);
   document.getElementById('wmTitle').textContent = Store.boxName(box) + ' · 单词 ' + words.length + ' 个';
-  document.getElementById('wmGo').href = 'leitner-review.html?student=' + studentId + '&scope=' + box;
+  document.getElementById('wmGo').href = 'leitner-review.html?student=' + studentId + '&scope=' + box + cq;
 
   document.getElementById('wmAlert').innerHTML = isRed
     ? `<div class="alert alert-info mb16"><span class="ico">i</span><div>红盒共 <b>${words.length}</b> 个，
@@ -450,7 +496,7 @@ function openRecommend() {
 }
 
 function startRecommend() {
-  location.href = 'leitner-review.html?student=' + studentId + '&scope=recommend';
+  location.href = 'leitner-review.html?student=' + studentId + '&scope=recommend' + cq;
 }
 
 /* ---------- 单词历史 ---------- */

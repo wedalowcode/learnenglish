@@ -442,8 +442,10 @@ function renderPlan() {
 
   document.getElementById('d21Wrap').innerHTML = `<div class="d21">
     ${prog.tasks.map(t => {
-      const cls = t.status === 'done' ? 'done' : t.status === 'today' ? 'today'
-        : t.status === 'miss' ? 'miss' : t.status === 'rest' ? '' : 'plan';
+      const cls = Store.isDone(t.status) ? 'done'
+        : t.dateState === '今日' ? 'today'
+        : t.dateState === '已逾期' ? 'miss'
+        : t.dateState === '休息' ? '' : 'plan';
       const done = Store.plan21TaskStat(t.id).done;
       return `<div class="day ${cls}"><b>D${t.day}</b>${t.date.slice(5)}
         ${t.wordIds.length ? `<div>${done}/${t.wordIds.length}</div>` : '<div>休息</div>'}</div>`;
@@ -457,10 +459,8 @@ function renderPlan() {
   Proto.renderRows('planTaskRows', rows.slice(-10).reverse(), r => `
     <tr><td class="small">${r.p.name}</td><td>第 ${r.t.day} 天</td><td class="small">${r.t.date}</td>
       <td class="right mono">${r.t.wordIds.length}</td><td class="right mono">${r.done}</td>
-      <td>${r.t.status === 'done' ? '<span class="tag tag-green">已完成</span>'
-        : r.t.status === 'miss' ? '<span class="tag tag-red">已逾期</span>'
-        : r.t.status === 'today' ? '<span class="tag tag-blue">进行中</span>'
-        : '<span class="tag tag-slate">未开始</span>'}</td></tr>`, 6, '暂无节点任务');
+      <td><span class="tag tag-${Store.statusTone(r.t.status)}">${r.t.status}</span>
+        ${r.t.dateState === '已逾期' ? '<span class="tag tag-red nodot" style="margin-left:4px">逾期</span>' : ''}</td></tr>`, 6, '暂无节点任务');
 }
 
 /* ---------- 训练任务 ---------- */

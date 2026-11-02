@@ -14,96 +14,11 @@
     <a class="back" href="course-records.html">‹</a>
     <div class="m-title">学习报告</div>
     <div class="grow"></div>
-    <span class="tag tag-green nodot" style="font-size:11px">已提交</span>
+    <span class="tag tag-green nodot" style="font-size:11px" id="headTag">已发布</span>
   </div>
 
-  <div class="m-body">
-
-    <!-- 报告头 -->
-    <div class="m-card">
-      <div class="flex jcb aic mb12">
-        <div>
-          <div style="font-size:16px;font-weight:600">陈可欣</div>
-          <div class="small muted">七年级 · 人教版</div>
-        </div>
-        <div class="text-r">
-          <div class="small muted">课程日期</div>
-          <div style="font-size:13px;font-weight:600">2026-10-31</div>
-        </div>
-      </div>
-      <div class="m-row"><span class="k">授课教师</span><span>李婉</span></div>
-      <div class="m-row"><span class="k">本节课主题</span><span style="max-width:180px;text-align:right">Unit 3 词汇强化 + 短文听读</span></div>
-      <div class="m-row"><span class="k">课程时长</span><span>60 分钟</span></div>
-    </div>
-
-    <!-- 学习内容 -->
-    <div class="m-card">
-      <div class="m-card-title">学习内容</div>
-      <div class="m-row"><span class="k">训练词库</span><span style="max-width:180px;text-align:right">人教版七上 Unit 3 词汇</span></div>
-      <div class="m-stat" style="margin:10px 0">
-        <div><div class="v">23</div><div class="k">训练单词</div></div>
-        <div><div class="v" style="color:var(--success)">16</div><div class="k">本次通过</div></div>
-        <div><div class="v" style="color:var(--warning)">7</div><div class="k">待复习</div></div>
-      </div>
-      <div class="m-row"><span class="k">文章训练</span><span>A Trip to the Library</span></div>
-      <div class="m-row"><span class="k">完成情况</span><span style="color:var(--success)">8 / 8 句完成</span></div>
-      <div class="small muted mt8">「本次通过」表示本节课确认通过，不等于永久掌握，后续会进入复习体系继续巩固。</div>
-    </div>
-
-    <!-- 教师反馈 -->
-    <div class="m-card">
-      <div class="m-card-title">教师反馈</div>
-
-      <div class="mb12">
-        <div class="small" style="font-weight:600;margin-bottom:4px">学习表现</div>
-        <div style="font-size:13px;color:var(--text-2);line-height:1.75">
-          专注度高，能主动跟读；对 Unit 3 的 7 个易混词仍有迟疑，需要重复刺激。
-        </div>
-      </div>
-
-      <div class="mb12">
-        <div class="small" style="font-weight:600;margin-bottom:4px">本节课总结</div>
-        <div style="font-size:13px;color:var(--text-2);line-height:1.75">
-          完成 Unit 3 全部 23 个单词强化，最后复习通过 16 个；短文听读流畅，能独立完成整篇跟读。
-        </div>
-      </div>
-
-      <div class="mb12">
-        <div class="small" style="font-weight:600;margin-bottom:4px">课后建议</div>
-        <div style="font-size:13px;color:var(--text-2);line-height:1.75">
-          7 个待复习单词已加入复习体系，建议家长每晚抽 5 分钟用「待复习单词表」抽查 5 个，
-          重点听 friend / question / answer 的发音。
-        </div>
-      </div>
-
-      <div>
-        <div class="small" style="font-weight:600;margin-bottom:4px">下节课建议</div>
-        <div style="font-size:13px;color:var(--text-2);line-height:1.75">
-          先用 10 分钟复习红盒到期单词，再进入 Unit 4 新词预筛。
-        </div>
-      </div>
-    </div>
-
-    <!-- 附件 -->
-    <div class="m-card">
-      <div class="m-card-title">本节课资料</div>
-      <a class="m-row" href="review-words.html">
-        <span>待复习单词表（7 个）</span><span class="muted">查看 / 打印 ›</span></a>
-      <div class="m-row" style="border-bottom:none">
-        <span>文章音频 · A Trip to the Library</span>
-        <button class="btn btn-sm" onclick="Proto.toast('播放完整音频（示意）')">播放</button>
-      </div>
-    </div>
-
-    <!-- 底部 -->
-    <div class="m-card">
-      <div class="small muted" style="line-height:1.75;margin-bottom:10px">
-        报告由教师提交后可见，家长不可编辑。如需沟通请通过机构教务联系教师。
-      </div>
-      <a class="btn btn-block" href="course-records.html">查看历史课程报告</a>
-      <a class="btn btn-block btn-primary mt8" href="review-words.html">打印待复习单词表</a>
-    </div>
-
+  <div class="m-body" id="body">
+    <div class="m-card"><div class="small muted">加载中…</div></div>
   </div>
 
   <div class="m-tabbar">
@@ -114,6 +29,139 @@
     <a class="m-tab" href="hours.html"><span class="ic">◷</span>课时</a>
   </div>
 </div>
+<script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+/* 家长端可见性规则：只有「已发布」的报告才展示内容；
+   「编辑中 / 已提交」一律显示为「老师正在整理」，不暴露半成品。 */
+const q = new URLSearchParams(location.search);
+const STUDENT = q.get('student') || 'S2026001';
+
+function boot() {
+  const stu = Store.student(STUDENT);
+  const published = Store.publishedReportsOf(STUDENT);
+  const all = Store.reportsOf(STUDENT);
+
+  let rp = q.get('report') ? Store.report(q.get('report')) : published[0] || null;
+
+  if (!rp) {
+    document.getElementById('headTag').textContent = '暂无';
+    document.getElementById('body').innerHTML = `
+      <div class="m-card">
+        <div class="m-card-title">还没有可查看的报告</div>
+        <div class="small muted" style="line-height:1.8">
+          老师完成授课后会整理本节课报告，提交并发布后你就能在这里看到。
+          ${all.length ? '当前有 ' + all.length + ' 份报告正在整理中。' : ''}
+        </div>
+      </div>
+      <div class="m-card">
+        <a class="btn btn-block btn-primary" href="review-words.html">查看待复习单词表</a>
+      </div>`;
+    return;
+  }
+
+  /* 非已发布：只显示占位，不显示内容 */
+  if (rp.status !== '已发布') {
+    document.getElementById('headTag').textContent = '整理中';
+    document.getElementById('headTag').className = 'tag tag-amber nodot';
+    document.getElementById('body').innerHTML = `
+      <div class="m-card">
+        <div class="m-card-title">老师正在整理本节课报告</div>
+        <div class="small muted" style="line-height:1.8">
+          课程 ${rp.courseDate} 已完成，老师还在补充评价、确认内容，发布后这里会显示完整报告。
+        </div>
+      </div>
+      <div class="m-card">
+        <div class="m-card-title">可以先看这些</div>
+        <a class="m-row" href="review-words.html"><span>待复习单词表</span><span class="muted">查看 ›</span></a>
+        <a class="m-row" href="course-records.html" style="border-bottom:none"><span>历史课程记录</span><span class="muted">查看 ›</span></a>
+      </div>`;
+    return;
+  }
+
+  const rec = rp.recordId ? Store.courseRecord(rp.recordId) : Store.recordOfCourse(rp.courseId);
+  const snap = rec ? Store.recordView(rec) : null;
+  const c = Store.course(rp.courseId);
+  const t = Store.teacher(rp.teacherId) || {};
+
+  const art = Store.db.articleTasks.filter(a => a.courseId === rp.courseId)[0];
+  const artStat = art ? Store.articleTaskStat(art.id) : null;
+
+  document.getElementById('headTag').textContent = '已发布';
+  document.getElementById('body').innerHTML = `
+    <div class="m-card">
+      <div class="flex jcb aic mb12">
+        <div>
+          <div style="font-size:16px;font-weight:600">${stu ? stu.name : ''}</div>
+          <div class="small muted">${stu ? stu.grade : ''} · ${stu ? stu.book : ''}</div>
+        </div>
+        <div class="text-r">
+          <div class="small muted">课程日期</div>
+          <div style="font-size:13px;font-weight:600">${rp.courseDate}</div>
+        </div>
+      </div>
+      <div class="m-row"><span class="k">授课教师</span><span>${t.name || ''}</span></div>
+      <div class="m-row"><span class="k">本节课主题</span><span style="max-width:180px;text-align:right">${rp.title || '本节课程'}</span></div>
+      <div class="m-row"><span class="k">课程时长</span><span>${c && c.start ? (c.start + '—' + c.end) : '—'}</span></div>
+      <div class="m-row"><span class="k">发布时间</span><span>${rp.publishedAt || '—'}</span></div>
+    </div>
+
+    <div class="m-card">
+      <div class="m-card-title">学习内容</div>
+      <div class="m-stat" style="margin:10px 0">
+        <div><div class="v">${snap ? snap.trainWords : 0}</div><div class="k">训练单词</div></div>
+        <div><div class="v" style="color:var(--success)">${snap ? snap.mastered : 0}</div><div class="k">确认掌握</div></div>
+        <div><div class="v" style="color:var(--warning)">${snap ? snap.weak : 0}</div><div class="k">待加强</div></div>
+      </div>
+      ${snap && snap.leitnerWords ? `<div class="m-row"><span class="k">莱特纳复习</span><span>${snap.leitnerWords} 个单词</span></div>` : ''}
+      ${snap && snap.plan21Words ? `<div class="m-row"><span class="k">21 天复习</span><span>${snap.plan21Words} 个单词</span></div>` : ''}
+      ${artStat ? `<div class="m-row"><span class="k">文章训练</span><span>《${art.articleName}》</span></div>
+        <div class="m-row"><span class="k">句子情况</span><span style="color:var(--success)">掌握 ${artStat.mastered} · 待加强 ${artStat.weak}</span></div>` : ''}
+      <div class="small muted mt8">「确认掌握」是教师本节课的判断，不等于永久掌握，仍会进入复习体系继续巩固。</div>
+    </div>
+
+    <div class="m-card">
+      <div class="m-card-title">教师反馈</div>
+      <div class="mb12">
+        <div class="small" style="font-weight:600;margin-bottom:4px">本节表现</div>
+        <div style="font-size:13px;color:var(--text-2);line-height:1.75">${nl(rp.content.performance)}</div>
+      </div>
+      <div class="mb12">
+        <div class="small" style="font-weight:600;margin-bottom:4px">待加强内容</div>
+        <div style="font-size:13px;color:var(--text-2);line-height:1.75">${nl(rp.content.weak)}</div>
+      </div>
+      <div>
+        <div class="small" style="font-weight:600;margin-bottom:4px">下节课建议</div>
+        <div style="font-size:13px;color:var(--text-2);line-height:1.75">${nl(rp.content.next)}</div>
+      </div>
+    </div>
+
+    <div class="m-card">
+      <div class="m-card-title">本节课资料</div>
+      <a class="m-row" href="review-words.html?student=${STUDENT}">
+        <span>待复习单词表</span><span class="muted">查看 / 打印 ›</span></a>
+      ${art ? `<div class="m-row" style="border-bottom:none">
+        <span>文章音频 · ${art.articleName}</span>
+        <button class="btn btn-sm" onclick="Proto.speak('${art.articleName}','en-US')">播放</button>
+      </div>` : ''}
+    </div>
+
+    <div class="m-card">
+      <div class="small muted" style="line-height:1.75;margin-bottom:10px">
+        报告由教师提交并发布后可见，家长不可编辑。如需沟通请通过机构教务联系教师。
+      </div>
+      <a class="btn btn-block" href="course-records.html?student=${STUDENT}">查看历史课程报告</a>
+      <a class="btn btn-block btn-primary mt8" href="review-words.html?student=${STUDENT}">打印待复习单词表</a>
+    </div>`;
+}
+
+function nl(s) {
+  return (s || '').split('\n').filter(Boolean).map(x => `<div>${x}</div>`).join('') || '—';
+}
+
+boot();
+</script>
 </body>
 </html>

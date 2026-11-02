@@ -60,6 +60,31 @@
   </div>
 </div>
 
+
+<!-- 结束复习（未完成时必须填原因） -->
+<div class="mask" id="endModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">结束本轮复习</div>
+      <button class="modal-close" onclick="Proto.closeModal('endModal')">×</button></div>
+    <div class="modal-body">
+      <div class="desc g2 mb16">
+        <div class="desc-item"><span class="k">已复习</span><span class="v strong" id="em_done">—</span></div>
+        <div class="desc-item"><span class="k">剩余</span><span class="v" id="em_remain">—</span></div>
+      </div>
+      <div class="alert alert-warn mb16"><span class="ico">!</span>
+        <div>未复习的单词<b>仍留在原盒子且仍为到期状态</b>，下次可再次发起复习。任务状态会记为「已中断」，
+          不再出现「已完成但还有剩余」的含糊状态。</div></div>
+      <div class="field"><label>中断原因 <span class="req">*</span></label>
+        <input class="input" id="em_reason" placeholder="例如：本节课时间结束 / 学员状态不佳">
+        <div class="tip">原因写入任务，教学记录里可追溯</div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('endModal')">继续复习</button>
+      <button class="btn btn-primary" onclick="doEnd()">确认结束</button>
+    </div>
+  </div>
+</div>
+
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
@@ -68,6 +93,8 @@
 const q = new URLSearchParams(location.search);
 const studentId = q.get('student') || 'S2026001';
 const scope = q.get('scope') || 'recommend';
+const courseId = q.get('course') || '';       // 课程上下文：判断记录归属本节课
+const cq = courseId ? '&course=' + courseId : '';
 let task = null, list = [], i = 0, revealed = false;
 let fixTarget = null;
 
@@ -103,7 +130,8 @@ function boot() {
     list = s.words;
     if (!list.length) { renderEmpty(s.label); return; }
     try {
-      task = Store.createLeitnerTask(studentId, list, 'T001', s.label);
+      task = Store.createLeitnerTask(studentId, list, 'T001', s.label, courseId);
+      if (courseId) Store.linkTask(courseId, 'leitner', task.id);
     } catch (e) {
       renderEmpty(e.message); return;
     }
@@ -113,7 +141,7 @@ function boot() {
   document.getElementById('ftTitle').textContent = '莱特纳复习 · ' + stu.name;
   document.getElementById('ftSub').textContent =
     '任务 ' + task.id + ' · ' + task.source + ' · 共 ' + list.length + ' 个单词';
-  document.getElementById('backLink').href = 'leitner.html?student=' + studentId;
+  document.getElementById('backLink').href = 'leitner.html?student=' + studentId + cq;
 
   if (task.status === '已完成') { renderDone(); return; }
   refresh();
@@ -198,7 +226,7 @@ function render() {
     </div>
 
     <div class="text-c mt16">
-      <button class="btn btn-sm" onclick="finishNow()">提前结束并保存已复习结果</button>
+      <button class="btn btn-sm" onclick="openEnd()">提前结束并保存已复习结果</button>
     </div>`;
 }
 
@@ -209,7 +237,7 @@ function next() { if (i < list.length - 1) { i++; revealed = false; render(); } 
 function judge(v) {
   const id = list[i];
   try {
-    const r = Store.leitnerJudge(task.id, id, v, 'T001');
+    const r = Store.leitnerJudge(task.id, id, v, 'T001', courseId);
     Proto.toast(`${w(id).en}：${RESULT_LABEL[v]} · ${Store.boxName(r.from)} → ${Store.boxName(r.to)}` +
       (r.nextDue ? ' · 下次 ' + r.nextDue : ''), v === 'yes' ? 'ok' : 'warn');
   } catch (e) {
@@ -257,7 +285,7 @@ function doFix() {
   if (!picked) { Proto.toast('请选择修正后的结果', 'err'); return; }
   if (!note) { Proto.toast('修正必须填写原因', 'err'); return; }
   try {
-    const r = Store.leitnerCorrect(task.id, fixTarget, picked.value, note, 'T001');
+    const r = Store.leitnerCorrect(task.id, fixTarget, picked.value, note, 'T001', courseId);
     Proto.closeModal('fixModal');
     Proto.toast(`已修正：${RESULT_LABEL[r.result]} · ${Store.boxName(r.from)} → ${Store.boxName(r.to)}（未重复推进）`, 'ok');
     fixTarget = null;
@@ -268,34 +296,36 @@ function doFix() {
 }
 
 /* ---------- 结束 ---------- */
-function finishEarly() {
-  const s = stat();
-  Proto.confirmBox('结束复习',
-    `已复习 ${s.done} / ${s.total} 个单词，未复习的 ${s.remain} 个仍留在原盒子且仍为到期状态。`,
-    '结束', () => finishNow());
-}
+function finishEarly() { openEnd(); }
 
-function finishNow() {
+function openEnd() {
   const s = stat();
   if (s.complete) { finishAndShow(); return; }
-  const r = Store.finishLeitnerTask(task.id, 'T001');
-  if (!r.ok) Proto.toast(r.reason, 'warn');
-  task = Store.leitnerTask(task.id);
-  renderDone();
+  document.getElementById('em_done').textContent = s.done + ' / ' + s.total + ' 个单词';
+  document.getElementById('em_remain').textContent = s.remain + ' 个单词';
+  document.getElementById('em_reason').value = '';
+  Proto.openModal('endModal');
+}
+
+function doEnd() {
+  const reason = document.getElementById('em_reason').value.trim();
+  if (!reason) { Proto.toast('结束本轮复习必须填写原因', 'err'); return; }
+  try {
+    const r = Store.finishLeitnerTask(task.id, 'T001', { reason: reason });
+    Proto.closeModal('endModal');
+    Proto.toast('本轮已结束，状态：' + r.task.status + '（剩余 ' + r.stat.remain + ' 个单词）', r.complete ? '' : 'warn');
+    task = Store.leitnerTask(task.id);
+    renderDone();
+  } catch (e) { Proto.toast(e.message, 'err'); }
 }
 
 function finishAndShow() {
-  if (task.status === '进行中') Store.finishLeitnerTask(task.id, 'T001');
+  if (task.status === '进行中' && stat().complete) Store.finishLeitnerTask(task.id, 'T001');
   task = Store.leitnerTask(task.id);
   renderDone();
 }
 
 function renderDone() {
-  if (task.status === '进行中') {
-    const r = Store.finishLeitnerTask(task.id, 'T001');
-    if (!r.ok) Proto.toast(r.reason, 'warn');
-    task = Store.leitnerTask(task.id);
-  }
   const s = Store.leitnerTaskStat(task.id);
   const recs = Store.leitnerTaskRecords(task.id).filter(r => !r.correction);
   document.getElementById('prog').textContent = `${s.done} / ${s.total}`;
@@ -319,8 +349,8 @@ function renderDone() {
 
   el().innerHTML = `
     <div class="card">
-      <div class="card-head"><div class="card-title">本轮复习${s.complete ? '完成' : '已保存（未全部完成）'}</div>
-        <span class="tag ${s.complete ? 'tag-green' : 'tag-amber'} nodot">唯一单词 ${s.done} / ${s.total}</span></div>
+      <div class="card-head"><div class="card-title">本轮复习${s.complete ? '完成' : '已中断'}</div>
+        <span class="tag ${s.complete ? 'tag-green' : 'tag-amber'} nodot">状态：${task.status}</span></div>
       <div class="card-body">
         <div class="grid g4 mb16">
           <div class="card stat"><div class="stat-label">复习单词</div><div class="stat-value">${s.done}</div>
@@ -334,7 +364,10 @@ function renderDone() {
         </div>
 
         ${s.complete ? '' : `<div class="alert alert-warn mb12"><span class="ico">!</span>
-          <div>本轮<b>未全部完成</b>：剩余 ${s.remain} 个单词仍留在原盒子且仍为到期状态，可再次发起复习。</div></div>`}
+          <div>本轮<b>已中断</b>：完成 ${task.stats ? task.stats.done : s.done} / ${task.stats ? task.stats.total : s.total}，
+            剩余 ${s.remain} 个单词仍留在原盒子且仍为到期状态。
+            中断原因：<b>${task.interruptReason || '—'}</b>。
+            <button class="btn btn-sm" style="margin-left:8px" onclick="resumeTask()">恢复本轮继续复习</button></div></div>`}
 
         <div class="alert alert-info mb12"><span class="ico">i</span>
           <div><b>盒子变化按当前配置计算：</b>认识 → 配置的「答对去向」，不认识 → 配置的「答错去向」，
@@ -351,7 +384,7 @@ function renderDone() {
         </div>
 
         <div class="flex gap8" style="justify-content:flex-end">
-          <a class="btn" href="leitner.html?student=${studentId}">返回盒子</a>
+          <a class="btn" href="leitner.html?student=${studentId}${cq}">返回盒子</a>
           <a class="btn" href="word-detail.html?student=${studentId}&word=${list[0] || ''}">查看单词档案</a>
           <a class="btn btn-primary" href="student-profile.html?student=${studentId}">返回学习档案</a>
         </div>
@@ -359,9 +392,18 @@ function renderDone() {
     </div>`;
 }
 
+function resumeTask() {
+  try {
+    Store.resumeLeitnerTask(task.id);
+    Proto.toast('已恢复，可继续复习剩余单词');
+    task = Store.leitnerTask(task.id);
+    refresh();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
 document.addEventListener('keydown', e => {
   if (document.querySelector('.mask.show')) return;
-  if (!task || task.status === '已完成') return;
+  if (!task || !Store.isOpen(task.status)) return;
   if (e.key === '1') judge('no');
   if (e.key === '2') judge('yes');
 });

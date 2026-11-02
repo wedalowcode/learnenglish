@@ -52,6 +52,20 @@
             </div>
           </div>
 
+          <!-- 当前学习全景：先看现在，再看历史 -->
+          <div class="card mb16">
+            <div class="card-head">
+              <div class="card-title">当前学习全景<span class="hint">先看现在是什么状态，再看过去发生了什么</span></div>
+              <span class="tag tag-blue nodot" id="panoState">—</span>
+            </div>
+            <div class="card-body">
+              <div class="grid g3" id="panoBox"></div>
+              <div class="divider" style="margin:14px 0"></div>
+              <div class="section-title" style="margin-bottom:8px">完整时间轴</div>
+              <div class="timeline" id="panoTL"></div>
+            </div>
+          </div>
+
           <div class="card mb16">
             <div class="card-head"><div class="card-title">四层数据状态<span class="hint">分别存储，互不覆盖</span></div></div>
             <div class="card-body tight">
@@ -276,6 +290,8 @@ function renderAll() {
     ? plans.map(p => `<span class="tag tag-blue nodot">${p.name}</span>`).join(' ')
     : '<span class="tag tag-slate nodot">未加入</span>';
 
+  renderPano();
+
   /* 莱特纳详情 */
   const ltHead = document.getElementById('ltHead');
   const ltBox = document.getElementById('ltBox');
@@ -402,6 +418,65 @@ function renderAll() {
 }
 
 /* ---------- 左侧单词列表 ---------- */
+/* ---------- 当前学习全景 ---------- */
+function renderPano() {
+  const p = Store.wordPanorama(studentId, wordId);
+  if (!p) return;
+  const stateEl = document.getElementById('panoState');
+  stateEl.textContent = p.state;
+  stateEl.className = 'tag ' + (STATE_TAG[p.state] || 'tag-slate') + ' nodot';
+
+  const lt = p.leitner.inSystem
+    ? `<div class="small muted" style="line-height:1.7">
+         ${p.leitner.stage > 0
+           ? '第 ' + p.leitner.stage + ' 阶段'
+           : '尚未掌握，答对后进入黄盒第 1 阶段'}
+         <br>${p.leitner.dueAt
+           ? (p.leitner.overdue ? '<span style="color:var(--danger)">已到期 ' + p.leitner.dueAt + '</span>' : '下次复习 ' + p.leitner.dueAt)
+           : '由教师手动安排复习'}
+         ${p.leitner.lastResult ? ' · 上次「' + p.leitner.lastResult + '」' : ''}
+       </div>`
+    : '<span class="tag tag-slate nodot">未加入</span><div class="small muted" style="margin-top:4px">不在莱特纳体系中</div>';
+
+  const p21 = p.plan21
+    ? `<div class="small muted" style="line-height:1.7">
+         节点 ${p.plan21.doneNodes} / ${p.plan21.nodes}
+         <br>${p.plan21.nextDate ? '下次节点 ' + p.plan21.nextDate + '（第 ' + p.plan21.nextDay + ' 天）' : '本计划无剩余节点'}
+       </div>`
+    : '<span class="tag tag-slate nodot">未加入</span><div class="small muted" style="margin-top:4px">不在进行中的 21 天计划里</div>';
+
+  const last = p.lastTrain
+    ? `<div class="small muted" style="line-height:1.7">
+         ${p.lastTrain.at.slice(0, 10)} · 单词强化训练
+         <br>教师判断：${RESULT_LABEL[p.lastTrain.result]}${p.lastTrain.corrected ? '（含修正）' : ''}
+       </div>`
+    : '<span class="tag tag-slate nodot">无记录</span><div class="small muted" style="margin-top:4px">还没有做过强化训练</div>';
+
+  document.getElementById('panoBox').innerHTML = `
+    <div class="card stat" style="box-shadow:none">
+      <div class="stat-label">莱特纳</div>
+      <div class="stat-value" style="font-size:17px">${p.leitner.inSystem ? p.leitner.boxName : '—'}</div>
+      <div class="stat-foot">${lt}</div>
+    </div>
+    <div class="card stat" style="box-shadow:none">
+      <div class="stat-label">21 天计划</div>
+      <div class="stat-value" style="font-size:17px">${p.plan21 ? '第 ' + p.plan21.day + ' 天' : '—'}</div>
+      <div class="stat-foot">${p21}</div>
+    </div>
+    <div class="card stat" style="box-shadow:none">
+      <div class="stat-label">最近训练</div>
+      <div class="stat-value" style="font-size:17px">${p.lastTrain ? RESULT_LABEL[p.lastTrain.result] : '—'}</div>
+      <div class="stat-foot">${last}</div>
+    </div>`;
+
+  document.getElementById('panoTL').innerHTML = p.timeline.length
+    ? p.timeline.slice(0, 12).map(t => `<div class="tl-item ${t.tone === 'green' ? 'on' : ''}">
+        <div class="tl-head"><b>${t.type}</b><span class="tl-time">${t.at ? t.at.slice(5, 16) : ''}</span></div>
+        <div class="tl-body">${t.text}</div>
+      </div>`).join('')
+    : '<div class="small muted">这个单词还没有任何学习记录。</div>';
+}
+
 function renderList() {
   const kw = (document.getElementById('search').value || '').trim().toLowerCase();
   const words = Store.wordsOfBook('WB001').filter(w =>

@@ -46,6 +46,7 @@ const Proto = (() => {
     teacher: [
       { group: '教学工作台', items: [
         { id: 'workbench', label: '今日工作台', href: 'teacher/workbench.html' },
+        { id: 'course-workbench', label: '课程工作台', href: 'teacher/course-workbench.html' },
         { id: 'my-students', label: '我的学员', href: 'teacher/my-students.html' },
         { id: 'teaching-record', label: '教学记录', href: 'teacher/teaching-record.html' },
       ]},

@@ -5,6 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>文章训练</title>
 <link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .vd-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .vd { border:1px solid var(--line); border-radius:12px; padding:14px; background:var(--surface);
+    cursor:pointer; text-align:center; font-weight:600; transition:.15s; }
+  .vd:hover { border-color:var(--primary); }
+  .vd.ok { border-color:var(--green); background:rgba(34,197,94,.10); }
+  .vd.warn { border-color:var(--warning); background:rgba(234,179,8,.12); }
+  .vd.on { box-shadow:inset 0 0 0 2px currentColor; }
+  .vd.ok.on { color:var(--green); }
+  .vd.warn.on { color:#8a6100; }
+  .vd.on small { color:inherit; opacity:.75; }
+  .vd small { display:block; font-weight:400; color:var(--text-3); margin-top:4px; font-size:11.5px; }
+  .mini-word.j-mastered { background:rgba(34,197,94,.18); border-color:var(--green); }
+  .mini-word.j-weak { background:rgba(234,179,8,.20); border-color:var(--warning); }
+  .vt { font-size:11.5px; color:var(--text-3) }
+</style>
 </head>
 <body class="focus-page">
 
@@ -33,7 +49,8 @@
       <button class="modal-close" onclick="Proto.closeModal('endModal')">×</button></div>
     <div class="modal-body">
       <div class="alert alert-warn mb16"><span class="ico">!</span>
-        <div>已记录的句子操作（播放 / 查看中文 / 跟读）会全部保留，<b>未完成的句子保持未完成</b>，不会被静默补齐。</div></div>
+        <div>已记录的句子操作（播放 / 查看中文 / 跟读 / 教师判定）会全部保留，<b>未完成的句子保持未完成</b>，
+          不会被静默补齐。任务状态记为「已中断」。</div></div>
       <div class="form-grid g1">
         <div class="field"><label>结束原因 <span class="req">*</span></label>
           <select class="select" id="endReason">
@@ -61,6 +78,7 @@
 <script src="../assets/js/store.js"></script>
 <script>
 const q = new URLSearchParams(location.search);
+const courseId = q.get('course') || '';      // 课程上下文：训练与逐句判定归属本节课
 let studentId = q.get('student') || 'S2026001';
 let task = null;
 let stage = 'select';       // select | listen | sentence | summary
@@ -70,6 +88,7 @@ const el = () => document.getElementById('stage');
 const ARTICLES = DB.articles || [];
 // 只有 AR001 内置了逐句资源，其余为占位说明（不伪造句子）
 const SENT_BY_ARTICLE = { AR001: DB.sentences || [] };
+const VT_TAG = { '掌握': 'tag-green', '待加强': 'tag-amber', '': 'tag-slate' };
 
 function setTop(t, s, p, label) {
   document.getElementById('topTitle').textContent = t;
@@ -90,8 +109,7 @@ function boot() {
     const a = ARTICLES.filter(x => x.id === aid)[0];
     if (a) { startWith(a); return; }
   }
-  // 有未完成任务时优先恢复（同一学员最近一条）
-  const active = Store.articleTasksOf(studentId).filter(t => t.status === '进行中')[0];
+  const active = Store.articleTasksOf(studentId).filter(t => Store.isActive(t.status))[0];
   if (active) { task = active; resumeInto(); return; }
   renderSelect();
 }
@@ -99,12 +117,12 @@ function boot() {
 function resumeInto() {
   studentId = task.studentId;
   syncExit();
-  if (task.status !== '进行中') { stage = 'summary'; render(); return; }
+  if (!Store.isActive(task.status)) { stage = 'summary'; render(); return; }
   stage = task.audioDone ? 'sentence' : 'listen';
   if (stage === 'sentence') {
     const d = Store.articleTaskDetails(task.id);
-    const first = d.findIndex(x => !x.readDone);
-    si = first >= 0 ? first : 0;
+    const first = d.findIndex(x => !x.verdict);
+    si = first >= 0 ? first : Math.max(d.findIndex(x => !x.readDone), 0);
   }
   render();
 }
@@ -119,9 +137,10 @@ function startWith(a) {
   try {
     task = Store.startArticleTask({
       studentId: studentId, teacherId: 'T001',
-      articleId: a.id, articleName: a.name, courseId: '',
+      articleId: a.id, articleName: a.name, courseId: courseId,
       sentences: sents, by: '李婉'
     });
+    if (courseId) Store.linkTask(courseId, 'article', task.id);
   } catch (e) {
     Proto.toast(e.message, 'err');
     return;
@@ -134,7 +153,9 @@ function startWith(a) {
 }
 
 function syncExit() {
-  document.getElementById('exitLink').href = 'student-profile.html?student=' + studentId;
+  document.getElementById('exitLink').href = courseId
+    ? 'course-workbench.html?course=' + courseId
+    : 'student-profile.html?student=' + studentId;
 }
 
 function render() {
@@ -169,7 +190,7 @@ function renderSelect() {
   el().innerHTML = `
     <div class="card">
       <div class="card-head"><div class="card-title">选择文章</div>
-        <span class="small muted">教材版本 / 单元 / 文章；历史训练次数来自数据层</span></div>
+        <span class="small muted">${courseId ? '本次训练将归属课程 ' + courseId : '未关联课程，记录不归属任何一节课'}</span></div>
       <div class="card-body">
         <div class="table-wrap">
           <table class="table">
@@ -179,8 +200,8 @@ function renderSelect() {
           </table>
         </div>
         <div class="alert alert-info mt16"><span class="ico">i</span>
-          <div>文章训练流程：完整听文章 → 逐句训练 → 训练总结。每个句子的播放、查看中文、跟读确认都单独落库，
-            <b>刷新后可继续未完成任务</b>。文章训练<b>不会直接改变单词掌握状态</b>。</div></div>
+          <div>流程：完整听 → 逐句训练（播放 / 看中文 / 跟读 → <b>教师判定：掌握 / 待加强</b>）→ 总结。
+            每句的操作与判定都单独落库，<b>刷新后可继续</b>。文章训练<b>不会直接改变单词掌握状态</b>。</div></div>
       </div>
     </div>`;
 }
@@ -236,7 +257,7 @@ function confirmListen() {
   } catch (e) { Proto.toast(e.message, 'err'); return; }
   stage = 'sentence';
   const d = Store.articleTaskDetails(task.id);
-  si = Math.max(d.findIndex(x => !x.readDone), 0);
+  si = Math.max(d.findIndex(x => !x.verdict), 0);
   revealed = false;
   render();
 }
@@ -246,7 +267,9 @@ function renderSentence() {
   const d = Store.articleTaskDetails(task.id);
   const cur = d[si];
   if (!cur) { stage = 'summary'; render(); return; }
-  const doneCount = d.filter(x => x.readDone).length;
+  const readN = d.filter(x => x.readDone).length;
+  const mastered = d.filter(x => x.verdict === '掌握').length;
+  const weak = d.filter(x => x.verdict === '待加强').length;
   setTop('第二阶段 · 逐句训练', task.articleName, `${si + 1} / ${d.length}`, '句子');
 
   el().innerHTML = `
@@ -260,7 +283,7 @@ function renderSentence() {
 
     <div class="flex jcb aic mb12">
       <span class="tag tag-blue nodot">第 ${cur.seq} 句 / 共 ${d.length} 句</span>
-      <span class="small muted">已完成 ${doneCount} / ${d.length} · 任务 ${task.id}</span>
+      <span class="small muted">跟读完成 ${readN} / ${d.length} · 掌握 ${mastered} · 待加强 ${weak}</span>
     </div>
 
     <div class="word-card">
@@ -276,23 +299,46 @@ function renderSentence() {
         ${cur.readDone ? ' · 跟读已确认' : ' · 跟读未确认'}
         ${cur.at ? ' · 最后操作 ' + cur.at.slice(11) : ''}
       </div>
+      ${cur.readDone ? '' : `<div class="mt12" style="text-align:center">
+        <button class="btn btn-sm" onclick="markRead()">✓ 跟读已完成</button></div>`}
     </div>
 
-    <div class="judge-row" style="grid-template-columns:repeat(3,1fr)">
-      <button class="judge" onclick="prevS()">← 上一句</button>
-      <button class="judge" onclick="markSentence('待加强')">跟读待加强</button>
-      <button class="judge yes" onclick="markSentence('通过')">本句完成 ✓</button>
+    <div class="card" style="margin-top:14px">
+      <div class="card-body">
+        <div class="flex jcb aic mb8">
+          <b style="font-size:13.5px">教师判定</b>
+          <span class="tag ${VT_TAG[cur.verdict || '']} nodot">${cur.verdict || '未判定'}</span>
+        </div>
+        <div class="vd-row">
+          <div class="vd ${cur.verdict === '掌握' ? 'ok on' : ''}" onclick="verdict('掌握')">
+            <span class="vd-t">${cur.verdict === '掌握' ? '✓ ' : ''}掌握</span>
+            <small>语音语调正确，本句通过</small></div>
+          <div class="vd ${cur.verdict === '待加强' ? 'warn on' : ''}" onclick="verdict('待加强')">
+            <span class="vd-t">${cur.verdict === '待加强' ? '✓ ' : ''}待加强</span>
+            <small>下次继续练这一句</small></div>
+        </div>
+        <div class="field" style="margin-top:10px;margin-bottom:0">
+          <input class="input" id="vd_note" placeholder="备注（选填）：例如 第 3 个词连读不自然"
+            value="${(cur.verdictNote || '').replace(/"/g, '&quot;')}">
+        </div>
+        ${(cur.verdictLog && cur.verdictLog.length)
+          ? `<div class="vt" style="margin-top:6px">判定历史：${cur.verdictLog.map(l => l.from + '→' + l.to + (l.note ? '（' + l.note + '）' : '')).join('；')}</div>`
+          : ''}
+      </div>
     </div>
 
     <div class="flex jcb mt16">
-      <span class="small muted">${cur.readDone ? '本句已确认，可继续或返回修改' : '未确认的句子不会被静默跳过'}</span>
-      <button class="btn btn-sm" onclick="nextS()">跳过，下一句 →</button>
+      <button class="btn btn-sm" onclick="prevS()">← 上一句</button>
+      <div class="flex gap8">
+        <button class="btn btn-sm" onclick="nextS()">下一句 →</button>
+        <button class="btn btn-sm btn-primary" onclick="stage='summary';render()">进入总结</button>
+      </div>
     </div>
 
     <div class="mini-words mt16">
-      ${d.map((x, i) => `<span class="mini-word ${x.readDone ? 'ok' : ''}"
+      ${d.map((x, i) => `<span class="mini-word ${x.readDone ? 'ok' : ''} ${x.verdict === '掌握' ? 'j-mastered' : x.verdict === '待加强' ? 'j-weak' : ''}"
         style="cursor:pointer;${i === si ? 'outline:2px solid var(--primary);outline-offset:1px' : ''}"
-        onclick="jump(${i})" title="${x.teacherConfirm || (x.readDone ? '已完成' : '未完成')}">${i + 1}</span>`).join('')}
+        onclick="jump(${i})" title="${x.verdict || (x.readDone ? '已跟读，未判定' : '未完成')}">${i + 1}</span>`).join('')}
     </div>`;
 }
 
@@ -318,9 +364,20 @@ function viewCn() {
   render();
 }
 
-function markSentence(state) {
-  if (!log({ readDone: true, teacherConfirm: state }, '已记录：第 ' + Store.articleTaskDetails(task.id)[si].seq + ' 句 ' + state)) return;
-  nextS();
+function markRead() {
+  if (log({ readDone: true }, '已记录：本句跟读完成')) render();
+}
+
+/** 教师判定：掌握 / 待加强 —— 这才是「学得怎么样」，跟读只是「做了什么」 */
+function verdict(v) {
+  const note = (document.getElementById('vd_note') || {}).value || '';
+  const d = Store.articleTaskDetails(task.id);
+  const cur = d[si];
+  if (!log({ verdict: v, verdictNote: note, readDone: true },
+    '已记录：第 ' + cur.seq + ' 句「' + v + '」')) return;
+  const next = Store.articleTaskDetails(task.id).findIndex(x => !x.verdict);
+  if (next >= 0 && next !== si) { si = next; revealed = false; }
+  render();
 }
 
 function jump(i) { si = i; revealed = false; render(); }
@@ -334,8 +391,8 @@ function nextS() {
 /* ---------- 第三阶段：总结 ---------- */
 function renderSummary() {
   const d = Store.articleTaskDetails(task.id);
-  const done = d.filter(x => x.readDone).length;
-  const rest = d.length - done;
+  const st = Store.articleTaskStat(task.id);
+  const closed = !Store.isActive(task.status);
   setTop('第三阶段 · 训练总结', task.articleName, '3 / 3', '阶段');
 
   el().innerHTML = `
@@ -349,30 +406,38 @@ function renderSummary() {
 
     <div class="card">
       <div class="card-head"><div class="card-title">训练总结</div>
-        <span class="tag ${rest === 0 ? 'tag-green' : 'tag-amber'} nodot">
-          ${rest === 0 ? '全部完成' : '部分完成'}</span></div>
+        <span class="tag tag-${Store.statusTone(task.status)} nodot">状态：${task.status}</span></div>
       <div class="card-body">
         <div class="grid g4 mb16">
-          <div class="card stat"><div class="stat-label">文章总句数</div><div class="stat-value">${d.length}</div></div>
-          <div class="card stat"><div class="stat-label">已完成句数</div>
-            <div class="stat-value" style="color:var(--success)">${done}</div></div>
-          <div class="card stat"><div class="stat-label">未完成句数</div>
-            <div class="stat-value" style="color:${rest ? 'var(--warning)' : 'var(--text-3)'}">${rest}</div></div>
+          <div class="card stat"><div class="stat-label">文章总句数</div><div class="stat-value">${st.total}</div></div>
+          <div class="card stat"><div class="stat-label">教师确认掌握</div>
+            <div class="stat-value" style="color:var(--success)">${st.mastered}</div>
+            <div class="stat-foot">跟读完成 ${st.done} 句</div></div>
+          <div class="card stat"><div class="stat-label">待加强</div>
+            <div class="stat-value" style="color:var(--warning)">${st.weak}</div>
+            <div class="stat-foot">未判定 ${st.unjudged} 句</div></div>
           <div class="card stat"><div class="stat-label">完整音频</div>
             <div class="stat-value" style="font-size:16px;color:${task.audioDone ? 'var(--success)' : 'var(--text-3)'}">
               ${task.audioDone ? '已听完' : '未完成'}</div></div>
         </div>
 
+        <div class="alert ${st.weak ? 'alert-warn' : 'alert-info'} mb16"><span class="ico">${st.weak ? '!' : 'i'}</span>
+          <div>文章《${task.articleName}》共 ${st.total} 句，教师确认掌握 <b>${st.mastered}</b> 句，待加强 <b>${st.weak}</b> 句。
+            ${st.weak ? '待加强的句子会显示在总结与家长报告中，下节课优先复习。' : '全部句子都已确认掌握。'}</div></div>
+
         <div class="table-wrap mb16">
           <table class="table compact">
-            <thead><tr><th>#</th><th>句子</th><th>播放</th><th>看中文</th><th>跟读</th><th>教师确认</th></tr></thead>
+            <thead><tr><th>#</th><th>句子</th><th>播放</th><th>看中文</th><th>跟读</th><th>教师判定</th><th>备注</th></tr></thead>
             <tbody>${d.map(x => `<tr>
               <td class="mono small">${x.seq}</td>
               <td class="small">${x.en}</td>
               <td class="small">${x.audioPlayed ? '✓' : '—'}</td>
               <td class="small">${x.cnViewed ? '✓' : '—'}</td>
               <td class="small">${x.readDone ? '✓' : '—'}</td>
-              <td class="small">${x.teacherConfirm || '<span class="muted">—</span>'}</td>
+              <td>${x.verdict
+                ? `<span class="tag ${VT_TAG[x.verdict]} nodot">${x.verdict}</span>`
+                : '<span class="small muted">未判定</span>'}</td>
+              <td class="small muted">${x.verdictNote || '—'}</td>
             </tr>`).join('')}</tbody>
           </table>
         </div>
@@ -385,34 +450,41 @@ function renderSummary() {
         </div>
 
         <div class="alert alert-info mt16"><span class="ico">i</span>
-          <div>保存内容：学员 / 文章 / 教师 / 课程（可为空）/ 开始与完成时间 / 完整音频是否完成 /
-            总句数与完成句数 / 每句的播放·查看中文·跟读·教师确认 / 教师评价 / 任务状态。
-            <b>不改变单词掌握状态。</b></div></div>
+          <div>保存内容：学员 / 文章 / 教师 / 课程 / 开始与完成时间 / 完整音频 / 总句数与完成句数 /
+            每句的播放·查看中文·跟读·<b>教师判定</b> / 教师评价 / 任务状态。<b>不改变单词掌握状态。</b></div></div>
 
         <div class="flex gap8 mt16" style="justify-content:flex-end">
-          <button class="btn" onclick="stage='sentence';render()">返回逐句</button>
-          <button class="btn btn-primary" onclick="saveAll()">保存并返回档案</button>
+          ${closed ? '' : '<button class="btn" onclick="stage=\'sentence\';render()">返回逐句</button>'}
+          ${closed
+            ? `<a class="btn btn-primary" href="${courseId ? 'course-workbench.html?course=' + courseId : 'student-profile.html?student=' + studentId}">返回</a>`
+            : '<button class="btn btn-primary" onclick="saveAll()">保存并返回</button>'}
         </div>
       </div>
     </div>`;
 }
 
 function saveAll() {
-  if (task.status !== '进行中') { Proto.toast('该任务已结束，不能重复提交', 'warn'); location.href = 'student-profile.html?student=' + studentId; return; }
+  if (!Store.isActive(task.status)) { Proto.toast('该任务已结束，不能重复提交', 'warn'); return; }
   const ev = (document.getElementById('evalBox') || {}).value || '';
   const nt = (document.getElementById('noteBox') || {}).value || '';
   let r;
   try {
-    r = Store.finishArticleTask(task.id, { evaluation: ev, note: nt });
-  } catch (e) { Proto.toast(e.message, 'err'); return; }
+    r = Store.finishArticleTask(task.id, { evaluation: ev, note: nt, by: 'T001' });
+  } catch (e) {
+    // 未完成且未填原因时，自动按「提前结束」处理，要求教师确认
+    Proto.toast(e.message + '，请使用「提前结束」填写原因', 'err');
+    return;
+  }
   if (!r.ok) { Proto.toast(r.reason, 'err'); return; }
-  Proto.toast(`已保存：${r.done} / ${r.total} 句，任务状态「${r.task.status}」`, 'ok');
+  Proto.toast(`已保存：${r.done} / ${r.total} 句，掌握 ${r.mastered} · 待加强 ${r.weak}`, 'ok');
+  task = Store.articleTask(task.id);
+  if (courseId) { setTimeout(() => location.href = 'course-workbench.html?course=' + courseId, 600); return; }
   setTimeout(() => location.href = 'student-profile.html?student=' + studentId, 600);
 }
 
 /* ---------- 提前结束 ---------- */
 function openEnd() {
-  if (!task || task.status !== '进行中') { Proto.toast('当前没有进行中的文章训练', 'warn'); return; }
+  if (!task || !Store.isActive(task.status)) { Proto.toast('当前没有进行中的文章训练', 'warn'); return; }
   document.getElementById('endReason').value = '';
   document.getElementById('endEval').value = '';
   Proto.openModal('endModal');
@@ -424,10 +496,11 @@ function doEnd() {
   const ev = document.getElementById('endEval').value.trim();
   let r;
   try {
-    r = Store.finishArticleTask(task.id, { endReason: reason, evaluation: ev });
+    r = Store.finishArticleTask(task.id, { endReason: reason, evaluation: ev, by: 'T001' });
   } catch (e) { Proto.toast(e.message, 'err'); return; }
   Proto.closeModal('endModal');
-  Proto.toast(`已结束并保存：${r.done} / ${r.total} 句，未完成句子保持未完成`, 'ok');
+  Proto.toast(`已结束并保存：${r.done} / ${r.total} 句，状态「${r.task.status}」`, 'warn');
+  task = Store.articleTask(task.id);
   stage = 'summary';
   render();
 }
