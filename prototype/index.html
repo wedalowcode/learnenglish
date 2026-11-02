@@ -26,7 +26,7 @@
     <p>多机构英语一对一教学运营 SaaS。以真实教学过程为核心，把单词训练、文章训练、莱特纳复习与 21 天记忆复习沉淀为标准化教学能力；所有关键业务规则（满员/冲突/扣课/状态流转）均可在原型中点验。</p>
     <div class="landing-meta">
       <span class="badge-role">6 个业务模块</span>
-      <span class="badge-role">48 个页面</span>
+      <span class="badge-role">49 个页面</span>
       <span class="badge-role">5 类终端角色</span>
       <span class="badge-role">纯 HTML5 / CSS3 / ES6</span>
       <span class="badge-role">模拟数据：2026-11-02</span>
@@ -92,6 +92,7 @@
         <a href="teacher/workbench.html">今日工作台<span class="code">teacher/workbench</span></a>
         <a href="teacher/my-students.html">我的学员<span class="code">teacher/my-students</span></a>
         <a href="teacher/student-profile.html">学员学习档案（7 Tab）<span class="code">teacher/student-profile</span></a>
+        <a href="teacher/word-detail.html">单词学习档案（四层数据）<span class="code">teacher/word-detail</span></a>
         <a href="teacher/word-training-setup.html">① 单词训练 · 选词库<span class="code">word-training-setup</span></a>
         <a href="teacher/word-training-prescreen.html">② 预筛选（认识/不认识）<span class="code">prescreen</span></a>
         <a href="teacher/word-training.html">③ 分组训练 · 最后复习 · 结果<span class="code">word-training</span></a>
@@ -156,6 +157,81 @@
 
   </div>
 
+  <!-- 第一轮迭代说明 -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-head">
+      <div class="card-title">第一轮迭代 · 教学核心业务闭环
+        <span class="hint">预筛选 → 分组强化 → 最后复习 → 莱特纳 / 21 天，共用一份数据</span></div>
+      <div class="flex gap8">
+        <span class="badge-role">纯前端 · 本地持久化</span>
+        <button class="btn btn-sm" onclick="resetStore()">重置演示数据</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div><b>统一数据层：</b>本轮新增 <code>assets/js/store.js</code>，学习域全部页面只读写这一份数据，
+          通过 <b id="backendName">—</b> 持久化（不可用时自动降级 sessionStorage → 内存）。
+          刷新页面、跨页跳转都能恢复到同一训练任务；所有页面的单词状态、盒子状态、21 天记录保持一致。
+          <span class="small muted">（点右上角「重置演示数据」可回到初始种子状态）</span></div></div>
+
+      <div class="grid g2" style="gap:16px">
+        <div>
+          <div class="section-title">端到端验收路径</div>
+          <div class="note-list">
+            <div style="margin-bottom:10px">
+              <b>A · 单词训练闭环</b><br>
+              单词训练 → 选择「人教版七上 Unit 1」→ 预筛选逐词点「认识/不认识」（或点「演示用」按钮按示例作答）
+              → 结果页确认 初筛 9 / 队列 14 / 分组 5+5+4 → 开始分组训练 → 逐词判断 → 每组完成 → 最后一轮复习
+              → 勾选复习体系 → 提交并保存 → 查看单词档案。
+            </div>
+            <div style="margin-bottom:10px">
+              <b>B · 莱特纳复习</b><br>
+              莱特纳复习 → 系统推荐复习（预览红盒 6 / 黄盒到期 5 / 手动 2 / 去重 -1 = 12）→ 按去重结果开始
+              → 逐词判断（观察盒子去向提示）→ 完成 → 查看「单词去向」表 → 返回盒子看数量变化
+              → 复习记录 / 单词历史。
+            </div>
+            <div style="margin-bottom:10px">
+              <b>C · 21 天复习</b><br>
+              21 天记忆复习 → 看时间轴与今日 12 个任务 → 创建新计划（选单词范围）→ 生成时间轴
+              → 进入今日复习 → 逐词判断 → 完成 → 回计划页看进度与完成率。
+            </div>
+            <div>
+              <b>D · 同一单词跨体系</b><br>
+              单词档案选 classroom → 在莱特纳复习判「认识」（盒子升级）→ 在 21 天今日任务判「不认识」
+              → 回到单词档案，两个体系的记录都在，且互不覆盖。
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="section-title">本轮数据模型（14 张表）</div>
+          <div class="note-list" style="columns:2;column-gap:18px">
+            <div>words 基础单词</div>
+            <div>wordbooks 词库</div>
+            <div>wordbookWords 词库词关系</div>
+            <div>prescreens 预筛选记录</div>
+            <div>trainTasks 训练任务</div>
+            <div>trainDetails 训练明细</div>
+            <div>studentWordStates 学员单词档案</div>
+            <div>leitnerStates 莱特纳状态</div>
+            <div>leitnerTasks 复习任务</div>
+            <div>leitnerRecords 复习记录</div>
+            <div>leitnerOps 手动操作留痕</div>
+            <div>plans21 / plan21Tasks / plan21Records</div>
+          </div>
+          <div class="alert alert-warn mt16"><span class="ico">!</span>
+            <div>五层数据<b>分开存储</b>：基础单词、学员状态、莱特纳、21 天、训练过程。
+              任一体系复习只改自己的层，不会覆盖另一体系。</div></div>
+          <div class="flex gap8 mt12" style="flex-wrap:wrap">
+            <a class="btn btn-sm" href="teacher/word-training-setup.html">A 单词训练</a>
+            <a class="btn btn-sm" href="teacher/leitner.html">B 莱特纳</a>
+            <a class="btn btn-sm" href="teacher/memory21.html">C 21 天</a>
+            <a class="btn btn-sm" href="teacher/word-detail.html">D 单词档案</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="card" style="margin-top:16px">
     <div class="card-head"><div class="card-title">设计假设与待确认项<span class="hint">PRD 未明确处，原型按下列假设实现，并显式标注</span></div></div>
     <div class="card-body">
@@ -190,5 +266,16 @@
 
   <p class="small muted" style="text-align:center;margin-top:24px">点击任意页面左上角「← 原型导航总览」可返回本页 · 顶栏「切换角色」可跳转其他角色入口</p>
 </div>
+<script>window.PROTO_ROOT = '';</script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/store.js"></script>
+<script>
+document.getElementById('backendName').textContent = Store.backend;
+function resetStore() {
+  if (!confirm('重置后所有训练任务、复习记录将回到初始演示状态，确定继续？')) return;
+  Store.reset();
+  location.reload();
+}
+</script>
 </body>
 </html>

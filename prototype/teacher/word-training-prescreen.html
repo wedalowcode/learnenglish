@@ -9,15 +9,15 @@
 <body class="focus-page">
 
 <div class="focus-top">
-  <a class="btn btn-sm" href="word-training-setup.html">← 返回选择</a>
+  <a class="btn btn-sm" href="word-training-setup.html" id="backLink">← 返回选择</a>
   <div>
-    <div class="ft-title">单词预筛选 · 陈可欣</div>
-    <div class="ft-sub">人教版 七年级上 Unit 1 词汇</div>
+    <div class="ft-title" id="ftTitle">单词预筛选</div>
+    <div class="ft-sub" id="ftSub">—</div>
   </div>
   <div class="grow"></div>
-  <div class="text-r">
-    <div class="small muted">进度</div>
-    <div style="font-size:15px;font-weight:600" id="prog">1 / 23</div>
+  <div class="text-r" style="margin-right:12px">
+    <div class="small muted">预筛进度</div>
+    <div style="font-size:15px;font-weight:600" id="prog">0 / 0</div>
   </div>
   <button class="btn btn-sm" onclick="finishEarly()">结束预筛选</button>
 </div>
@@ -25,78 +25,110 @@
 <div class="focus-main">
   <div class="focus-wrap">
 
-    <div class="bar mb16"><i id="barFill" style="width:4%"></i></div>
+    <div class="bar mb16"><i id="barFill" style="width:0%"></i></div>
+
+    <!-- 任务不存在 -->
+    <div id="noTask" class="card hidden">
+      <div class="card-body">
+        <div class="empty"><div class="e-ico">▤</div>
+          <p id="noTaskMsg">没有可用的训练任务</p>
+          <a class="btn btn-primary" href="word-training-setup.html">回到词库选择</a>
+        </div>
+      </div>
+    </div>
 
     <!-- 预筛卡片 -->
     <div id="cardArea">
       <div class="word-card">
-        <div class="wc-en" id="wEn">name</div>
-        <div class="wc-ph" id="wPh">/neɪm/</div>
-        <div class="wc-cn" id="wCn"><span class="pos">n.</span> 名字</div>
+        <div class="wc-en" id="wEn">—</div>
+        <div class="wc-ph" id="wPh">—</div>
+        <div class="wc-cn" id="wCn">—</div>
         <div class="mt16">
-          <button class="audio-btn" data-label="▶ 播放发音" onclick="Proto.playAudio(this, document.getElementById('wEn').textContent)">
-            ▶ 播放发音</button>
+          <button class="audio-btn" data-label="▶ 播放发音" onclick="playCur(this)">▶ 播放发音</button>
         </div>
       </div>
 
       <div class="alert alert-info mt16"><span class="ico">i</span>
-        <div>预筛选只是初筛：<b>认识 ≠ 正式掌握</b>。认识的单词不进入本次新词强化队列，仍会记录初筛结果。</div></div>
+        <div>预筛选只是初筛：<b>认识 ≠ 正式掌握</b>。认识的单词不进入本次强化队列，但仍会记录初筛结果；
+          未作答的单词不会被当作认识或不认识。</div></div>
 
       <div class="judge-row">
         <button class="judge no" onclick="answer(false)">不认识 <kbd>1</kbd></button>
         <button class="judge yes" onclick="answer(true)">认识 <kbd>2</kbd></button>
       </div>
-      <div class="text-c mt12"><button class="btn btn-ghost btn-sm" onclick="prev()">← 上一个单词</button></div>
+
+      <div class="flex jcb aic mt12">
+        <button class="btn btn-ghost btn-sm" onclick="prev()">← 上一个</button>
+        <div class="flex gap8 aic">
+          <span class="small muted" id="tallyKnown">认识 0</span>
+          <span class="small muted">·</span>
+          <span class="small muted" id="tallyUnknown">不认识 0</span>
+          <span class="small muted">·</span>
+          <span class="small muted" id="tallyLeft">未作答 0</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="next()">下一个 →</button>
+      </div>
+
+      <div class="text-c mt12">
+        <button class="btn btn-ghost btn-sm" onclick="demoFill()" title="仅用于快速验证队列规则">
+          演示用：按示例结果作答（前 9 认识 / 其余不认识）
+        </button>
+      </div>
     </div>
 
     <!-- 预筛结果 -->
     <div id="resultArea" class="hidden">
       <div class="card">
-        <div class="card-head"><div class="card-title">预筛选完成</div>
-          <span class="small muted">结果已逐词记录</span></div>
+        <div class="card-head"><div class="card-title">预筛选完成 · 队列已生成</div>
+          <span class="small muted mono" id="resTaskNo"></span></div>
         <div class="card-body">
-          <div class="grid g3 mb16">
-            <div class="card stat"><div class="stat-label">本词库单词</div><div class="stat-value">23</div></div>
-            <div class="card stat"><div class="stat-label">认识（初筛）</div>
-              <div class="stat-value" style="color:var(--info)">9</div>
-              <div class="stat-foot">不进入本次强化队列</div></div>
-            <div class="card stat"><div class="stat-label">不认识（待训练）</div>
-              <div class="stat-value" style="color:var(--warning)">14</div>
-              <div class="stat-foot">进入本次分组训练</div></div>
+
+          <div class="grid g4 mb16">
+            <div class="card stat"><div class="stat-label">本词库单词</div>
+              <div class="stat-value" id="rBook">0</div>
+              <div class="stat-foot">词库全部词条</div></div>
+            <div class="card stat"><div class="stat-label">初筛认识</div>
+              <div class="stat-value" style="color:var(--info)" id="rKnown">0</div>
+              <div class="stat-foot">不进入本次强化训练</div></div>
+            <div class="card stat"><div class="stat-label">本次训练队列</div>
+              <div class="stat-value" style="color:var(--primary)" id="rQueue">0</div>
+              <div class="stat-foot" id="rQueueFoot">不认识且未超上限</div></div>
+            <div class="card stat"><div class="stat-label">剩余待训练</div>
+              <div class="stat-value" style="color:var(--warning)" id="rRemain">0</div>
+              <div class="stat-foot" id="rRemainFoot">超 45 上限，保留到后续训练</div></div>
+          </div>
+
+          <div id="resAlert"></div>
+
+          <div class="section-title">训练队列（按词库顺序）</div>
+          <div class="mini-words mb12" id="queueWords" style="justify-content:flex-start"></div>
+          <div class="small muted mb16">
+            <span class="mini-word no" style="padding:1px 8px">深色</span> = 进入本次强化训练队列
+            <span class="mini-word" style="padding:1px 8px;margin-left:10px">浅色</span> = 初筛认识，本次不训练
+          </div>
+
+          <div class="section-title">分组规划（每组最多 5 个，末组按实际数量）</div>
+          <div class="grid g6 mb12" id="groupPlan"></div>
+          <div class="small muted mb16" id="groupFoot"></div>
+
+          <div class="table-wrap mb16">
+            <table class="table compact">
+              <thead><tr><th>词语</th><th class="right">初筛认识</th><th class="right">不认识</th><th class="right">未作答</th>
+                <th class="right">进入队列</th><th class="right">保留待训练</th></tr></thead>
+              <tbody>
+                <tr><td class="strong">本次预筛合计</td>
+                  <td class="right mono" id="sumKnown">0</td>
+                  <td class="right mono" id="sumUnknown">0</td>
+                  <td class="right mono" id="sumUnscreen">0</td>
+                  <td class="right mono" id="sumQueue">0</td>
+                  <td class="right mono" id="sumRemain">0</td></tr>
+              </tbody>
+            </table>
           </div>
 
           <div class="alert alert-info mb16"><span class="ico">i</span>
-            <div>待训练 <b>14</b> 个，未超过单次上限 45 个，将<b>全部</b>进入本次训练。<br>
-              若超过 45 个，系统按词库顺序取前 45 个，其余保留为待训练状态，后续训练仍可选择。</div></div>
-
-          <div class="section-title">训练队列预览</div>
-          <div class="mini-words mb16">
-            <span class="mini-word ok">name</span><span class="mini-word ok">nice</span>
-            <span class="mini-word ok">meet</span><span class="mini-word ok">too</span>
-            <span class="mini-word ok">your</span><span class="mini-word ok">his</span>
-            <span class="mini-word ok">her</span><span class="mini-word ok">yes</span>
-            <span class="mini-word ok">she</span>
-            <span class="mini-word">he</span><span class="mini-word">no</span><span class="mini-word">not</span>
-            <span class="mini-word">friend</span><span class="mini-word">question</span><span class="mini-word">answer</span>
-            <span class="mini-word">look</span><span class="mini-word">first</span><span class="mini-word">last</span>
-            <span class="mini-word">class</span><span class="mini-word">classroom</span>
-            <span class="mini-word">library</span><span class="mini-word">happy</span><span class="mini-word">family</span>
-          </div>
-          <div class="small muted mb16">浅色 = 初筛认识（不进入强化）；深色描边 = 进入本次训练队列</div>
-
-          <div class="section-title">分组规划</div>
-          <div class="grid g6 mb16">
-            <div class="kv-pill">第 1 组 · 5 个</div>
-            <div class="kv-pill">第 2 组 · 5 个</div>
-            <div class="kv-pill">第 3 组 · 5 个</div>
-            <div class="kv-pill">第 4 组 · 5 个</div>
-            <div class="kv-pill">第 5 组 · 3 个</div>
-            <div class="kv-pill muted">共 5 组 / 23 个</div>
-          </div>
-
-          <div class="alert alert-warn mb16"><span class="ico">!</span>
-            <div>本次演示按「全部 23 个单词都要训练」生成队列（含 9 个初筛认识），以便完整演示 5 组分组；
-              实际业务中初筛认识的单词默认不进入强化队列。</div></div>
+            <div>队列已写入训练任务 <b class="mono" id="resTaskNo2">—</b>（状态：强化训练中）。
+              本次队列与每个单词的初筛结果都会持久化，刷新页面或换页后不会丢失。</div></div>
 
           <div class="flex gap8" style="justify-content:flex-end">
             <button class="btn" onclick="restart()">重新预筛</button>
@@ -113,72 +145,186 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
-const WORDS = DB.words;
-let idx = 0;
-const answers = {};   // 索引 -> true/false
+const params = new URLSearchParams(location.search);
+let task = null, words = [], idx = 0, resultData = null;
 
-function render() {
-  const w = WORDS[idx];
-  document.getElementById('wEn').textContent = w.en;
-  document.getElementById('wPh').textContent = w.ph;
-  document.getElementById('wCn').innerHTML = w.mean
-    .map(m => `<div><span class="pos">${m.pos}</span> ${m.cn}</div>`).join('');
-  document.getElementById('prog').textContent = `${idx + 1} / ${WORDS.length}`;
-  document.getElementById('barFill').style.width = ((idx + 1) / WORDS.length * 100) + '%';
-  Proto.speak('');  // 停止上一次朗读
-}
+function boot() {
+  const tid = params.get('task');
+  const guessStudent = params.get('student') || 'S2026001';
+  task = tid ? Store.trainTask(tid) : Store.activeTask(guessStudent);
 
-function answer(known) {
-  answers[idx] = known;
-  if (idx < WORDS.length - 1) {
-    idx++;
-    render();
-  } else {
-    showResult();
+  if (!task) {
+    if (!tid) { location.replace('word-training-setup.html'); return; }
+    document.getElementById('noTask').classList.remove('hidden');
+    document.getElementById('cardArea').classList.add('hidden');
+    document.getElementById('noTaskMsg').textContent =
+      '任务 ' + tid + ' 不存在或已被重置，请重新选择词库开始新的训练。';
+    return;
   }
-}
+  if (task.status !== '预筛选中') {
+    // 已经完成预筛：直接去看结果 / 继续训练
+    location.replace('word-training.html?task=' + task.id);
+    return;
+  }
 
-function prev() {
-  if (idx > 0) { idx--; render(); }
-}
+  words = task.wordIds.map(id => Store.word(id)).filter(Boolean);
+  const stu = Store.student(task.studentId);
+  document.getElementById('ftTitle').textContent = '单词预筛选 · ' + stu.name;
+  document.getElementById('ftSub').textContent = task.wordbookName + ' · 任务 ' + task.id;
+  document.getElementById('backLink').href = 'word-training-setup.html?student=' + task.studentId;
 
-function showResult() {
-  document.getElementById('cardArea').classList.add('hidden');
-  document.getElementById('resultArea').classList.remove('hidden');
-  document.getElementById('prog').textContent = `${WORDS.length} / ${WORDS.length}`;
-  document.getElementById('barFill').style.width = '100%';
-}
-
-function restart() {
-  idx = 0;
-  Object.keys(answers).forEach(k => delete answers[k]);
-  document.getElementById('cardArea').classList.remove('hidden');
-  document.getElementById('resultArea').classList.add('hidden');
+  // 恢复已作答的位置（刷新后从第一个未作答开始）
+  const firstUnanswered = words.findIndex(w => !task.prescreen[w.id]);
+  idx = firstUnanswered < 0 ? words.length - 1 : firstUnanswered;
   render();
 }
 
+function render() {
+  const w = words[idx];
+  if (!w) return;
+  document.getElementById('wEn').textContent = w.en;
+  document.getElementById('wPh').textContent = w.ph;
+  document.getElementById('wCn').innerHTML = w.mean.map(m => `<div><span class="pos">${m.pos}</span> ${m.cn}</div>`).join('');
+  document.getElementById('prog').textContent = `${idx + 1} / ${words.length}`;
+  document.getElementById('barFill').style.width = ((idx + 1) / words.length * 100) + '%';
+
+  const known = words.filter(x => task.prescreen[x.id] && task.prescreen[x.id].known).length;
+  const unknown = words.filter(x => task.prescreen[x.id] && !task.prescreen[x.id].known).length;
+  document.getElementById('tallyKnown').textContent = '认识 ' + known;
+  document.getElementById('tallyUnknown').textContent = '不认识 ' + unknown;
+  document.getElementById('tallyLeft').textContent = '未作答 ' + (words.length - known - unknown);
+  Proto.speak('');
+}
+
+function playCur(btn) { Proto.playAudio(btn, words[idx].en); }
+
+/* 逐词落库：每次判断立即写入数据层，刷新不丢 */
+function answer(known) {
+  const w = words[idx];
+  Store.prescreenAnswer(task.id, w.id, known);
+  task = Store.trainTask(task.id);
+  if (idx < words.length - 1) { idx++; render(); }
+  else showResult();
+}
+
+function next() { if (idx < words.length - 1) { idx++; render(); } }
+function prev() { if (idx > 0) { idx--; render(); } }
+
+/* 演示填充：走同一套真实写入逻辑，仅用于快速验证队列规则 */
+function demoFill() {
+  Proto.confirmBox('按示例结果作答',
+    `将对全部 ${words.length} 个单词按「前 9 个认识、其余不认识」写入预筛结果。<br><br>
+     这只是省去点击，写入的记录与手动点击<b>完全相同</b>；正式版本会移除此入口。`,
+    '按示例写入', () => {
+      words.forEach((w, i) => {
+        if (task.prescreen[w.id]) Store.prescreenAnswer(task.id, w.id, task.prescreen[w.id].known);
+        else Store.prescreenAnswer(task.id, w.id, i < 9);
+      });
+      task = Store.trainTask(task.id);
+      showResult();
+    });
+}
+
+/* 结束预筛选 → 生成队列（认识的单词不入队 / 45 上限 / 末组按实际） */
+function showResult() {
+  const r = Store.finishPrescreen(task.id);
+  task = Store.trainTask(task.id);
+  resultData = r;
+
+  document.getElementById('cardArea').classList.add('hidden');
+  document.getElementById('resultArea').classList.remove('hidden');
+  document.getElementById('prog').textContent = `${words.length} / ${words.length}`;
+  document.getElementById('barFill').style.width = '100%';
+  document.getElementById('resTaskNo').textContent = task.id;
+  document.getElementById('resTaskNo2').textContent = task.id;
+
+  document.getElementById('rBook').textContent = r.bookTotal;
+  document.getElementById('rKnown').textContent = r.known;
+  document.getElementById('rQueue').textContent = r.queue.length;
+  document.getElementById('rRemain').textContent = r.remain.length;
+  document.getElementById('rRemainFoot').textContent = r.remain.length
+    ? '超过 45 上限，保留到后续训练'
+    : '未超出上限，无单词被截断';
+  document.getElementById('rQueueFoot').textContent = r.remain.length
+    ? `不认识 ${r.unknown} 个，前 ${r.queue.length} 个入队`
+    : `不认识 ${r.unknown} 个，全部入队`;
+
+  document.getElementById('sumKnown').textContent = r.known;
+  document.getElementById('sumUnknown').textContent = r.unknown;
+  document.getElementById('sumUnscreen').textContent = r.unscreened;
+  document.getElementById('sumQueue').textContent = r.queue.length;
+  document.getElementById('sumRemain').textContent = r.remain.length;
+
+  // 提示语按真实结果生成，不再写死
+  let alertHtml = '';
+  if (r.unscreened > 0) {
+    alertHtml += `<div class="alert alert-warn mb16"><span class="ico">!</span>
+      <div>有 <b>${r.unscreened}</b> 个单词未作答，既不视为认识也不视为不认识，<b>不会进入</b>本次队列；
+        如需训练请返回补齐预筛。</div></div>`;
+  }
+  if (r.remain.length > 0) {
+    alertHtml += `<div class="alert alert-warn mb16"><span class="ico">!</span>
+      <div>不认识 <b>${r.unknown}</b> 个，超过单次上限 <b>45</b> 个。按词库顺序取前 <b>${r.queue.length}</b> 个入队，
+        其余 <b>${r.remain.length}</b> 个保留为「待强化训练」，可在后续训练中继续。</div></div>`;
+  } else {
+    alertHtml += `<div class="alert alert-info mb16"><span class="ico">i</span>
+      <div>不认识 <b>${r.unknown}</b> 个，未超过单次上限 45 个，全部进入本次训练；
+        初筛认识的 <b>${r.known}</b> 个本次不训练。</div></div>`;
+  }
+  document.getElementById('resAlert').innerHTML = alertHtml;
+
+  // 队列可视化：按词库顺序，认识的和入队的都列出来
+  const queueSet = {};
+  r.queue.forEach(id => queueSet[id] = 1);
+  document.getElementById('queueWords').innerHTML = words.map(w => {
+    const p = task.prescreen[w.id];
+    const inQ = queueSet[w.id];
+    const cls = inQ ? 'no' : (p && p.known ? '' : '');
+    const tip = inQ ? '进入训练队列' : (p && p.known ? '初筛认识，本次不训练' : '未作答');
+    return `<span class="mini-word ${cls}" title="${tip}">${w.en}</span>`;
+  }).join('');
+
+  // 分组：按真实队列长度计算
+  document.getElementById('groupPlan').innerHTML =
+    r.groups.map((g, i) => `<div class="kv-pill">第 ${i + 1} 组 · ${g.length} 个</div>`).join('') +
+    `<div class="kv-pill muted">共 ${r.groups.length} 组 / ${r.queue.length} 个</div>`;
+  document.getElementById('groupFoot').textContent =
+    `分组规则：每组最多 5 个，末组不足 5 个按实际数量展示 → ` +
+    r.groups.map(g => g.length).join(' + ') + ' = ' + r.queue.length + ' 个';
+
+  Proto.toast('预筛完成：队列 ' + r.queue.length + ' 个 / ' + r.groups.length + ' 组', 'ok');
+}
+
+function restart() {
+  Proto.confirmBox('重新预筛',
+    '将清空本次预筛结果并重新开始。已生成的队列会被新的预筛结果覆盖（训练明细不受影响）。',
+    '重新开始', () => location.reload());
+}
+
 function finishEarly() {
+  const done = words.filter(w => task.prescreen[w.id]).length;
   Proto.confirmBox('结束预筛选',
-    `当前已筛 ${idx} / ${WORDS.length} 个单词。<br><br>
-     提前结束会把<b>未筛的单词保留为「未训练」状态</b>，不影响后续重新预筛。`,
-    '结束', () => location.href = 'student-profile.html');
+    `当前已作答 ${done} / ${words.length} 个单词。<br><br>
+     提前结束会把<b>未作答的单词保留为「未训练」状态</b>，不进入队列，也不影响后续重新预筛。`,
+    '结束并退出', () => location.href = 'word-training-setup.html?student=' + task.studentId);
 }
 
 function goTraining() {
-  sessionStorage.setItem('proto_train_words', JSON.stringify(WORDS));
-  location.href = 'word-training.html';
+  location.href = 'word-training.html?task=' + task.id;
 }
 
 document.addEventListener('keydown', e => {
-  if (document.getElementById('resultArea').classList.contains('hidden')) {
-    if (e.key === '1') answer(false);
-    if (e.key === '2') answer(true);
-    if (e.key === 'ArrowLeft') prev();
-  }
+  if (!document.getElementById('resultArea').classList.contains('hidden')) return;
+  if (!task) return;
+  if (e.key === '1') answer(false);
+  if (e.key === '2') answer(true);
+  if (e.key === 'ArrowLeft') prev();
+  if (e.key === 'ArrowRight') next();
 });
 
-render();
+boot();
 </script>
 </body>
 </html>

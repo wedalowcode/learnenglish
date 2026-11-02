@@ -9,17 +9,17 @@
 <body class="focus-page">
 
 <div class="focus-top">
-  <a class="btn btn-sm" href="memory21.html">← 退出复习</a>
+  <a class="btn btn-sm" href="#" id="backLink">← 退出复习</a>
   <div>
-    <div class="ft-title">21 天记忆复习 · 陈可欣</div>
-    <div class="ft-sub">计划：11 月记忆强化计划 · 第 10 天 · 今日任务 12 个</div>
+    <div class="ft-title" id="ftTitle">21 天记忆复习</div>
+    <div class="ft-sub" id="ftSub">—</div>
   </div>
   <div class="grow"></div>
   <div class="text-r" style="margin-right:12px">
     <div class="small muted">复习进度</div>
-    <div style="font-size:15px;font-weight:600" id="prog">1 / 12</div>
+    <div style="font-size:15px;font-weight:600" id="prog">0 / 0</div>
   </div>
-  <button class="btn btn-sm" onclick="Proto.confirmBox('结束复习','已完成结果会保存，未复习单词仍保留在今日任务中。','结束',()=>location.href='memory21.html')">结束</button>
+  <button class="btn btn-sm" onclick="finishEarly()">结束</button>
 </div>
 
 <div class="focus-main">
@@ -29,46 +29,89 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
-const LIST = [
-  { en: 'friend', ph: '/frend/', cn: '朋友' },
-  { en: 'question', ph: '/ˈkwestʃən/', cn: '问题；询问' },
-  { en: 'answer', ph: '/ˈɑːnsə(r)/', cn: '回答；答案' },
-  { en: 'library', ph: '/ˈlaɪbrəri/', cn: '图书馆' },
-  { en: 'classroom', ph: '/ˈklɑːsruːm/', cn: '教室' },
-  { en: 'family', ph: '/ˈfæməli/', cn: '家；家人' },
-  { en: 'class', ph: '/klɑːs/', cn: '班级；课' },
-  { en: 'look', ph: '/lʊk/', cn: '看；看起来' },
-  { en: 'first', ph: '/fɜːst/', cn: '第一的；首先' },
-  { en: 'last', ph: '/lɑːst/', cn: '最后的；持续' },
-  { en: 'happy', ph: '/ˈhæpi/', cn: '高兴的；快乐的' },
-  { en: 'name', ph: '/neɪm/', cn: '名字；命名' },
-];
+const q = new URLSearchParams(location.search);
+let task = null, plan = null, list = [], i = 0, revealed = false;
 
-const S = { i: 0, revealed: false, ans: {}, stage: 'run' };
 const el = () => document.getElementById('stage');
+const w = id => Store.word(id);
+const RESULT_LABEL = { yes: '认识', no: '不认识', mid: '暂不确定' };
+
+function boot() {
+  const tid = q.get('task');
+  task = tid ? Store.plan21Task(tid) : null;
+  if (!task) {
+    const sid = q.get('student') || 'S2026001';
+    const p0 = Store.plansOf(sid)[0];
+    task = p0 ? Store.plan21Today(p0.id) : null;
+    if (!task) { renderEmpty('今天不是复习节点'); return; }
+  }
+  plan = Store.plan21(task.planId);
+  list = task.wordIds.slice();
+
+  const stu = Store.student(plan.studentId);
+  document.getElementById('ftTitle').textContent = '21 天记忆复习 · ' + stu.name;
+  document.getElementById('ftSub').textContent =
+    `计划：${plan.name} · 第 ${task.day} 天 · 今日任务 ${list.length} 个`;
+  document.getElementById('backLink').href = 'memory21.html?student=' + plan.studentId + '&plan=' + plan.id;
+
+  const done = doneSet();
+  if (done.size >= list.length) { renderDone(); return; }
+  const first = list.findIndex(id => !done.has(id));
+  i = first < 0 ? list.length - 1 : first;
+  render();
+}
+
+function doneSet() {
+  const s = new Set();
+  Store.plan21Records(plan.id).filter(r => r.taskId === task.id).forEach(r => s.add(r.wordId));
+  return s;
+}
+
+function renderEmpty(msg) {
+  el().innerHTML = `<div class="card"><div class="card-body">
+    <div class="empty"><div class="e-ico">✓</div><p>${msg}</p>
+    <a class="btn btn-primary" href="memory21.html">返回计划</a></div></div></div>`;
+}
 
 function render() {
-  document.getElementById('prog').textContent = `${Math.min(S.i + 1, LIST.length)} / ${LIST.length}`;
-  if (S.stage === 'done') { renderDone(); return; }
-  const w = LIST[S.i];
+  const id = list[i];
+  if (!id) { renderDone(); return; }
+  const word = w(id);
+  const done = doneSet();
+  const recs = Store.plan21Records(plan.id, id).sort((a, b) => a.at < b.at ? 1 : -1);
+  const thisRec = recs.filter(r => r.taskId === task.id)[0];
+  const lastRec = recs[0];
+
+  document.getElementById('prog').textContent = `${Math.min(i + 1, list.length)} / ${list.length}`;
 
   el().innerHTML = `
-    <div class="bar mb16"><i style="width:${(S.i / LIST.length * 100).toFixed(1)}%"></i></div>
+    <div class="bar mb16"><i style="width:${(done.size / list.length * 100).toFixed(1)}%"></i></div>
 
     <div class="alert alert-info mb16"><span class="ico">i</span>
-      <div>当前处于 <b>21 天记忆复习</b> 体系，本轮任务按计划第 10 天生成。此体系不使用盒子，与莱特纳体系结果互相独立。</div></div>
+      <div>当前处于 <b>21 天记忆复习</b> 体系（计划：${plan.name} · 第 ${task.day} 天）。
+        此体系<b>不使用红黄绿盒子</b>，与莱特纳体系结果互相独立。</div></div>
+
+    <div class="flex jcb aic mb12">
+      <span class="tag tag-blue nodot">计划第 ${task.day} 天 · ${task.date}</span>
+      <span class="small muted">上次结果：${lastRec ? RESULT_LABEL[lastRec.result] + ' · ' + lastRec.at.slice(5, 10) : '—'} · 已复习 ${done.size} / ${list.length}</span>
+    </div>
 
     <div class="word-card">
-      <div class="wc-en">${w.en}</div>
-      <div class="wc-ph">${w.ph}</div>
-      ${S.revealed ? `<div class="wc-cn">${w.cn}</div>`
+      <div class="wc-en">${word.en}</div>
+      <div class="wc-ph">${word.ph}</div>
+      ${revealed
+        ? `<div class="wc-cn">${word.mean.map(m => `<div><span class="pos">${m.pos}</span> ${m.cn}</div>`).join('')}</div>`
         : `<div class="wc-cn muted" style="font-size:14px">（点击「显示答案」查看中文释义）</div>`}
       <div class="mt12">
-        <button class="audio-btn" data-label="▶ 播放发音" onclick="Proto.playAudio(this,'${w.en}')">▶ 播放发音</button>
-        ${S.revealed ? '' : `<button class="btn btn-sm" style="margin-left:8px" onclick="reveal()">显示答案</button>`}
+        <button class="audio-btn" data-label="▶ 播放发音" onclick="Proto.playAudio(this,'${word.en}')">▶ 播放发音</button>
+        ${revealed ? '' : `<button class="btn btn-sm" style="margin-left:8px" onclick="reveal()">显示答案</button>`}
       </div>
     </div>
+
+    ${thisRec ? `<div class="mt12 text-c"><span class="tag ${thisRec.result === 'yes' ? 'tag-green' : 'tag-red'} nodot">
+      本词今日已判：${RESULT_LABEL[thisRec.result]}（${thisRec.at.slice(11)}）</span></div>` : ''}
 
     <div class="judge-row">
       <button class="judge no" onclick="ans('no')">不认识 <kbd>1</kbd></button>
@@ -77,34 +120,63 @@ function render() {
 
     <div class="flex jcb mt12">
       <button class="btn btn-ghost btn-sm" onclick="prev()">← 上一个</button>
-      <div class="small muted">记录：是否认识 / 复习时间 / 教师 / 轮次 / 备注</div>
+      <div class="small muted">记录：是否认识 / 时间 / 教师 / 轮次 / 计划节点</div>
       <button class="btn btn-ghost btn-sm" onclick="next()">下一个 →</button>
+    </div>
+
+    <div class="text-c mt16">
+      <button class="btn btn-sm" onclick="finishNow()">提前结束并保存已复习结果</button>
     </div>`;
 }
 
-function reveal() { S.revealed = true; render(); }
-function prev() { if (S.i > 0) { S.i--; S.revealed = false; render(); } }
-function next() { if (S.i < LIST.length - 1) { S.i++; S.revealed = false; render(); } }
+function reveal() { revealed = true; render(); }
+function prev() { if (i > 0) { i--; revealed = false; render(); } }
+function next() { if (i < list.length - 1) { i++; revealed = false; render(); } }
 
 function ans(v) {
-  S.ans[S.i] = v;
-  const w = LIST[S.i];
-  Proto.toast(`${w.en}：${v === 'yes' ? '认识' : '不认识'} · 已记录到第 10 天任务`);
-  if (S.i < LIST.length - 1) { S.i++; S.revealed = false; render(); }
-  else { S.stage = 'done'; render(); }
+  const id = list[i];
+  Store.plan21Judge(task.id, id, v, 'T001');
+  task = Store.plan21Task(task.id);
+  Proto.toast(`${w(id).en}：${RESULT_LABEL[v]} · 已写入第 ${task.day} 天任务（不改莱特纳盒子）`,
+    v === 'yes' ? 'ok' : 'warn');
+
+  const done = doneSet();
+  if (done.size >= list.length) { renderDone(); return; }
+  const first = list.findIndex((x, k) => k > i && !done.has(x));
+  const any = list.findIndex(x => !done.has(x));
+  i = first >= 0 ? first : (any >= 0 ? any : i);
+  revealed = false;
+  render();
+}
+
+function finishEarly() {
+  Proto.confirmBox('结束复习',
+    '已完成的结果会保存到本节点，未复习的单词仍保留在今日任务中。', '结束', () => finishNow());
+}
+
+function finishNow() {
+  Store.finish21Task(task.id);
+  task = Store.plan21Task(task.id);
+  renderDone();
 }
 
 function renderDone() {
-  const yes = Object.values(S.ans).filter(v => v === 'yes').length;
-  const no = Object.values(S.ans).filter(v => v === 'no').length;
+  Store.finish21Task(task.id);
+  task = Store.plan21Task(task.id);
+  const recs = Store.plan21Records(plan.id).filter(r => r.taskId === task.id);
+  const yes = recs.filter(r => r.result === 'yes').length;
+  const no = recs.length - yes;
+  const prog = Store.plan21Progress(plan);
+  document.getElementById('prog').textContent = `${recs.length} / ${list.length}`;
 
   el().innerHTML = `
     <div class="card">
-      <div class="card-head"><div class="card-title">第 10 天复习完成</div>
-        <span class="tag tag-green nodot">${LIST.length} 个单词</span></div>
+      <div class="card-head"><div class="card-title">第 ${task.day} 天复习完成</div>
+        <span class="tag tag-green nodot">${recs.length} / ${list.length} 个单词</span></div>
       <div class="card-body">
         <div class="grid g3 mb16">
-          <div class="card stat"><div class="stat-label">今日任务</div><div class="stat-value">${LIST.length}</div></div>
+          <div class="card stat"><div class="stat-label">今日任务</div><div class="stat-value">${list.length}</div>
+            <div class="stat-foot">${task.date}</div></div>
           <div class="card stat"><div class="stat-label">认识</div>
             <div class="stat-value" style="color:var(--success)">${yes}</div></div>
           <div class="card stat"><div class="stat-label">不认识</div>
@@ -112,31 +184,54 @@ function renderDone() {
         </div>
 
         <div class="alert alert-info mb12"><span class="ico">i</span>
-          <div>已保存单词级复习结果，并更新第 10 天节点的完成情况。
+          <div>已保存<b>单词级</b>复习结果并更新第 ${task.day} 天节点完成情况。
             后续节点是否因此调整（如答错追加复习）由<b>机构配置</b>决定。</div></div>
-        <div class="alert alert-warn mb12"><span class="ico">!</span>
-          <div>本次结果<b>不影响莱特纳盒子状态</b>；莱特纳体系的复习计划保持不变。</div></div>
+        <div class="alert alert-warn mb16"><span class="ico">!</span>
+          <div>本次结果<b>不影响莱特纳盒子状态</b>：莱特纳体系的盒子、到期日与复习计划保持不变。</div></div>
 
         <div class="progress-summary mb16">
-          <div class="flex jcb small mb8"><span>计划整体进度</span><span class="mono">第 10 / 21 天</span></div>
-          <div class="bar green"><i style="width:48%"></i></div>
+          <div class="flex jcb small mb8"><span>计划整体进度（已过节点）</span>
+            <span class="mono">${prog.doneWords} / ${prog.totalWords} 个单词 · ${prog.rate}%</span></div>
+          <div class="bar green"><i style="width:${prog.rate}%"></i></div>
+          <div class="flex jcb small mt8"><span>当前第 ${prog.currentDay} / 21 天</span>
+            <span class="muted">今日已完成 ${prog.todayDone} / ${prog.todayTotal}</span></div>
+        </div>
+
+        <div class="section-title">本节点单词结果</div>
+        <div class="table-wrap mb16">
+          <table class="table compact">
+            <thead><tr><th>单词</th><th>中文释义</th><th>本次结果</th><th>轮次</th><th>时间</th></tr></thead>
+            <tbody>
+              ${list.map(id => {
+                const r = recs.filter(x => x.wordId === id)[0];
+                const wd = Store.word(id);
+                return `<tr><td class="strong">${wd.en}</td>
+                  <td class="small">${wd.mean.map(m => m.cn).join('；')}</td>
+                  <td>${r ? `<span class="tag ${r.result === 'yes' ? 'tag-green' : 'tag-red'} nodot">${RESULT_LABEL[r.result]}</span>` : '<span class="muted small">未复习</span>'}</td>
+                  <td class="mono small">${r ? '第 ' + r.round + ' 次' : '—'}</td>
+                  <td class="small muted">${r ? r.at.slice(11) : '—'}</td></tr>`;
+              }).join('')}
+            </tbody>
+          </table>
         </div>
 
         <div class="flex gap8" style="justify-content:flex-end">
-          <a class="btn" href="memory21.html">返回计划</a>
-          <a class="btn btn-primary" href="student-profile.html">返回学习档案</a>
+          <a class="btn" href="memory21.html?student=${plan.studentId}&plan=${plan.id}">返回计划</a>
+          <a class="btn" href="word-detail.html?student=${plan.studentId}&word=${list[0] || ''}">查看单词档案</a>
+          <a class="btn btn-primary" href="student-profile.html?student=${plan.studentId}">返回学习档案</a>
         </div>
       </div>
     </div>`;
 }
 
 document.addEventListener('keydown', e => {
-  if (S.stage !== 'run') return;
+  if (document.querySelector('.mask.show')) return;
+  if (!task) return;
   if (e.key === '1') ans('no');
   if (e.key === '2') ans('yes');
 });
 
-render();
+boot();
 </script>
 </body>
 </html>

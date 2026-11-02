@@ -16,75 +16,51 @@
       <div class="page-head">
         <div>
           <div class="crumb">教学管理<span class="sep">/</span><a href="my-students.html">我的学员</a><span class="sep">/</span>学习档案</div>
-          <h1 class="page-title">陈可欣</h1>
-          <div class="page-sub">七年级 · 人教版 · 当前教师 李婉 · 入学 2026-03-12 · 课时余额 42</div>
+          <h1 class="page-title" id="stuName">学员学习档案</h1>
+          <div class="page-sub" id="stuSub">—</div>
         </div>
         <div class="page-actions">
+          <select class="select" style="width:170px" id="stuSel" onchange="switchStudent(this.value)"></select>
           <a class="btn" href="my-students.html">返回</a>
           <a class="btn" href="article-training.html">文章训练</a>
-          <a class="btn" href="leitner.html">莱特纳复习</a>
-          <a class="btn btn-primary" href="word-training-setup.html">单词训练</a>
+          <a class="btn" href="leitner.html" id="ltLink">莱特纳复习</a>
+          <a class="btn btn-primary" href="word-training-setup.html" id="wtLink">单词训练</a>
         </div>
       </div>
 
-      <div class="grid g6 mb16">
-        <div class="card stat"><div class="stat-label">累计训练单词</div><div class="stat-value">186</div>
-          <div class="stat-foot">有训练记录的去重单词</div></div>
-        <div class="card stat"><div class="stat-label">已确认掌握</div><div class="stat-value" style="color:var(--success)">132</div>
-          <div class="stat-foot">教师课堂确认</div></div>
-        <div class="card stat"><div class="stat-label">当前待复习</div><div class="stat-value" style="color:var(--warning)">34</div>
-          <div class="stat-foot">莱特纳 22 · 21天 12</div></div>
-        <div class="card stat"><div class="stat-label">文章训练</div><div class="stat-value">7<small>篇</small></div>
-          <div class="stat-foot">累计 14 次</div></div>
-        <div class="card stat"><div class="stat-label">最近训练</div><div class="stat-value" style="font-size:16px">11-02 09:52</div>
-          <div class="stat-foot">Word · Unit 1</div></div>
-        <div class="card stat"><div class="stat-label">最近课程</div><div class="stat-value" style="font-size:16px">11-02 09:00</div>
-          <div class="stat-foot"><span class="tag tag-green nodot">已完成</span></div></div>
-      </div>
+      <div id="resumeBox"></div>
+
+      <div class="grid g6 mb16" id="statCards"></div>
 
       <div class="card">
         <div class="tabs" id="ptabs">
           <button class="tab active" data-pane="pp1">学习概览</button>
-          <button class="tab" data-pane="pp2">单词档案<span class="count">186</span></button>
+          <button class="tab" data-pane="pp2">单词档案<span class="count" id="cWords">0</span></button>
           <button class="tab" data-pane="pp3">莱特纳复习</button>
           <button class="tab" data-pane="pp4">21 天复习</button>
-          <button class="tab" data-pane="pp5">文章训练</button>
-          <button class="tab" data-pane="pp6">课程历史</button>
+          <button class="tab" data-pane="pp5">训练任务</button>
+          <button class="tab" data-pane="pp6">文章训练</button>
           <button class="tab" data-pane="pp7">学习报告</button>
         </div>
 
         <!-- 概览 -->
         <div class="tab-pane active" id="pp1">
           <div class="alert alert-info mb16"><span class="ico">i</span>
-            <div><b>口径说明：</b>「累计训练单词」= 有过训练记录的去重单词数，<b>不等于掌握数</b>；
-              「已确认掌握」= 教师在训练最后复习中确认通过的单词数；「待复习」= 进入复习体系的未通过单词数（两套体系可能存在重叠）。</div></div>
+            <div><b>口径说明：</b>本页所有学习数据来自统一数据层，统计范围为人教版七上 Unit 1（WB001，23 个单词）。
+              「累计训练」= 有训练记录的去重单词；「已确认掌握」= 最后一轮复习判为认识的单词；
+              「待复习」= 判为不认识或暂不确定的单词（两套体系可能重叠）。</div></div>
 
           <div class="grid g2">
             <div class="card">
-              <div class="card-head"><div class="card-title">单词学习漏斗</div></div>
-              <div class="card-body">
-                <div class="flex jcb small mb8"><span>累计训练</span><span class="mono">186</span></div>
-                <div class="bar mb16"><i style="width:100%"></i></div>
-                <div class="flex jcb small mb8"><span>初筛认识（未正式掌握）</span><span class="mono">54</span></div>
-                <div class="bar amber mb16"><i style="width:29%"></i></div>
-                <div class="flex jcb small mb8"><span>已确认掌握</span><span class="mono">132</span></div>
-                <div class="bar green mb16"><i style="width:71%"></i></div>
-                <div class="flex jcb small mb8"><span>待复习 / 暂不确定</span><span class="mono">34</span></div>
-                <div class="bar red"><i style="width:18%"></i></div>
-              </div>
+              <div class="card-head"><div class="card-title">单词学习漏斗</div>
+                <span class="small muted">当前词库 23 词</span></div>
+              <div class="card-body" id="funnel"></div>
             </div>
             <div class="card">
-              <div class="card-head"><div class="card-title">近 6 次训练表现</div></div>
-              <div class="card-body">
-                <div class="bars">
-                  <div class="b"><i style="height:56%"></i><span>10-20</span></div>
-                  <div class="b"><i style="height:64%"></i><span>10-24</span></div>
-                  <div class="b"><i style="height:60%"></i><span>10-26</span></div>
-                  <div class="b"><i style="height:72%"></i><span>10-28</span></div>
-                  <div class="b"><i style="height:70%"></i><span>10-31</span></div>
-                  <div class="b"><i style="height:82%"></i><span>11-02</span></div>
-                </div>
-                <div class="small muted mt8">纵轴：最后一轮复习通过率（通过数 / 本次训练数）</div>
+              <div class="card-head"><div class="card-title">最近训练任务表现</div>
+                <span class="small muted">最后一轮复习通过率</span></div>
+              <div class="card-body" id="trend">
+                <div class="empty"><p>还没有训练任务，完成一次训练后显示</p></div>
               </div>
             </div>
           </div>
@@ -95,16 +71,7 @@
             <div class="card-body tight">
               <table class="table compact">
                 <thead><tr><th>时间</th><th>类型</th><th>内容</th><th class="right">数量</th><th>结果</th><th>教师</th></tr></thead>
-                <tbody>
-                  <tr><td class="small">11-02 09:20</td><td>单词训练</td><td>人教版七上 Unit 1</td><td class="right mono">23</td>
-                    <td><span class="tag tag-green nodot">通过 16</span> <span class="tag tag-amber nodot">待复习 7</span></td><td>李婉</td></tr>
-                  <tr><td class="small">11-02 09:52</td><td>文章训练</td><td>My First Day at School</td><td class="right mono">8 句</td>
-                    <td><span class="tag tag-green nodot">8/8 完成</span></td><td>李婉</td></tr>
-                  <tr><td class="small">10-31 19:40</td><td>莱特纳复习</td><td>红盒 6 + 黄盒1 6</td><td class="right mono">12</td>
-                    <td><span class="tag tag-green nodot">认识 9</span> <span class="tag tag-amber nodot">不确定 1</span></td><td>李婉</td></tr>
-                  <tr><td class="small">10-30 19:30</td><td>21 天复习</td><td>计划第 7 天</td><td class="right mono">14</td>
-                    <td><span class="tag tag-green nodot">完成 11</span> <span class="tag tag-red nodot">逾期 3</span></td><td>李婉</td></tr>
-                </tbody>
+                <tbody id="recentRows"></tbody>
               </table>
             </div>
           </div>
@@ -114,25 +81,23 @@
         <div class="tab-pane" id="pp2">
           <div class="flex jcb aic mb12">
             <div class="flex gap8 aic" style="flex-wrap:wrap">
-              <input class="input" placeholder="搜索单词" style="width:160px" oninput="filterWordBank(this.value)">
-              <select class="select" style="width:150px" id="wf_status" onchange="filterWordBank(document.querySelector('#pp2 input').value, this.value)">
+              <input class="input" placeholder="搜索单词或释义" style="width:180px" id="wf_kw" oninput="renderBank()">
+              <select class="select" style="width:160px" id="wf_state" onchange="renderBank()">
                 <option value="">全部状态</option>
                 <option>未训练</option><option>初筛认识</option><option>待强化训练</option>
-                <option>强化训练中</option><option>待最后复习</option><option>本次通过</option>
-                <option>待复习</option><option>暂不确定</option>
+                <option>待最后复习</option><option>本次通过</option><option>待复习</option><option>暂不确定</option>
+              </select>
+              <select class="select" style="width:150px" id="wf_sys" onchange="renderBank()">
+                <option value="">全部体系</option>
+                <option value="leitner">在莱特纳</option>
+                <option value="plan">在 21 天</option>
+                <option value="both">两体系都有</option>
               </select>
             </div>
-            <div class="small muted">学员单词状态与训练任务状态分开保存</div>
+            <div class="small muted">学员状态 / 莱特纳 / 21 天三层分开存储</div>
           </div>
 
-          <div class="flex gap8 mb12" style="flex-wrap:wrap">
-            <span class="kv-pill">未训练 0</span>
-            <span class="kv-pill">初筛认识 54</span>
-            <span class="kv-pill">待强化 12</span>
-            <span class="kv-pill">本次通过 132</span>
-            <span class="kv-pill" style="color:var(--warning)">待复习 27</span>
-            <span class="kv-pill" style="color:var(--warning)">暂不确定 7</span>
-          </div>
+          <div class="flex gap8 mb12" style="flex-wrap:wrap" id="statePills"></div>
 
           <div class="table-wrap">
             <table class="table">
@@ -141,62 +106,62 @@
               <tbody id="wordBank"></tbody>
             </table>
           </div>
-          <div class="pager"><span>共 186 条 · 每页 20 条</span>
-            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg">2</button><button class="pg">3</button><button class="pg">›</button></div>
+          <div class="pager"><span id="bankFoot">—</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
           </div>
         </div>
 
         <!-- 莱特纳 -->
         <div class="tab-pane" id="pp3">
           <div class="flex jcb mb12">
-            <div class="small muted">红盒 <b>6</b> 个今日到期 · 黄盒 23 个 · 绿盒 4 个</div>
-            <a class="btn btn-sm btn-primary" href="leitner.html">进入莱特纳复习</a>
+            <div class="small muted" id="ltSummary">—</div>
+            <div class="flex gap8">
+              <a class="btn btn-sm" href="word-detail.html" id="ltWord">单词档案</a>
+              <a class="btn btn-sm btn-primary" href="leitner.html" id="ltGo">进入莱特纳复习</a>
+            </div>
           </div>
           <div class="table-wrap">
             <table class="table">
-              <thead><tr><th>单词</th><th>音标</th><th>中文释义</th><th>盒子</th><th>到期时间</th><th>最近复习</th><th>最近结果</th></tr></thead>
-              <tbody>
-                <tr><td class="strong">friend</td><td class="mono small">/frend/</td><td>朋友</td>
-                  <td><span class="tag tag-red nodot">红盒</span></td><td>2026-11-02</td><td class="small muted">10-28</td><td>不认识</td></tr>
-                <tr><td class="strong">question</td><td class="mono small">/ˈkwestʃən/</td><td>问题；询问</td>
-                  <td><span class="tag tag-red nodot">红盒</span></td><td>2026-11-02</td><td class="small muted">10-28</td><td>不认识</td></tr>
-                <tr><td class="strong">answer</td><td class="mono small">/ˈɑːnsə(r)/</td><td>回答；答案</td>
-                  <td><span class="tag tag-red nodot">红盒</span></td><td>2026-11-02</td><td class="small muted">10-28</td><td>暂不确定</td></tr>
-                <tr><td class="strong">library</td><td class="mono small">/ˈlaɪbrəri/</td><td>图书馆</td>
-                  <td><span class="tag tag-amber nodot">黄盒 1</span></td><td>2026-11-04</td><td class="small muted">10-30</td><td>认识</td></tr>
-                <tr><td class="strong">happy</td><td class="mono small">/ˈhæpi/</td><td>高兴的</td>
-                  <td><span class="tag tag-green nodot">绿盒</span></td><td>手动复习</td><td class="small muted">10-30</td><td>认识</td></tr>
-              </tbody>
+              <thead><tr><th>单词</th><th>音标</th><th>中文释义</th><th>盒子</th><th>到期时间</th><th>最近复习</th><th>最近结果</th><th style="width:80px">操作</th></tr></thead>
+              <tbody id="ltRows"></tbody>
             </table>
           </div>
           <div class="alert alert-info mt12"><span class="ico">i</span>
-            <div>盒子数量、间隔天数、答对/答错后的去向均为<b>机构可配置项</b>，原型未预设固定算法。</div></div>
+            <div>盒子数量、间隔天数、答对/答错后的去向均为<b>机构可配置项</b>，原型按配置计算，未预设固定算法。</div></div>
         </div>
 
-        <!-- 21天 -->
+        <!-- 21 天 -->
         <div class="tab-pane" id="pp4">
           <div class="flex jcb aic mb12">
-            <div class="small muted">11 月记忆强化计划 · 第 10 / 21 天 · 参与单词 23 个</div>
-            <a class="btn btn-sm btn-primary" href="memory21.html">查看计划</a>
+            <div class="small muted" id="planSummary">—</div>
+            <a class="btn btn-sm btn-primary" href="memory21.html" id="planGo">查看计划</a>
           </div>
           <div id="d21Wrap" class="mb16"></div>
           <div class="table-wrap mt16">
             <table class="table compact">
-              <thead><tr><th>节点</th><th>日期</th><th class="right">计划单词</th><th class="right">已完成</th><th>状态</th></tr></thead>
-              <tbody>
-                <tr><td>第 7 天</td><td>2026-10-30</td><td class="right mono">14</td><td class="right mono">11</td>
-                  <td><span class="tag tag-red">已逾期</span></td></tr>
-                <tr><td>第 8 天</td><td>2026-10-31</td><td class="right mono">14</td><td class="right mono">14</td>
-                  <td><span class="tag tag-green">已完成</span></td></tr>
-                <tr><td>第 10 天</td><td>2026-11-02</td><td class="right mono">12</td><td class="right mono">0</td>
-                  <td><span class="tag tag-blue">进行中</span></td></tr>
-              </tbody>
+              <thead><tr><th>计划</th><th>节点</th><th>日期</th><th class="right">计划单词</th><th class="right">已完成</th><th>状态</th></tr></thead>
+              <tbody id="planTaskRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 训练任务 -->
+        <div class="tab-pane" id="pp5">
+          <div class="flex jcb aic mb12">
+            <div class="small muted">任务状态：预筛选中 / 强化训练中 / 最后一轮复习中 / 已完成 / 已中断 / 已取消</div>
+            <a class="btn btn-sm btn-primary" href="word-training-setup.html" id="newTask">新建训练</a>
+          </div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>任务编号</th><th>词库</th><th>创建时间</th><th>当前阶段</th>
+                <th class="right">队列</th><th class="right">初筛认识</th><th class="right">已判断</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody id="taskRows"></tbody>
             </table>
           </div>
         </div>
 
         <!-- 文章 -->
-        <div class="tab-pane" id="pp5">
+        <div class="tab-pane" id="pp6">
           <div class="table-wrap">
             <table class="table">
               <thead><tr><th>文章</th><th>教材 / 单元</th><th class="right">句子数</th><th class="right">训练次数</th>
@@ -218,30 +183,7 @@
             </table>
           </div>
           <div class="alert alert-info mt12"><span class="ico">i</span>
-            <div>文章训练只记录听读完成情况，<b>不直接改变单词掌握状态</b>。</div></div>
-        </div>
-
-        <!-- 课程历史 -->
-        <div class="tab-pane" id="pp6">
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>日期</th><th>时间</th><th>教师</th><th>课程状态</th><th>扣课状态</th><th>教学主题</th><th>报告</th></tr></thead>
-              <tbody>
-                <tr><td>2026-11-02</td><td class="mono">09:00-10:00</td><td>李婉</td>
-                  <td><span class="tag tag-green">已完成</span></td><td><span class="tag tag-green nodot">已扣课</span></td>
-                  <td>Unit 1 词汇强化</td><td><span class="tag tag-amber">草稿</span></td></tr>
-                <tr><td>2026-10-31</td><td class="mono">19:00-20:00</td><td>李婉</td>
-                  <td><span class="tag tag-green">已完成</span></td><td><span class="tag tag-green nodot">已扣课</span></td>
-                  <td>Unit 3 词汇 + 短文听读</td><td><span class="tag tag-green">已提交</span></td></tr>
-                <tr><td>2026-10-28</td><td class="mono">19:00-20:00</td><td>李婉</td>
-                  <td><span class="tag tag-green">已完成</span></td><td><span class="tag tag-green nodot">已扣课</span></td>
-                  <td>Unit 2 词汇复习 + 21 天节点</td><td><span class="tag tag-green">已提交</span></td></tr>
-                <tr><td>2026-10-24</td><td class="mono">19:00-20:00</td><td>李婉</td>
-                  <td><span class="tag tag-slate">已取消</span></td><td><span class="tag tag-slate nodot">未扣课</span></td>
-                  <td>—</td><td>—</td></tr>
-              </tbody>
-            </table>
-          </div>
+            <div>文章训练只记录听读完成情况，<b>不直接改变单词掌握状态</b>（本轮迭代未改动文章训练数据层）。</div></div>
         </div>
 
         <!-- 报告 -->
@@ -254,20 +196,7 @@
             <table class="table">
               <thead><tr><th>课程日期</th><th>教学主题</th><th class="right">单词</th><th class="right">通过</th>
                 <th class="right">待复习</th><th>状态</th><th>操作</th></tr></thead>
-              <tbody>
-                <tr><td>2026-11-02</td><td>Unit 1 词汇强化 + 短文听读</td><td class="right mono">23</td>
-                  <td class="right mono">16</td><td class="right mono">7</td>
-                  <td><span class="tag tag-amber">草稿</span></td>
-                  <td><a class="btn-link" href="teaching-record.html">编辑并提交</a></td></tr>
-                <tr><td>2026-10-31</td><td>Unit 3 词汇强化 + 短文听读</td><td class="right mono">23</td>
-                  <td class="right mono">16</td><td class="right mono">7</td>
-                  <td><span class="tag tag-green">已提交</span></td>
-                  <td><a class="btn-link" href="../parent/report.html">查看</a></td></tr>
-                <tr><td>2026-10-28</td><td>Unit 2 词汇复习</td><td class="right mono">18</td>
-                  <td class="right mono">14</td><td class="right mono">4</td>
-                  <td><span class="tag tag-green">已提交</span></td>
-                  <td><a class="btn-link" href="../parent/report.html">查看</a></td></tr>
-              </tbody>
+              <tbody id="reportRows"></tbody>
             </table>
           </div>
         </div>
@@ -279,63 +208,325 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'teacher', active: 'student-profile' });
 
-/* 21 天节点网格 */
-document.getElementById('d21Wrap').innerHTML = `<div class="d21">
-  ${DB.plan21.nodes.slice(0, 14).map(n => {
-    const cls = n.state === 'done' ? 'done' : n.state === 'today' ? 'today'
-      : n.state === 'miss' ? 'miss' : n.state === 'rest' ? '' : 'plan';
-    return `<div class="day ${cls}"><b>D${n.day}</b>${n.date.slice(5)}
-      ${n.count ? `<div>${n.done}/${n.count}</div>` : '<div>休息</div>'}</div>`;
-  }).join('')}
-</div>`;
+const q = new URLSearchParams(location.search);
+let studentId = q.get('student') || 'S2026001';
 
-/* 单词档案 */
-const STATUS_TAG = {
-  '本次通过': 'tag-green', '初筛认识': 'tag-blue', '待强化训练': 'tag-amber',
-  '强化训练中': 'tag-cyan', '待最后复习': 'tag-purple', '待复习': 'tag-red',
-  '暂不确定': 'tag-amber', '未训练': 'tag-slate',
+const STATE_TAG = {
+  '未训练': 'tag-slate', '初筛认识': 'tag-blue', '待强化训练': 'tag-amber', '强化训练中': 'tag-cyan',
+  '待最后复习': 'tag-purple', '本次通过': 'tag-green', '待复习': 'tag-red', '暂不确定': 'tag-amber'
 };
-const BANK = [
-  { en: 'friend', ph: '/frend/', cn: '朋友', from: 'WB001', st: '待复习', lt: '红盒', d21: '第 10 天', last: '11-02' },
-  { en: 'question', ph: '/ˈkwestʃən/', cn: '问题；询问', from: 'WB001', st: '待复习', lt: '红盒', d21: '第 10 天', last: '11-02' },
-  { en: 'answer', ph: '/ˈɑːnsə(r)/', cn: '回答；答案', from: 'WB001', st: '暂不确定', lt: '红盒', d21: '第 10 天', last: '11-02' },
-  { en: 'library', ph: '/ˈlaɪbrəri/', cn: '图书馆', from: 'WB001', st: '待复习', lt: '黄盒 1', d21: '第 12 天', last: '11-02' },
-  { en: 'classroom', ph: '/ˈklɑːsruːm/', cn: '教室', from: 'WB001', st: '本次通过', lt: '黄盒 2', d21: '—', last: '11-02' },
-  { en: 'family', ph: '/ˈfæməli/', cn: '家；家人', from: 'WB001', st: '暂不确定', lt: '红盒', d21: '第 10 天', last: '11-02' },
-  { en: 'happy', ph: '/ˈhæpi/', cn: '高兴的', from: 'WB001', st: '本次通过', lt: '绿盒', d21: '—', last: '11-02' },
-  { en: 'first', ph: '/fɜːst/', cn: '第一的；首先', from: 'WB001', st: '初筛认识', lt: '—', d21: '—', last: '11-02' },
-  { en: 'last', ph: '/lɑːst/', cn: '最后的；持续', from: 'WB001', st: '初筛认识', lt: '—', d21: '—', last: '11-02' },
-  { en: 'name', ph: '/neɪm/', cn: '名字；命名', from: 'WB001', st: '本次通过', lt: '黄盒 3', d21: '—', last: '10-31' },
-];
+const RESULT_LABEL = { yes: '认识', no: '不认识', mid: '暂不确定' };
+const RESULT_TAG = { yes: 'tag-green', no: 'tag-red', mid: 'tag-amber' };
 
-function filterWordBank(kw = '', st = '') {
-  const rows = BANK.filter(w => (!kw || w.en.includes(kw) || w.cn.includes(kw)) && (!st || w.st === st));
-  Proto.renderRows('wordBank', rows, w => `
+function switchStudent(id) { location.href = 'student-profile.html?student=' + id; }
+function en(id) { return (Store.word(id) || {}).en || id; }
+
+function init() {
+  const mine = Store.students().filter(s => s.teacher === 'T001');
+  document.getElementById('stuSel').innerHTML = mine
+    .map(s => `<option value="${s.id}" ${s.id === studentId ? 'selected' : ''}>${s.name} · ${s.grade}</option>`).join('');
+  const stu = Store.student(studentId);
+  document.getElementById('stuName').textContent = stu.name;
+  document.getElementById('stuSub').textContent =
+    `${stu.grade} · ${stu.book} · 当前教师 ${stu.teacherName} · 入学 ${stu.created} · 课时余额 ${stu.remain}`;
+  ['ltLink', 'wtLink', 'ltGo', 'planGo', 'newTask'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.href = el.getAttribute('href').split('?')[0] + '?student=' + studentId;
+  });
+  document.getElementById('ltWord').href = 'word-detail.html?student=' + studentId;
+}
+
+/* ---------- 顶部统计 ---------- */
+function renderStats() {
+  const st = Store.stats(studentId);
+  const tasks = Store.tasksOf(studentId);
+  const done = tasks.filter(t => t.status === '已完成');
+  const last = done[0];
+  const active = Store.activeTask(studentId);
+
+  document.getElementById('statCards').innerHTML = `
+    <div class="card stat"><div class="stat-label">词库单词</div>
+      <div class="stat-value">${st.stateTotal}</div>
+      <div class="stat-foot">人教版七上 Unit 1</div></div>
+    <div class="card stat"><div class="stat-label">已确认掌握</div>
+      <div class="stat-value" style="color:var(--success)">${st.passed}</div>
+      <div class="stat-foot">最后复习判为认识</div></div>
+    <div class="card stat"><div class="stat-label">当前待复习</div>
+      <div class="stat-value" style="color:var(--warning)">${st.review}</div>
+      <div class="stat-foot">莱特纳 ${st.leitnerDue} · 21 天 ${st.onlyPlan + st.bothCount > 0 ? '进行中' : '—'}</div></div>
+    <div class="card stat"><div class="stat-label">待强化训练</div>
+      <div class="stat-value" style="color:var(--primary)">${st.toTrain}</div>
+      <div class="stat-foot">初筛不认识或未完成</div></div>
+    <div class="card stat"><div class="stat-label">最近训练</div>
+      <div class="stat-value" style="font-size:16px">${last ? last.finishedAt.slice(5, 16) : '—'}</div>
+      <div class="stat-foot">${last ? last.wordbookName : '暂无训练任务'}</div></div>
+    <div class="card stat"><div class="stat-label">最近课程</div>
+      <div class="stat-value" style="font-size:16px">11-02 09:00</div>
+      <div class="stat-foot"><span class="tag tag-green nodot">已完成</span></div></div>`;
+
+  /* 未完成任务提示 */
+  document.getElementById('resumeBox').innerHTML = active ? `
+    <div class="card mb16" style="border-color:#bfdbfe;background:#f8fbff">
+      <div class="card-body">
+        <div class="flex jcb aic gap12" style="flex-wrap:wrap">
+          <div>
+            <div class="flex aic gap8 mb8"><span class="tag tag-blue">有未完成的训练任务</span>
+              <span class="mono small muted">${active.id}</span></div>
+            <div style="font-size:13px">词库 <b>${active.wordbookName}</b> · 阶段
+              <b style="color:var(--primary)">${active.status}</b> · 队列 ${active.queueWordIds.length} 词
+              · 已判断 ${Object.keys(active.results).length} 词</div>
+          </div>
+          <a class="btn btn-primary" href="${active.status === '预筛选中'
+            ? 'word-training-prescreen.html?task=' + active.id
+            : 'word-training.html?task=' + active.id}">继续训练 →</a>
+        </div>
+      </div>
+    </div>` : '';
+}
+
+/* ---------- 概览 ---------- */
+function renderOverview() {
+  const st = Store.stats(studentId);
+  const total = st.stateTotal || 1;
+  const rows = [
+    { k: '本次通过（最后复习认识）', v: st.passed, cls: 'green' },
+    { k: '待复习 / 暂不确定', v: st.review, cls: 'red' },
+    { k: '初筛认识（未强化）', v: st.prescreenKnown, cls: 'amber' },
+    { k: '待强化训练 / 待最后复习', v: st.toTrain, cls: '' }
+  ];
+  document.getElementById('funnel').innerHTML = rows.map(r => `
+    <div class="flex jcb small mb8"><span>${r.k}</span><span class="mono">${r.v}</span></div>
+    <div class="bar ${r.cls} mb16"><i style="width:${(r.v / total * 100).toFixed(0)}%"></i></div>`).join('') +
+    `<div class="small muted">合计 ${st.stateTotal} 个单词（同一单词只归入一个状态）</div>`;
+
+  /* 近 6 次训练通过率 */
+  const tasks = Store.tasksOf(studentId).filter(t => t.status === '已完成').slice(0, 6).reverse();
+  document.getElementById('trend').innerHTML = tasks.length
+    ? `<div class="bars">${tasks.map(t => {
+        const ids = t.queueWordIds;
+        const pass = ids.filter(id => t.finalResults[id] && t.finalResults[id].result === 'yes').length;
+        const rate = ids.length ? Math.round(pass / ids.length * 100) : 0;
+        return `<div class="b"><i style="height:${Math.max(rate, 4)}%"></i>
+          <span>${(t.finishedAt || '').slice(5, 10)}</span></div>`;
+      }).join('')}</div>
+      <div class="small muted mt8">纵轴：最后一轮复习通过率（通过数 / 本次队列数）</div>`
+    : '<div class="empty"><p>还没有训练任务，完成一次训练后显示</p></div>';
+
+  /* 最近记录 */
+  const items = [];
+  Store.tasksOf(studentId).forEach(t => {
+    if (t.status !== '已完成') return;
+    const ids = t.queueWordIds;
+    const pass = ids.filter(id => t.finalResults[id] && t.finalResults[id].result === 'yes').length;
+    items.push({
+      at: t.finishedAt, type: '单词训练', text: `${t.wordbookName} · ${t.id}`,
+      n: ids.length + ' 词', tag: `通过 ${pass}`, tag2: `待复习 ${ids.length - pass}`, teacher: '李婉'
+    });
+  });
+  Store.leitnerTasksOf(studentId).forEach(t => {
+    if (t.status !== '已完成') return;
+    items.push({
+      at: t.completedAt, type: '莱特纳复习', text: t.source,
+      n: t.stats.total + ' 词', tag: `认识 ${t.stats.yes}`, tag2: `待复习 ${t.stats.no + t.stats.mid}`, teacher: '李婉'
+    });
+  });
+  Store.plansOf(studentId).forEach(p => {
+    Store.plan21Tasks(p.id).forEach(t => {
+      const recs = Store.plan21Records(p.id).filter(r => r.taskId === t.id);
+      if (!recs.length) return;
+      const yes = recs.filter(r => r.result === 'yes').length;
+      items.push({
+        at: recs[recs.length - 1].at, type: '21 天复习', text: `${p.name} · 第 ${t.day} 天`,
+        n: recs.length + ' 词', tag: `认识 ${yes}`, tag2: `不认识 ${recs.length - yes}`, teacher: '李婉'
+      });
+    });
+  });
+  items.sort((a, b) => a.at < b.at ? 1 : -1);
+  Proto.renderRows('recentRows', items.slice(0, 8), r => `
+    <tr><td class="small">${r.at}</td><td>${r.type}</td>
+      <td class="small">${r.text}</td><td class="right mono">${r.n}</td>
+      <td><span class="tag tag-green nodot">${r.tag}</span> <span class="tag tag-amber nodot">${r.tag2}</span></td>
+      <td>${r.teacher}</td></tr>`, 6, '还没有训练或复习记录');
+}
+
+/* ---------- 单词档案 ---------- */
+function renderBank() {
+  const kw = (document.getElementById('wf_kw').value || '').trim().toLowerCase();
+  const stFilter = document.getElementById('wf_state').value;
+  const sysFilter = document.getElementById('wf_sys').value;
+
+  const all = Store.wordStates(studentId).map(s => {
+    const w = Store.word(s.wordId);
+    if (!w) return null;
+    const ls = Store.leitnerState(studentId, s.wordId);
+    const plans = Store.plansOf(studentId).filter(p => p.wordIds.indexOf(s.wordId) >= 0);
+    return { s, w, ls, plans };
+  }).filter(Boolean);
+
+  const rows = all.filter(r => {
+    if (kw && r.w.en.toLowerCase().indexOf(kw) < 0 && !r.w.mean.some(m => m.cn.indexOf(kw) >= 0)) return false;
+    if (stFilter && r.s.state !== stFilter) return false;
+    if (sysFilter === 'leitner' && !r.ls) return false;
+    if (sysFilter === 'plan' && !r.plans.length) return false;
+    if (sysFilter === 'both' && !(r.ls && r.plans.length)) return false;
+    return true;
+  });
+
+  document.getElementById('cWords').textContent = all.length;
+  document.getElementById('bankFoot').textContent = `共 ${rows.length} 条 / 全部 ${all.length} 条 · 每页 23 条`;
+
+  const counts = {};
+  all.forEach(r => counts[r.s.state] = (counts[r.s.state] || 0) + 1);
+  document.getElementById('statePills').innerHTML = Object.keys(counts)
+    .map(k => `<span class="kv-pill" ${k === '待复习' || k === '暂不确定' ? 'style="color:var(--warning)"' : ''}>${k} ${counts[k]}</span>`)
+    .join('');
+
+  Proto.renderRows('wordBank', rows, r => `
     <tr>
-      <td class="strong">${w.en}</td>
-      <td class="mono small muted">${w.ph}</td>
-      <td>${w.cn}</td>
-      <td class="small">${w.from}</td>
-      <td><span class="tag ${STATUS_TAG[w.st]}">${w.st}</span></td>
-      <td class="small">${w.lt}</td>
-      <td class="small">${w.d21}</td>
-      <td class="small muted">${w.last}</td>
+      <td class="strong"><a href="word-detail.html?student=${studentId}&word=${r.w.id}">${r.w.en}</a></td>
+      <td class="mono small muted">${r.w.ph}</td>
+      <td class="small">${r.w.mean.map(m => m.cn).join('；')}</td>
+      <td class="small">WB001</td>
+      <td><span class="tag ${STATE_TAG[r.s.state]}">${r.s.state}</span></td>
+      <td class="small">${r.ls ? Store.boxName(r.ls.box) : '—'}</td>
+      <td class="small">${r.plans.length ? r.plans.length + ' 个计划' : '—'}</td>
+      <td class="small muted">${r.s.lastTrainAt ? r.s.lastTrainAt.slice(5, 16) : '—'}</td>
       <td class="ops">
-        <button class="btn-link" onclick="Proto.toast('查看该单词的全部训练历史（示意）')">历史</button>
-        <button class="btn-link" onclick="Proto.toast('已加入绿盒子（需权限确认）','ok')">加绿盒</button>
+        <a class="btn-link" href="word-detail.html?student=${studentId}&word=${r.w.id}">档案</a>
+        ${!r.ls ? `<button class="btn-link" onclick="addGreen('${r.w.id}')">加绿盒</button>` : ''}
       </td>
     </tr>`, 9, '没有匹配的单词');
 }
-filterWordBank();
 
-/* 切换 tab 时刷新表格 */
-document.getElementById('ptabs').addEventListener('click', () => setTimeout(() => {
-  const cur = document.querySelector('.tab.active');
-  if (cur && cur.dataset.pane === 'pp2') filterWordBank();
-}, 10));
+function addGreen(wordId) {
+  Proto.confirmBox('加入绿盒子',
+    `将 <b>${en(wordId)}</b> 加入绿盒子，由教师自主复习。加入会记录操作人、时间与实际原因。`,
+    '确认加入', () => {
+      Store.addToGreen(studentId, wordId, '学员档案手动加入', '李婉');
+      Proto.toast('已加入绿盒', 'ok');
+      renderAll();
+    });
+}
+
+/* ---------- 莱特纳 ---------- */
+function renderLeitner() {
+  const st = Store.stats(studentId);
+  const due = Store.leitnerDue(studentId);
+  document.getElementById('ltSummary').innerHTML =
+    `红盒 <b>${st.leitnerRed}</b> 个（今日到期 ${due.red.length}）· 黄盒 <b>${st.leitnerYellow}</b> 个（到期 ${due.yellowDue}）
+     · 绿盒 <b>${st.leitnerGreen}</b> 个 · 今日待复习合计 <b>${due.dedupTotal}</b> 个`;
+
+  const list = Store.leitnerStates(studentId);
+  Proto.renderRows('ltRows', list, s => {
+    const w = Store.word(s.wordId);
+    return `<tr>
+      <td class="strong"><a href="word-detail.html?student=${studentId}&word=${s.wordId}">${w.en}</a></td>
+      <td class="mono small">${w.ph}</td>
+      <td class="small">${w.mean.map(m => m.cn).join('；')}</td>
+      <td><span class="tag ${s.box === 'red' ? 'tag-red' : s.box === 'green' ? 'tag-green' : 'tag-amber'} nodot">${Store.boxName(s.box)}</span></td>
+      <td class="small ${Store.isDue(s) ? 'strong' : 'muted'}">${s.dueAt || '手动'}</td>
+      <td class="small muted">${s.lastReviewAt || '—'}</td>
+      <td><span class="tag ${s.lastResult === '认识' ? 'tag-green' : s.lastResult === '暂不确定' ? 'tag-amber' : 'tag-red'} nodot">${s.lastResult}</span></td>
+      <td class="ops"><a class="btn-link" href="word-detail.html?student=${studentId}&word=${s.wordId}">历史</a></td>
+    </tr>`;
+  }, 8, '该学员尚未加入莱特纳体系');
+}
+
+/* ---------- 21 天 ---------- */
+function renderPlan() {
+  const plans = Store.plansOf(studentId);
+  if (!plans.length) {
+    document.getElementById('planSummary').textContent = '暂无 21 天计划';
+    document.getElementById('d21Wrap').innerHTML = '';
+    Proto.renderRows('planTaskRows', [], () => '', 6, '暂无计划');
+    return;
+  }
+  const p = plans[0];
+  const prog = Store.plan21Progress(p);
+  document.getElementById('planSummary').innerHTML =
+    `${p.name} · 第 ${prog.currentDay} / 21 天 · 参与单词 ${p.wordIds.length} 个
+     · 今日 ${prog.todayDone} / ${prog.todayTotal} · 整体完成率 ${prog.rate}%`;
+
+  document.getElementById('d21Wrap').innerHTML = `<div class="d21">
+    ${prog.tasks.map(t => {
+      const cls = t.status === 'done' ? 'done' : t.status === 'today' ? 'today'
+        : t.status === 'miss' ? 'miss' : t.status === 'rest' ? '' : 'plan';
+      const done = Store.plan21Records(p.id).filter(r => r.taskId === t.id).length;
+      return `<div class="day ${cls}"><b>D${t.day}</b>${t.date.slice(5)}
+        ${t.wordIds.length ? `<div>${done}/${t.wordIds.length}</div>` : '<div>休息</div>'}</div>`;
+    }).join('')}
+  </div>`;
+
+  const rows = [];
+  prog.tasks.filter(t => t.wordIds.length).forEach(t => {
+    const recs = Store.plan21Records(p.id).filter(r => r.taskId === t.id);
+    rows.push({ p, t, done: recs.length });
+  });
+  Proto.renderRows('planTaskRows', rows.slice(-10).reverse(), r => `
+    <tr><td class="small">${r.p.name}</td><td>第 ${r.t.day} 天</td><td class="small">${r.t.date}</td>
+      <td class="right mono">${r.t.wordIds.length}</td><td class="right mono">${r.done}</td>
+      <td>${r.t.status === 'done' ? '<span class="tag tag-green">已完成</span>'
+        : r.t.status === 'miss' ? '<span class="tag tag-red">已逾期</span>'
+        : r.t.status === 'today' ? '<span class="tag tag-blue">进行中</span>'
+        : '<span class="tag tag-slate">未开始</span>'}</td></tr>`, 6, '暂无节点任务');
+}
+
+/* ---------- 训练任务 ---------- */
+function renderTasks() {
+  const list = Store.tasksOf(studentId);
+  Proto.renderRows('taskRows', list, t => {
+    const done = Object.keys(t.results).length;
+    const canResume = ['预筛选中', '强化训练中', '最后一轮复习中', '已中断'].includes(t.status);
+    const href = t.status === '预筛选中'
+      ? 'word-training-prescreen.html?task=' + t.id
+      : 'word-training.html?task=' + t.id;
+    return `<tr>
+      <td class="mono small">${t.id}</td>
+      <td class="small">${t.wordbookName}</td>
+      <td class="small muted">${t.createdAt}</td>
+      <td><span class="tag tag-blue nodot">${t.status}</span>
+        ${t.interruptReason ? `<div class="small muted">${t.interruptReason}</div>` : ''}</td>
+      <td class="right mono">${t.queueWordIds.length || '—'}</td>
+      <td class="right mono">${t.knownWordIds.length || '—'}</td>
+      <td class="right mono">${done}</td>
+      <td class="small">${t.status === '已完成' ? '已提交' : canResume ? '未完成' : '—'}</td>
+      <td class="ops">${canResume ? `<a class="btn-link" href="${href}">继续</a>` : `<a class="btn-link" href="${href}">查看</a>`}</td>
+    </tr>`;
+  }, 9, '该学员还没有训练任务');
+}
+
+/* ---------- 报告 ---------- */
+function renderReports() {
+  const tasks = Store.tasksOf(studentId).filter(t => t.status === '已完成');
+  Proto.renderRows('reportRows', tasks, t => {
+    const ids = t.queueWordIds;
+    const pass = ids.filter(id => t.finalResults[id] && t.finalResults[id].result === 'yes').length;
+    return `<tr><td>${(t.finishedAt || '').slice(0, 10)}</td>
+      <td>${t.wordbookName}</td>
+      <td class="right mono">${ids.length}</td>
+      <td class="right mono">${pass}</td>
+      <td class="right mono">${ids.length - pass}</td>
+      <td><span class="tag tag-amber">待撰写</span></td>
+      <td><a class="btn-link" href="teaching-record.html">编辑</a></td></tr>`;
+  }, 7, '暂无已完成训练，报告从训练结果生成');
+}
+
+function renderAll() {
+  renderStats();
+  renderOverview();
+  renderBank();
+  renderLeitner();
+  renderPlan();
+  renderTasks();
+  renderReports();
+}
+
+init();
+renderAll();
 </script>
 </body>
 </html>

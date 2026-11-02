@@ -17,24 +17,16 @@
         <div>
           <div class="crumb">教学管理<span class="sep">/</span>莱特纳复习</div>
           <h1 class="page-title">莱特纳复习</h1>
-          <div class="page-sub">红 / 黄 / 绿盒子体系 · 盒子数量与间隔天数由机构配置，不写死固定算法</div>
+          <div class="page-sub">红 / 黄 / 绿盒子体系 · 盒子数量与间隔天数为配置项，复习结果按当前配置移动</div>
         </div>
         <div class="page-actions">
-          <select class="select" style="width:170px"><option>陈可欣 · 七年级</option><option>付嘉禾 · 七年级</option></select>
-          <button class="btn" onclick="Proto.openDrawer('cfg')">盒子配置</button>
-          <button class="btn btn-primary" onclick="recommend()">系统推荐复习</button>
+          <select class="select" style="width:170px" id="stuSel" onchange="switchStudent(this.value)"></select>
+          <button class="btn" onclick="openCfg()">盒子配置</button>
+          <button class="btn btn-primary" onclick="openRecommend()">系统推荐复习</button>
         </div>
       </div>
 
-      <div class="grid g4 mb16">
-        <div class="card stat"><div class="stat-label">今日待复习总数</div><div class="stat-value">11<small>个</small></div>
-          <div class="stat-foot">红盒 6 + 黄盒到期 5</div></div>
-        <div class="card stat"><div class="stat-label">今日已完成</div><div class="stat-value" style="color:var(--success)">0<small>个</small></div></div>
-        <div class="card stat"><div class="stat-label">体系内单词记录</div><div class="stat-value">33<small>条</small></div>
-          <div class="stat-foot">红 6 · 黄 23 · 绿 4（含重复）</div></div>
-        <div class="card stat"><div class="stat-label">最近复习</div><div class="stat-value" style="font-size:16px">10-31 19:40</div>
-          <div class="stat-foot">认识 9 · 不认识 2</div></div>
-      </div>
+      <div class="grid g4 mb16" id="statCards"></div>
 
       <!-- 红盒子 -->
       <div class="card mb16">
@@ -44,28 +36,10 @@
           </div>
           <div class="flex gap8">
             <button class="btn btn-sm" onclick="openWords('red')">查看单词</button>
-            <a class="btn btn-sm btn-primary" href="leitner-review.html">进入复习</a>
+            <a class="btn btn-sm btn-primary" id="goRed">进入复习</a>
           </div>
         </div>
-        <div class="card-body">
-          <div class="grid g3 mb16">
-            <div>
-              <div class="stat-label">单词数量</div>
-              <div class="bc-num">6 <small>个</small></div>
-            </div>
-            <div>
-              <div class="stat-label">到期单词</div>
-              <div class="bc-num" style="color:var(--danger)">6 <small>个</small></div>
-            </div>
-            <div>
-              <div class="stat-label">最近复习时间</div>
-              <div style="font-size:15px;font-weight:600;margin-top:6px">2026-10-31 19:40</div>
-            </div>
-          </div>
-          <div class="mini-words" style="justify-content:flex-start" id="redWords"></div>
-          <div class="alert alert-info mt16"><span class="ico">i</span>
-            <div>进入红盒条件：按当前配置的复习规则到期，<b>或</b>教师手动将单词加入今日复习。红盒内单词可直接移入绿盒（需确认）。</div></div>
-        </div>
+        <div class="card-body" id="redBody"></div>
       </div>
 
       <!-- 黄盒子 -->
@@ -74,36 +48,52 @@
           <div class="card-title" style="display:flex;align-items:center;gap:8px">
             <span class="box-dot dot-amber"></span>黄盒子组<span class="hint">按配置的时间间隔管理</span>
           </div>
-          <span class="small muted">间隔天数、进入条件、答对/答错去向均为可配置项</span>
+          <span class="small muted">间隔天数、答对/答错去向均为可配置项（当前取值见「盒子配置」）</span>
         </div>
         <div class="card-body">
           <div class="grid g3" id="yellowBoxes"></div>
           <div class="alert alert-warn mt16"><span class="ico">!</span>
-            <div><b>算法待业务确认：</b>黄盒子数量、每盒间隔天数、答对后进入哪个盒子、答错后是否回到红盒，
-              均由机构配置决定。原型仅展示配置项与到期待办，不预设某套固定算法。</div></div>
+            <div><b>算法参数待业务确认：</b>黄盒数量、每盒间隔天数、答对后进入哪个盒子、答错后是否回到红盒，
+              均由机构配置决定。原型按「盒子配置」中的当前取值计算下次复习时间，<b>不预设某套算法为正式规则</b>。</div></div>
         </div>
       </div>
 
       <!-- 绿盒子 -->
-      <div class="card">
+      <div class="card mb16">
         <div class="card-head">
           <div class="card-title" style="display:flex;align-items:center;gap:8px">
             <span class="box-dot dot-green"></span>绿盒子<span class="hint">教师自主决定加入，不按固定间隔自动移动</span>
           </div>
           <div class="flex gap8">
             <button class="btn btn-sm" onclick="openWords('green')">查看单词</button>
-            <a class="btn btn-sm btn-primary" href="leitner-review.html">进入复习</a>
+            <a class="btn btn-sm btn-primary" id="goGreen">进入复习</a>
           </div>
         </div>
-        <div class="card-body">
-          <div class="grid g3 mb16">
-            <div><div class="stat-label">单词数量</div><div class="bc-num">4 <small>个</small></div></div>
-            <div><div class="stat-label">今日建议复习</div><div class="bc-num" style="color:var(--warning)">4 <small>个</small></div></div>
-            <div><div class="stat-label">最近复习时间</div>
-              <div style="font-size:15px;font-weight:600;margin-top:6px">2026-10-30 19:35</div></div>
+        <div class="card-body" id="greenBody"></div>
+      </div>
+
+      <!-- 复习历史 -->
+      <div class="grid g-2-1" style="align-items:start">
+        <div class="card">
+          <div class="card-head"><div class="card-title">复习记录<span class="hint">每次复习生成独立任务与单词级记录</span></div>
+            <span class="small muted" id="histCount">—</span></div>
+          <div class="card-body tight">
+            <table class="table compact">
+              <thead><tr><th>复习时间</th><th>来源</th><th class="right">单词</th><th class="right">认识</th>
+                <th class="right">不认识</th><th>状态</th><th style="width:90px">操作</th></tr></thead>
+              <tbody id="histRows"></tbody>
+            </table>
           </div>
-          <div class="mini-words" style="justify-content:flex-start" id="greenWords"></div>
-          <div class="small muted mt12">加入方式：学员单词档案 / 红盒 / 黄盒 / 训练过程中，均可加入绿盒；手动移动会记录操作人、时间与原因。</div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div class="card-title">手动操作留痕</div>
+            <span class="small muted">加入/移出绿盒、手动移动</span></div>
+          <div class="card-body tight">
+            <table class="table compact">
+              <thead><tr><th>时间</th><th>单词</th><th>动作</th><th>原因</th></tr></thead>
+              <tbody id="opRows"></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -111,133 +101,495 @@
   </div>
 </div>
 
-<!-- 盒子单词 -->
+<!-- 盒内单词 -->
 <div class="mask" id="wordsModal">
   <div class="modal wide">
-    <div class="modal-head"><div class="modal-title" id="wmTitle">红盒子单词</div>
+    <div class="modal-head"><div class="modal-title" id="wmTitle">盒内单词</div>
       <button class="modal-close" onclick="Proto.closeModal('wordsModal')">×</button></div>
     <div class="modal-body">
+      <div id="wmAlert"></div>
       <div class="table-wrap">
         <table class="table compact">
-          <thead><tr><th>单词</th><th>音标</th><th>中文释义</th><th>来源词库</th><th>加入时间</th>
-            <th>到期时间</th><th>最近复习</th><th>最近结果</th><th>操作</th></tr></thead>
+          <thead><tr id="wmHead"></tr></thead>
           <tbody id="wmRows"></tbody>
         </table>
       </div>
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="Proto.closeModal('wordsModal')">关闭</button>
-      <a class="btn btn-primary" href="leitner-review.html">开始复习</a>
+      <a class="btn btn-primary" id="wmGo">开始复习</a>
+    </div>
+  </div>
+</div>
+
+<!-- 系统推荐预览 -->
+<div class="mask" id="recModal">
+  <div class="modal wide">
+    <div class="modal-head"><div class="modal-title">系统推荐复习 · 生成前预览</div>
+      <button class="modal-close" onclick="Proto.closeModal('recModal')">×</button></div>
+    <div class="modal-body" id="recBody"></div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('recModal')">取消</button>
+      <button class="btn btn-primary" onclick="startRecommend()">按去重结果开始复习</button>
     </div>
   </div>
 </div>
 
 <!-- 盒子配置 -->
 <div class="drawer-mask" id="cfg-mask" onclick="Proto.closeDrawer('cfg')"></div>
-<div class="drawer" id="cfg" style="width:520px">
+<div class="drawer" id="cfg" style="width:560px">
   <div class="modal-head"><div class="modal-title">莱特纳盒子配置</div>
     <button class="modal-close" onclick="Proto.closeDrawer('cfg')">×</button></div>
   <div class="modal-body">
     <div class="alert alert-warn mb16"><span class="ico">!</span>
-      <div>以下参数<b>待业务确认</b>，保存后只影响之后产生的复习任务，<b>不篡改历史复习记录</b>。</div></div>
+      <div>以下参数<b>待业务确认</b>，当前取值仅为机构暂定值。保存后只影响<b>之后</b>产生的复习计划，
+        <b>不篡改历史复习记录</b>。</div></div>
     <div class="table-wrap">
       <table class="table compact">
         <thead><tr><th>盒子</th><th>序号</th><th>间隔天数</th><th>答对后</th><th>答错后</th><th>启用</th></tr></thead>
-        <tbody>
-          <tr><td>红盒子</td><td>0</td><td>当日</td><td>黄盒 1</td><td>留在红盒</td>
-            <td><span class="switch"><input type="checkbox" checked><span></span></span></td></tr>
-          <tr><td>黄盒 1</td><td>1</td><td><input class="input" value="2" style="height:26px;width:52px;padding:0 6px"></td>
-            <td>黄盒 2</td><td>红盒子</td>
-            <td><span class="switch"><input type="checkbox" checked><span></span></span></td></tr>
-          <tr><td>黄盒 2</td><td>2</td><td><input class="input" value="5" style="height:26px;width:52px;padding:0 6px"></td>
-            <td>黄盒 3</td><td>红盒子</td>
-            <td><span class="switch"><input type="checkbox" checked><span></span></span></td></tr>
-          <tr><td>黄盒 3</td><td>3</td><td><input class="input" value="10" style="height:26px;width:52px;padding:0 6px"></td>
-            <td>毕业</td><td>红盒子</td>
-            <td><span class="switch"><input type="checkbox" checked><span></span></span></td></tr>
-          <tr><td>绿盒子</td><td>—</td><td>手动</td><td>手动</td><td>手动</td>
-            <td><span class="switch"><input type="checkbox" checked><span></span></span></td></tr>
-        </tbody>
+        <tbody id="cfgRows"></tbody>
       </table>
     </div>
-    <div class="field mt16"><label>新增黄盒子</label>
-      <div class="flex gap8"><input class="input" placeholder="盒子名称，如 黄盒 4"><input class="input" placeholder="间隔天数" style="width:110px">
-        <button class="btn">添加</button></div></div>
-    <div class="field mt12"><label>到期判定时间</label>
-      <select class="select"><option>每日 00:00 统一判定</option><option>按上次复习时间实时计算</option></select></div>
+    <div class="field mt16"><label>到期判定方式</label>
+      <select class="select" id="cfgDueRule">
+        <option>每日 00:00 统一判定</option>
+        <option>按上次复习时间实时计算</option>
+      </select></div>
+    <div class="alert alert-info mt16"><span class="ico">i</span>
+      <div>修改「间隔天数」后，新产生的复习记录会按新间隔计算下次到期时间；已有记录的到期日不变。</div></div>
   </div>
   <div class="modal-foot">
     <button class="btn" onclick="Proto.closeDrawer('cfg')">取消</button>
-    <button class="btn btn-primary" onclick="Proto.closeDrawer('cfg');Proto.toast('配置已保存，历史记录不受影响','ok')">保存配置</button>
+    <button class="btn btn-primary" onclick="saveCfg()">保存配置</button>
+  </div>
+</div>
+
+<!-- 单词复习历史 -->
+<div class="mask" id="histModal">
+  <div class="modal wide">
+    <div class="modal-head"><div class="modal-title" id="hmTitle">单词复习历史</div>
+      <button class="modal-close" onclick="Proto.closeModal('histModal')">×</button></div>
+    <div class="modal-body">
+      <div id="hmInfo"></div>
+      <div class="table-wrap">
+        <table class="table compact">
+          <thead><tr><th>时间</th><th>来源盒子</th><th>结果</th><th>去向</th><th>下次到期</th><th>教师</th></tr></thead>
+          <tbody id="hmRows"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="Proto.closeModal('histModal')">关闭</button></div>
+  </div>
+</div>
+
+<!-- 原因填写 -->
+<div class="mask" id="reasonModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title" id="rsTitle">操作</div>
+      <button class="modal-close" onclick="Proto.closeModal('reasonModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span><div id="rsDesc">—</div></div>
+      <div class="field"><label>原因 <span class="req">*</span></label>
+        <input class="input" id="rsNote" placeholder="如：课堂易混淆 / 教师根据表现调整">
+        <div class="tip">原因会记入操作留痕（操作人、时间、原因）</div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('reasonModal')">取消</button>
+      <button class="btn btn-primary" onclick="doReason()">确认</button>
+    </div>
   </div>
 </div>
 
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'teacher', active: 'leitner' });
 
-document.getElementById('redWords').innerHTML =
-  DB.leitner.red.map(w => `<span class="mini-word no">${w.en}</span>`).join('');
-document.getElementById('greenWords').innerHTML =
-  DB.leitner.green.map(w => `<span class="mini-word">${w.en}</span>`).join('');
+const q = new URLSearchParams(location.search);
+let studentId = q.get('student') || 'S2026001';
+let reasonAction = null;
 
-document.getElementById('yellowBoxes').innerHTML = DB.leitner.yellow.map(b => `
-  <div class="box-card" onclick="Proto.toast('进入 ${b.name} 复习','ok')">
-    <div class="bc-top">
-      <div class="bc-name"><span class="box-dot dot-amber"></span>${b.name}</div>
-      <span class="tag ${b.due > 0 ? 'tag-red' : 'tag-slate'} nodot">${b.due > 0 ? '到期 ' + b.due : '无到期'}</span>
-    </div>
-    <div class="bc-num">${b.count}<small>个单词</small></div>
-    <div class="small muted">复习间隔：${b.interval} · 最近复习 ${b.last}</div>
-    <div class="flex gap8 mt12">
-      <button class="btn btn-sm grow" onclick="event.stopPropagation();openWords('yellow','${b.name}')">查看单词</button>
-      <button class="btn btn-sm grow btn-primary" onclick="event.stopPropagation();Proto.toast('进入 ${b.name} 复习','ok')">进入复习</button>
-    </div>
-  </div>`).join('');
+const RESULT_LABEL = { yes: '认识', no: '不认识', mid: '暂不确定' };
+const RESULT_TAG = { yes: 'tag-green', no: 'tag-red', mid: 'tag-amber' };
 
-function openWords(type, name) {
-  const title = document.getElementById('wmTitle');
-  if (type === 'red') {
-    title.textContent = '红盒子单词 · 今日 6 个到期';
-    Proto.renderRows('wmRows', DB.leitner.red, w => `
-      <tr><td class="strong">${w.en}</td><td class="mono small">${w.ph}</td><td>${w.cn}</td>
-        <td class="small">${w.from}</td><td class="small muted">${w.added}</td><td>${w.due}</td>
-        <td class="small muted">${w.lastReview}</td>
-        <td>${w.lastResult === '认识' ? '<span class="tag tag-green nodot">认识</span>'
-          : w.lastResult === '暂不确定' ? '<span class="tag tag-amber nodot">暂不确定</span>'
-          : '<span class="tag tag-red nodot">不认识</span>'}</td>
-        <td class="ops"><button class="btn-link" onclick="Proto.toast('已移入绿盒，需权限确认','ok')">移入绿盒</button></td></tr>`, 9);
-  } else if (type === 'green') {
-    title.textContent = '绿盒子单词 · 教师自主复习';
-    Proto.renderRows('wmRows', DB.leitner.green, w => `
-      <tr><td class="strong">${w.en}</td><td class="mono small">${w.ph}</td><td>${w.cn}</td>
-        <td class="small">${w.reason}</td><td class="small">${w.by}</td><td>${w.added}</td>
-        <td class="small muted">${w.lastReview}</td><td>—</td>
-        <td class="ops"><button class="btn-link" onclick="Proto.toast('查看复习历史（示意）')">历史</button></td></tr>`, 9);
+function switchStudent(id) { location.href = 'leitner.html?student=' + id; }
+function w(id) { return Store.word(id); }
+function en(id) { return (Store.word(id) || {}).en || id; }
+
+function initSelect() {
+  const mine = Store.students().filter(s => s.teacher === 'T001');
+  document.getElementById('stuSel').innerHTML = mine
+    .map(s => `<option value="${s.id}" ${s.id === studentId ? 'selected' : ''}>${s.name} · ${s.grade}</option>`).join('');
+}
+
+/* ---------- 概览 ---------- */
+function render() {
+  const due = Store.leitnerDue(studentId);
+  const st = Store.stats(studentId);
+  const tasks = Store.leitnerTasksOf(studentId);
+  const todayRecs = Store.leitnerRecordsOf(studentId).filter(r => r.at.slice(0, 10) === Store.TODAY);
+  const lastTask = tasks.filter(t => t.status === '已完成')[0];
+
+  document.getElementById('statCards').innerHTML = `
+    <div class="card stat"><div class="stat-label">今日待复习</div>
+      <div class="stat-value" id="sTotal">${due.dedupTotal}<small>个</small></div>
+      <div class="stat-foot">红 ${due.red.length} + 黄到期 ${due.yellowDue} + 手动 ${due.manual.length}
+        ${due.dedupRemoved > 0 ? '－去重 ' + due.dedupRemoved : ''}</div></div>
+    <div class="card stat"><div class="stat-label">今日已完成</div>
+      <div class="stat-value" style="color:var(--success)">${todayRecs.length}<small>个</small></div>
+      <div class="stat-foot">${todayRecs.filter(r => r.result === 'yes').length} 认识 ·
+        ${todayRecs.filter(r => r.result !== 'yes').length} 待复习</div></div>
+    <div class="card stat"><div class="stat-label">体系内单词</div>
+      <div class="stat-value">${st.leitnerTotal}<small>个</small></div>
+      <div class="stat-foot">红 ${st.leitnerRed} · 黄 ${st.leitnerYellow} · 绿 ${st.leitnerGreen}（不重复计数）</div></div>
+    <div class="card stat"><div class="stat-label">最近一次复习</div>
+      <div class="stat-value" style="font-size:16px">${lastTask ? lastTask.completedAt.slice(5) : '—'}</div>
+      <div class="stat-foot">${lastTask ? `认识 ${lastTask.stats.yes} · 不认识 ${lastTask.stats.no} · 不确定 ${lastTask.stats.mid}` : '暂无复习记录'}</div></div>`;
+
+  renderRed(due);
+  renderYellow(due);
+  renderGreen(due);
+  renderHistory(tasks);
+  renderOps();
+
+  document.getElementById('goRed').href = 'leitner-review.html?student=' + studentId + '&scope=red';
+  document.getElementById('goGreen').href = 'leitner-review.html?student=' + studentId + '&scope=green';
+}
+
+function renderRed(due) {
+  const all = Store.leitnerBoxWords(studentId, 'red');
+  const lastRec = Store.leitnerRecordsOf(studentId).filter(r => r.boxFrom === 'red')[0];
+  document.getElementById('redBody').innerHTML = `
+    <div class="grid g3 mb16">
+      <div>
+        <div class="stat-label">单词数量</div>
+        <div class="bc-num">${all.length} <small>个</small></div>
+      </div>
+      <div>
+        <div class="stat-label">今日到期</div>
+        <div class="bc-num" style="color:var(--danger)">${due.red.length} <small>个</small></div>
+      </div>
+      <div>
+        <div class="stat-label">最近复习时间</div>
+        <div style="font-size:15px;font-weight:600;margin-top:6px">${lastRec ? lastRec.at : '—'}</div>
+      </div>
+    </div>
+    <div class="mini-words" style="justify-content:flex-start">
+      ${all.map(s => `<span class="mini-word ${Store.isDue(s) ? 'no' : ''}" style="cursor:pointer"
+        onclick="openWordHistory('${s.wordId}')" title="点击查看复习历史">${en(s.wordId)}</span>`).join('') || '<span class="muted small">红盒为空</span>'}
+    </div>
+    <div class="alert alert-info mt16"><span class="ico">i</span>
+      <div>进入红盒条件：按当前配置到期，<b>或</b>教师手动加入今日复习。红盒单词可移入绿盒（需填原因并留痕）。</div></div>`;
+}
+
+function renderYellow(due) {
+  const cfg = Store.leitnerConfig();
+  document.getElementById('yellowBoxes').innerHTML = cfg.yellow.map(y => {
+    const words = Store.leitnerBoxWords(studentId, y.id);
+    const d = due.yellow.filter(x => x.box.id === y.id)[0];
+    const dueCount = d ? d.words.length : 0;
+    const lastRec = Store.leitnerRecordsOf(studentId).filter(r => r.boxFrom === y.id)[0];
+    return `<div class="box-card" onclick="openWords('${y.id}')">
+      <div class="bc-top">
+        <div class="bc-name"><span class="box-dot dot-amber"></span>${y.name}</div>
+        <span class="tag ${dueCount > 0 ? 'tag-red' : 'tag-slate'} nodot">${dueCount > 0 ? '到期 ' + dueCount : '无到期'}</span>
+      </div>
+      <div class="bc-num">${words.length}<small>个单词</small></div>
+      <div class="small muted">复习间隔：${y.intervalDays} 天 · 最近复习 ${lastRec ? lastRec.at.slice(5) : '未复习'}</div>
+      <div class="small muted">答对 → ${Store.boxName(y.onCorrect)} · 答错 → ${Store.boxName(y.onWrong)}</div>
+      <div class="flex gap8 mt12">
+        <button class="btn btn-sm grow" onclick="event.stopPropagation();openWords('${y.id}')">查看单词</button>
+        <a class="btn btn-sm grow btn-primary" onclick="event.stopPropagation()"
+          href="leitner-review.html?student=${studentId}&scope=${y.id}">进入复习</a>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderGreen(due) {
+  const words = Store.leitnerBoxWords(studentId, 'green');
+  const lastRec = Store.leitnerRecordsOf(studentId).filter(r => r.boxFrom === 'green')[0];
+  document.getElementById('greenBody').innerHTML = `
+    <div class="grid g3 mb16">
+      <div><div class="stat-label">单词数量</div><div class="bc-num">${words.length} <small>个</small></div></div>
+      <div><div class="stat-label">复习方式</div><div class="bc-num" style="font-size:18px">教师手动</div>
+        <div class="small muted">不按黄盒间隔自动移动</div></div>
+      <div><div class="stat-label">最近复习时间</div>
+        <div style="font-size:15px;font-weight:600;margin-top:6px">${lastRec ? lastRec.at : '—'}</div></div>
+    </div>
+    <div class="mini-words" style="justify-content:flex-start">
+      ${words.map(s => `<span class="mini-word" style="cursor:pointer" onclick="openWordHistory('${s.wordId}')"
+        title="${s.reason || '教师手动加入'}">${en(s.wordId)}</span>`).join('') || '<span class="muted small">绿盒为空</span>'}
+    </div>
+    <div class="small muted mt12">加入方式：学员单词档案 / 红盒 / 黄盒 / 训练过程中；手动加入与移出均记录操作人、时间与原因。</div>`;
+}
+
+function renderHistory(tasks) {
+  document.getElementById('histCount').textContent = `共 ${tasks.length} 次`;
+  Proto.renderRows('histRows', tasks.slice(0, 8), t => {
+    const recs = Store.leitnerRecordsOf(studentId).filter(r => r.taskId === t.id);
+    return `<tr>
+      <td class="small">${t.completedAt || t.createdAt}</td>
+      <td class="small">${t.source}</td>
+      <td class="right mono">${t.wordIds.length}</td>
+      <td class="right mono" style="color:var(--success)">${recs.filter(r => r.result === 'yes').length}</td>
+      <td class="right mono" style="color:var(--danger)">${recs.filter(r => r.result !== 'yes').length}</td>
+      <td><span class="tag ${t.status === '已完成' ? 'tag-green' : 'tag-blue'}">${t.status}</span></td>
+      <td class="ops"><button class="btn-link" onclick="openTaskDetail('${t.id}')">明细</button></td>
+    </tr>`;
+  }, 7, '还没有复习记录，完成一次复习后在此查看');
+}
+
+function renderOps() {
+  const ops = Store.leitnerOps(studentId).slice(0, 8);
+  Proto.renderRows('opRows', ops, o => `
+    <tr><td class="small">${o.at}</td><td class="strong">${en(o.wordId)}</td>
+      <td class="small">${o.action}</td>
+      <td class="small muted">${o.reason || '—'}<div class="small muted">${o.by}</div></td></tr>`,
+    4, '暂无手动操作');
+}
+
+/* ---------- 盒内单词 ---------- */
+function openWords(box) {
+  const isGreen = box === 'green';
+  const isRed = box === 'red';
+  const words = Store.leitnerBoxWords(studentId, box);
+  document.getElementById('wmTitle').textContent = Store.boxName(box) + ' · 单词 ' + words.length + ' 个';
+  document.getElementById('wmGo').href = 'leitner-review.html?student=' + studentId + '&scope=' + box;
+
+  document.getElementById('wmAlert').innerHTML = isRed
+    ? `<div class="alert alert-info mb16"><span class="ico">i</span><div>红盒共 <b>${words.length}</b> 个，
+        其中今日到期 <b>${words.filter(s => Store.isDue(s)).length}</b> 个。手动加入今日复习的单词也在此列。</div></div>`
+    : isGreen
+      ? `<div class="alert alert-success mb16"><span class="ico">i</span><div>绿盒由教师自主管理，<b>不按固定间隔自动移动</b>；
+          复习结果只记录，不改变所在盒子。</div></div>`
+      : `<div class="alert alert-info mb16"><span class="ico">i</span><div>${Store.boxName(box)} 到期
+          <b>${words.filter(s => Store.isDue(s)).length}</b> 个 / 共 <b>${words.length}</b> 个；到期日由「上次复习时间 + 配置间隔」决定。</div></div>`;
+
+  if (isGreen) {
+    document.getElementById('wmHead').innerHTML =
+      '<th>单词</th><th>音标</th><th>中文释义</th><th>加入原因</th><th>加入教师</th><th>加入时间</th><th>最近复习</th><th style="width:150px">操作</th>';
+    Proto.renderRows('wmRows', words, s => `
+      <tr><td class="strong">${en(s.wordId)}</td>
+        <td class="mono small">${(w(s.wordId) || {}).ph || ''}</td>
+        <td>${(w(s.wordId) || { mean: [] }).mean.map(m => m.cn).join('；')}</td>
+        <td class="small">${s.reason || '—'}</td>
+        <td class="small">${s.by || '—'}</td>
+        <td class="small muted">${s.addedAt}</td>
+        <td class="small muted">${s.lastReviewAt || '—'}</td>
+        <td class="ops">
+          <button class="btn-link" onclick="openWordHistory('${s.wordId}')">历史</button>
+          <button class="btn-link danger" onclick="removeGreen('${s.wordId}')">移出绿盒</button>
+        </td></tr>`, 8, '绿盒为空');
   } else {
-    title.textContent = name + ' · 单词列表';
-    Proto.renderRows('wmRows', DB.leitner.red.slice(0, 4), w => `
-      <tr><td class="strong">${w.en}</td><td class="mono small">${w.ph}</td><td>${w.cn}</td>
-        <td class="small">${w.from}</td><td class="small muted">${w.added}</td><td>${w.due}</td>
-        <td class="small muted">${w.lastReview}</td>
-        <td><span class="tag tag-green nodot">${w.lastResult}</span></td>
-        <td class="ops"><button class="btn-link" onclick="Proto.toast('查看历史（示意）')">历史</button></td></tr>`, 9);
+    document.getElementById('wmHead').innerHTML =
+      '<th>单词</th><th>音标</th><th>中文释义</th><th>来源词库</th><th>加入时间</th><th>到期时间</th><th>最近复习</th><th>最近结果</th><th style="width:190px">操作</th>';
+    Proto.renderRows('wmRows', words, s => `
+      <tr><td class="strong">${en(s.wordId)}</td>
+        <td class="mono small">${(w(s.wordId) || {}).ph || ''}</td>
+        <td>${(w(s.wordId) || { mean: [] }).mean.map(m => m.cn).join('；')}</td>
+        <td class="small">WB001</td>
+        <td class="small muted">${s.addedAt}</td>
+        <td class="${Store.isDue(s) ? 'strong' : 'small muted'}">${s.dueAt || '—'}</td>
+        <td class="small muted">${s.lastReviewAt || '—'}</td>
+        <td><span class="tag ${s.lastResult === '认识' ? 'tag-green' : s.lastResult === '暂不确定' ? 'tag-amber' : 'tag-red'} nodot">${s.lastResult}</span></td>
+        <td class="ops">
+          <button class="btn-link" onclick="openWordHistory('${s.wordId}')">历史</button>
+          <button class="btn-link" onclick="joinGreen('${s.wordId}')">移入绿盒</button>
+          <button class="btn-link" onclick="moveWord('${s.wordId}')">手动移动</button>
+        </td></tr>`, 9, '该盒子暂无单词');
   }
   Proto.openModal('wordsModal');
 }
 
-function recommend() {
-  Proto.confirmBox('系统推荐复习',
-    `系统按当前配置推荐本次复习内容：<br><br>
-     · 红盒子到期 <b>6</b> 个<br>
-     · 黄盒 1 到期 <b>3</b> 个<br>
-     · 黄盒 3 到期 <b>2</b> 个<br>
-     · 绿盒建议 <b>4</b> 个<br><br>
-     合计 <b>15</b> 个，预计 8–10 分钟。`,
-    '开始复习', () => location.href = 'leitner-review.html');
+/* ---------- 系统推荐预览（含去重） ---------- */
+function openRecommend() {
+  const d = Store.leitnerDue(studentId);
+  const yellowRows = d.yellow.filter(y => y.words.length)
+    .map(y => `<tr><td>${y.box.name}</td><td class="right mono">${y.words.length}</td>
+      <td class="small muted">间隔 ${y.box.intervalDays} 天</td>
+      <td class="small">${y.words.map(s => en(s.wordId)).join('、')}</td></tr>`).join('');
+  const dueOthers = d.red.concat(d.yellow.reduce((a, y) => a.concat(y.words), []));
+  const dupWords = d.manual.filter(m => dueOthers.some(x => x.wordId === m.wordId)).map(m => en(m.wordId));
+
+  document.getElementById('recBody').innerHTML = `
+    <div class="alert alert-info mb16"><span class="ico">i</span>
+      <div>系统按<b>当前配置</b>推荐本次复习内容，三个来源可能指向同一个单词，生成任务前<b>按单词去重</b>。</div></div>
+    <div class="table-wrap mb16">
+      <table class="table compact">
+        <thead><tr><th>来源</th><th class="right">数量</th><th>规则</th><th>单词</th></tr></thead>
+        <tbody>
+          <tr><td class="strong">红盒到期</td><td class="right mono">${d.red.length}</td>
+            <td class="small muted">到期日 ≤ 今天</td>
+            <td class="small">${d.red.map(s => en(s.wordId)).join('、') || '—'}</td></tr>
+          ${yellowRows}
+          <tr><td class="strong">教师手动加入</td><td class="right mono">${d.manual.length}</td>
+            <td class="small muted">不受到期日限制</td>
+            <td class="small">${d.manual.map(s => en(s.wordId)).join('、') || '—'}</td></tr>
+          <tr style="background:var(--bg)"><td class="strong">合计（未去重）</td>
+            <td class="right mono strong">${d.rawTotal}</td><td colspan="2" class="small muted">红盒 + 黄盒到期 + 手动加入</td></tr>
+          ${d.dedupRemoved > 0 ? `<tr><td class="strong" style="color:var(--danger)">重复单词</td>
+            <td class="right mono" style="color:var(--danger)">-${d.dedupRemoved}</td>
+            <td colspan="2" class="small">${dupWords.join('、') || '同一单词被多个来源命中'}</td></tr>` : ''}
+          <tr style="background:var(--primary-soft)"><td class="strong">去重后任务总数</td>
+            <td class="right mono strong" style="color:var(--primary)">${d.dedupTotal}</td>
+            <td colspan="2" class="small">实际生成的复习任务单词集合</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="alert alert-warn"><span class="ico">!</span>
+      <div>绿盒（${d.green.length} 个）<b>不自动加入</b>推荐任务，由教师单独发起绿盒复习。</div></div>`;
+  Proto.openModal('recModal');
 }
+
+function startRecommend() {
+  location.href = 'leitner-review.html?student=' + studentId + '&scope=recommend';
+}
+
+/* ---------- 单词历史 ---------- */
+function openWordHistory(wordId) {
+  const recs = Store.leitnerRecordsOf(studentId, wordId);
+  const s = Store.leitnerState(studentId, wordId);
+  document.getElementById('hmTitle').textContent = en(wordId) + ' · 复习历史';
+  document.getElementById('hmInfo').innerHTML = `
+    <div class="grid g4 mb16">
+      <div><div class="stat-label">当前盒子</div><div style="font-weight:600">${s ? Store.boxName(s.box) : '—'}</div></div>
+      <div><div class="stat-label">到期时间</div><div style="font-weight:600">${s && s.dueAt ? s.dueAt : '手动'}</div></div>
+      <div><div class="stat-label">最近结果</div><div style="font-weight:600">${s ? s.lastResult : '—'}</div></div>
+      <div><div class="stat-label">复习次数</div><div style="font-weight:600">${recs.length}</div></div>
+    </div>`;
+  Proto.renderRows('hmRows', recs, r => `
+    <tr><td class="small">${r.at}</td><td class="small">${Store.boxName(r.boxFrom)}</td>
+      <td><span class="tag ${RESULT_TAG[r.result]} nodot">${RESULT_LABEL[r.result]}</span></td>
+      <td class="small">${Store.boxName(r.boxTo)}</td><td class="small muted">${r.nextDue || '—'}</td>
+      <td class="small">${(Store.teacher(r.teacherId) || {}).name || r.teacherId}</td></tr>`,
+    6, '该单词还没有复习记录');
+  Proto.openModal('histModal');
+}
+
+function openTaskDetail(taskId) {
+  const t = Store.leitnerTask(taskId);
+  const recs = Store.leitnerRecordsOf(studentId).filter(r => r.taskId === taskId);
+  document.getElementById('hmTitle').textContent = '复习任务 ' + taskId + ' 明细';
+  document.getElementById('hmInfo').innerHTML = `
+    <div class="desc g3 mb16">
+      <div class="desc-item"><span class="k">来源</span><span class="v">${t.source}</span></div>
+      <div class="desc-item"><span class="k">开始时间</span><span class="v">${t.createdAt}</span></div>
+      <div class="desc-item"><span class="k">完成时间</span><span class="v">${t.completedAt || '—'}</span></div>
+    </div>`;
+  Proto.renderRows('hmRows', recs, r => `
+    <tr><td class="small">${r.at}</td><td class="small">${Store.boxName(r.boxFrom)}</td>
+      <td><span class="tag ${RESULT_TAG[r.result]} nodot">${RESULT_LABEL[r.result]}</span></td>
+      <td class="small">${Store.boxName(r.boxTo)}</td><td class="small muted">${r.nextDue || '—'}</td>
+      <td class="small">${(Store.teacher(r.teacherId) || {}).name || r.teacherId}</td></tr>`, 6, '暂无单词记录');
+  Proto.openModal('histModal');
+}
+
+/* ---------- 绿盒 / 移动 ---------- */
+function joinGreen(wordId) {
+  reasonAction = function (note) {
+    Store.addToGreen(studentId, wordId, note, '李婉');
+    Proto.toast(en(wordId) + ' 已移入绿盒', 'ok');
+    openWords(Store.leitnerState(studentId, wordId).box === 'green' ? 'green' : 'red');
+    render();
+  };
+  document.getElementById('rsTitle').textContent = '移入绿盒子';
+  const s = Store.leitnerState(studentId, wordId);
+  document.getElementById('rsDesc').innerHTML =
+    `将 <b>${en(wordId)}</b> 从 <b>${Store.boxName(s.box)}</b> 移入绿盒。<br>
+     绿盒不再按黄盒间隔自动移动，改由教师自主复习。`;
+  document.getElementById('rsNote').value = '';
+  Proto.openModal('reasonModal');
+}
+
+function removeGreen(wordId) {
+  reasonAction = function (note) {
+    Store.removeFromGreen(studentId, wordId, note, '李婉', 'red');
+    Proto.toast(en(wordId) + ' 已移出绿盒，回到红盒', 'ok');
+    openWords('green');
+    render();
+  };
+  document.getElementById('rsTitle').textContent = '移出绿盒子';
+  document.getElementById('rsDesc').innerHTML =
+    `将 <b>${en(wordId)}</b> 移出绿盒，默认回到<b>红盒</b>并加入今日复习。移出原因必填。`;
+  document.getElementById('rsNote').value = '';
+  Proto.openModal('reasonModal');
+}
+
+function moveWord(wordId) {
+  reasonAction = function (note) {
+    const target = document.getElementById('mvTarget').value;
+    Store.moveBox(studentId, wordId, target, note, '李婉');
+    Proto.toast(en(wordId) + ' 已移动到 ' + Store.boxName(target), 'ok');
+    Proto.closeModal('wordsModal');
+    render();
+  };
+  const s = Store.leitnerState(studentId, wordId);
+  document.getElementById('rsTitle').textContent = '手动移动盒子';
+  const opts = ['red', 'Y1', 'Y2', 'Y3', 'green']
+    .map(id => `<option value="${id}" ${s.box === id ? 'disabled' : ''}>${Store.boxName(id)}${s.box === id ? '（当前）' : ''}</option>`).join('');
+  document.getElementById('rsDesc').innerHTML =
+    `将 <b>${en(wordId)}</b> 从 <b>${Store.boxName(s.box)}</b> 移动到：<br>
+     <select class="select mt8" id="mvTarget" style="width:220px">${opts}</select>
+     <div class="small muted mt8">手动移动会记录操作人、时间与原因，不影响历史复习记录。</div>`;
+  document.getElementById('rsNote').value = '';
+  Proto.openModal('reasonModal');
+}
+
+function doReason() {
+  const note = document.getElementById('rsNote').value.trim();
+  if (!note) { Proto.toast('请填写原因', 'err'); return; }
+  Proto.closeModal('reasonModal');
+  if (reasonAction) reasonAction(note);
+}
+
+/* ---------- 盒子配置 ---------- */
+function openCfg() {
+  const cfg = Store.leitnerConfig();
+  const boxes = [cfg.red].concat(cfg.yellow).concat([cfg.green]);
+  const allBoxes = [{ id: 'red', name: '红盒子' }].concat(cfg.yellow.map(y => ({ id: y.id, name: y.name })))
+    .concat([{ id: 'green', name: '绿盒子' }, { id: 'graduated', name: '毕业（移出体系）' }]);
+
+  document.getElementById('cfgRows').innerHTML = boxes.map((b, i) => `
+    <tr>
+      <td>${b.name}</td>
+      <td class="mono">${i === 0 ? 0 : b.seq || '—'}</td>
+      <td>${b.manual ? '手动' : `<input class="input" data-cfg="${b.id}" value="${b.intervalDays}" style="height:26px;width:56px;padding:0 6px">`}</td>
+      <td>${b.manual ? '手动' : `<select class="select" data-cfg="${b.id}" data-k="onCorrect" style="height:26px;width:110px;font-size:12px">
+        ${allBoxes.map(x => `<option value="${x.id}" ${b.onCorrect === x.id ? 'selected' : ''}>${x.name}</option>`).join('')}</select>`}</td>
+      <td>${b.manual ? '手动' : `<select class="select" data-cfg="${b.id}" data-k="onWrong" style="height:26px;width:110px;font-size:12px">
+        ${allBoxes.map(x => `<option value="${x.id}" ${b.onWrong === x.id ? 'selected' : ''}>${x.name}</option>`).join('')}</select>`}</td>
+      <td><span class="switch"><input type="checkbox" ${b.enabled ? 'checked' : ''} disabled><span></span></span></td>
+    </tr>`).join('');
+  document.getElementById('cfgDueRule').value = cfg.dueRule;
+  Proto.openDrawer('cfg');
+}
+
+function saveCfg() {
+  const cfg = Store.leitnerConfig();
+  document.querySelectorAll('input[data-cfg]').forEach(inp => {
+    const id = inp.dataset.cfg;
+    const box = id === 'red' ? cfg.red : cfg.yellow.filter(y => y.id === id)[0];
+    const v = Number(inp.value);
+    if (box && v >= 0) box.intervalDays = v;
+  });
+  document.querySelectorAll('select[data-cfg]').forEach(sel => {
+    const id = sel.dataset.cfg, k = sel.dataset.k;
+    const box = id === 'red' ? cfg.red : cfg.yellow.filter(y => y.id === id)[0];
+    if (box) box[k] = sel.value;
+  });
+  cfg.dueRule = document.getElementById('cfgDueRule').value;
+  cfg.confirmed = true;
+  Store.save();
+  Proto.closeDrawer('cfg');
+  Proto.toast('配置已保存，历史复习记录不受影响', 'ok');
+  render();
+}
+
+initSelect();
+render();
 </script>
 </body>
 </html>

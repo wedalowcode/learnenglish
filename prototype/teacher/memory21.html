@@ -17,34 +17,22 @@
         <div>
           <div class="crumb">教学管理<span class="sep">/</span>21 天记忆复习</div>
           <h1 class="page-title">21 天记忆复习</h1>
-          <div class="page-sub">独立于莱特纳体系 · 不使用红黄绿盒 · 任务独立记录</div>
+          <div class="page-sub">独立于莱特纳体系 · 不使用红黄绿盒 · 每个计划独立单词清单与复习任务</div>
         </div>
         <div class="page-actions">
-          <select class="select" style="width:170px"><option>陈可欣 · 七年级</option><option>付嘉禾 · 七年级</option></select>
-          <button class="btn" onclick="Proto.openModal('planModal')">+ 创建新计划</button>
-          <a class="btn btn-primary" href="memory21-review.html">进入今日复习</a>
+          <select class="select" style="width:170px" id="stuSel" onchange="switchStudent(this.value)"></select>
+          <select class="select" style="width:220px" id="planSel" onchange="switchPlan(this.value)"></select>
+          <button class="btn" onclick="openPlanModal()">+ 创建新计划</button>
+          <a class="btn btn-primary" id="goReview">进入今日复习</a>
         </div>
       </div>
 
-      <div class="grid g6 mb16">
-        <div class="card stat"><div class="stat-label">计划状态</div>
-          <div class="stat-value" style="font-size:16px;color:var(--primary)">进行中</div></div>
-        <div class="card stat"><div class="stat-label">开始日期</div>
-          <div class="stat-value" style="font-size:16px">10-24</div></div>
-        <div class="card stat"><div class="stat-label">当前进度</div>
-          <div class="stat-value">10<small>/ 21 天</small></div></div>
-        <div class="card stat"><div class="stat-label">今日待复习</div>
-          <div class="stat-value" style="color:var(--warning)">12<small>个</small></div></div>
-        <div class="card stat"><div class="stat-label">今日已完成</div>
-          <div class="stat-value">0<small>个</small></div></div>
-        <div class="card stat"><div class="stat-label">整体完成率</div>
-          <div class="stat-value">48<small>%</small></div>
-          <div class="stat-foot">含 1 天逾期 3 个</div></div>
-      </div>
+      <div id="statCards" class="grid g6 mb16"></div>
 
+      <!-- 时间轴 -->
       <div class="card mb16">
         <div class="card-head">
-          <div class="card-title">21 天计划时间轴<span class="hint">11 月记忆强化计划 · 参与单词 23 个</span></div>
+          <div class="card-title" id="tlTitle">21 天计划时间轴</div>
           <div class="flex gap8 small aic">
             <span class="tag tag-green nodot">已完成</span>
             <span class="tag tag-blue nodot">今日</span>
@@ -55,50 +43,36 @@
         <div class="card-body">
           <div class="d21" id="days"></div>
           <div class="alert alert-warn mt16"><span class="ico">!</span>
-            <div><b>待确认配置：</b>21 天内的具体复习日期节点、每日复习数量上限、答错是否追加复习、中断后是否顺延、
-              21 天结束后是否自动归档 —— 均由机构配置，原型不擅自设定为固定规则。</div></div>
+            <div><b>待确认配置：</b>复习日期节点、每日复习数量上限、答错是否追加复习、中断后是否顺延、
+              结束后是否自动归档 —— 均为机构配置项（当前策略：<b id="strategyName">—</b>），原型不把演示日期写死为正式规则。</div></div>
         </div>
       </div>
 
       <div class="grid g-2-1" style="align-items:start">
         <div>
+          <!-- 今日任务 -->
           <div class="card">
-            <div class="card-head"><div class="card-title">今日复习任务<span class="hint">第 10 天 · 2026-11-02</span></div>
-              <a class="btn btn-sm btn-primary" href="memory21-review.html">开始复习</a></div>
+            <div class="card-head"><div class="card-title" id="todayTitle">今日复习任务</div>
+              <a class="btn btn-sm btn-primary" id="goReview2">开始复习</a></div>
             <div class="card-body tight">
               <table class="table compact">
                 <thead><tr><th>单词</th><th>音标</th><th>中文释义</th><th>加入日期</th><th>上次复习</th><th>上次结果</th></tr></thead>
                 <tbody id="todayWords"></tbody>
               </table>
             </div>
-            <div class="card-foot"><span class="small muted">共 12 个单词，预计 6–8 分钟</span>
-              <a class="btn btn-sm btn-primary" href="memory21-review.html">开始复习</a></div>
+            <div class="card-foot"><span class="small muted" id="todayFoot">—</span>
+              <a class="btn btn-sm btn-primary" id="goReview3">开始复习</a></div>
           </div>
 
+          <!-- 历史 -->
           <div class="card">
             <div class="card-head"><div class="card-title">历史复习记录</div>
-              <span class="small muted">每次复习生成独立任务记录</span></div>
+              <span class="small muted">每个节点生成独立任务，单词级结果单独保存</span></div>
             <div class="card-body tight">
               <table class="table compact">
-                <thead><tr><th>日期</th><th>节点</th><th class="right">单词数</th><th class="right">完成</th>
+                <thead><tr><th>日期</th><th>节点</th><th class="right">单词数</th><th class="right">已完成</th>
                   <th>完成率</th><th>状态</th><th>教师</th></tr></thead>
-                <tbody>
-                  <tr><td>2026-10-31</td><td>第 8 天</td><td class="right mono">14</td><td class="right mono">14</td>
-                    <td><span class="bar-row" style="width:90px"><span class="bar green" style="flex:1"><i style="width:100%"></i></span><span class="val">100%</span></span></td>
-                    <td><span class="tag tag-green">已完成</span></td><td>李婉</td></tr>
-                  <tr><td>2026-10-30</td><td>第 7 天</td><td class="right mono">14</td><td class="right mono">11</td>
-                    <td><span class="bar-row" style="width:90px"><span class="bar amber" style="flex:1"><i style="width:79%"></i></span><span class="val">79%</span></span></td>
-                    <td><span class="tag tag-red">已逾期</span></td><td>李婉</td></tr>
-                  <tr><td>2026-10-28</td><td>第 5 天</td><td class="right mono">16</td><td class="right mono">16</td>
-                    <td><span class="bar-row" style="width:90px"><span class="bar green" style="flex:1"><i style="width:100%"></i></span><span class="val">100%</span></span></td>
-                    <td><span class="tag tag-green">已完成</span></td><td>李婉</td></tr>
-                  <tr><td>2026-10-26</td><td>第 3 天</td><td class="right mono">18</td><td class="right mono">18</td>
-                    <td><span class="bar-row" style="width:90px"><span class="bar green" style="flex:1"><i style="width:100%"></i></span><span class="val">100%</span></span></td>
-                    <td><span class="tag tag-green">已完成</span></td><td>李婉</td></tr>
-                  <tr><td>2026-10-25</td><td>第 2 天</td><td class="right mono">23</td><td class="right mono">23</td>
-                    <td><span class="bar-row" style="width:90px"><span class="bar green" style="flex:1"><i style="width:100%"></i></span><span class="val">100%</span></span></td>
-                    <td><span class="tag tag-green">已完成</span></td><td>李婉</td></tr>
-                </tbody>
+                <tbody id="histRows"></tbody>
               </table>
             </div>
           </div>
@@ -107,17 +81,13 @@
         <div>
           <div class="card">
             <div class="card-head"><div class="card-title">计划详情</div>
-              <button class="btn btn-sm" onclick="Proto.toast('打开编辑计划（示意）')">编辑</button></div>
+              <span class="small muted" id="planStatus">—</span></div>
             <div class="card-body">
-              <div class="desc g1">
-                <div class="desc-item"><span class="k">计划名称</span><span class="v">11 月记忆强化计划</span></div>
-                <div class="desc-item"><span class="k">学员</span><span class="v">陈可欣</span></div>
-                <div class="desc-item"><span class="k">开始日期</span><span class="v">2026-10-24</span></div>
-                <div class="desc-item"><span class="k">参与单词</span><span class="v mono">23 个</span></div>
-                <div class="desc-item"><span class="k">单词范围</span><span class="v small">人教版七上 Unit 1（待复习单词）</span></div>
-                <div class="desc-item"><span class="k">复习策略</span><span class="v small">按机构默认 21 天策略</span></div>
-                <div class="desc-item"><span class="k">创建人</span><span class="v">李婉 · 2026-10-24</span></div>
-              </div>
+              <div class="desc g1" id="planDesc"></div>
+            </div>
+            <div class="card-foot">
+              <button class="btn btn-sm" onclick="Proto.toast('计划编辑：原型仅支持创建，编辑留待下一轮','warn')">编辑</button>
+              <button class="btn btn-sm btn-danger" onclick="cancelPlan()">取消计划</button>
             </div>
           </div>
 
@@ -125,9 +95,11 @@
             <div class="card-head"><div class="card-title">与莱特纳的关系</div></div>
             <div class="card-body">
               <div class="alert alert-info mb12"><span class="ico">i</span>
-                <div>同一单词可以<b>同时</b>出现在莱特纳和 21 天体系中，两套体系独立生成任务、独立记录结果。</div></div>
-              <div class="m-row"><span class="k">同时在莱特纳体系</span><span class="mono">18 个</span></div>
-              <div class="m-row"><span class="k">仅在 21 天体系</span><span class="mono">5 个</span></div>
+                <div>同一单词可以<b>同时</b>出现在莱特纳和 21 天体系中，两套体系独立生成任务、独立记录结果。
+                  21 天复习<b>不使用盒子</b>，也<b>不改变</b>盒子状态。</div></div>
+              <div class="m-row"><span class="k">计划单词数</span><span class="mono" id="relTotal">—</span></div>
+              <div class="m-row"><span class="k">同时在莱特纳体系</span><span class="mono" id="relBoth">—</span></div>
+              <div class="m-row"><span class="k">仅在 21 天体系</span><span class="mono" id="relOnly">—</span></div>
               <div class="m-row" style="border-bottom:none"><span class="k">两体系结果相互覆盖</span>
                 <span class="tag tag-red nodot">否</span></div>
             </div>
@@ -136,14 +108,15 @@
           <div class="card">
             <div class="card-head"><div class="card-title">创建入口</div></div>
             <div class="card-body" style="font-size:12.5px;color:var(--text-2);line-height:1.85">
-              · 单词训练完成后，由教师选择加入<br>
-              · 教师在学员档案中手动创建<br>
-              · 未来支持批量选择历史训练单词
-              <button class="btn btn-block mt12" onclick="Proto.openModal('planModal')">创建新计划</button>
+              · 单词训练完成后勾选「加入 21 天体系」，自动生成独立计划<br>
+              · 本页「创建新计划」手动创建<br>
+              · 计划之间互不影响，同一学员可并行多个计划
+              <button class="btn btn-block mt12" onclick="openPlanModal()">创建新计划</button>
             </div>
           </div>
         </div>
       </div>
+
     </main>
   </div>
 </div>
@@ -156,27 +129,34 @@
     <div class="modal-body">
       <div class="form-grid g2">
         <div class="field"><label>学员 <span class="req">*</span></label>
-          <select class="select"><option>陈可欣</option><option>付嘉禾</option></select></div>
+          <select class="select" id="npStudent"></select></div>
         <div class="field"><label>计划名称 <span class="req">*</span></label>
-          <input class="input" value="11 月记忆强化计划"></div>
+          <input class="input" id="npName" placeholder="如：11 月 Unit 1 词汇记忆计划"></div>
         <div class="field"><label>计划开始日期 <span class="req">*</span></label>
-          <input class="input" type="date" value="2026-11-02"></div>
+          <input class="input" type="date" id="npStart" value="2026-11-02"></div>
         <div class="field"><label>复习策略</label>
-          <select class="select"><option>机构默认 21 天策略</option><option>自定义（待配置）</option></select></div>
-        <div class="field full"><label>选择单词范围</label>
-          <div class="radio-row">
-            <label class="radio"><input type="radio" name="scope" checked>本次训练的待复习单词（7 个）</label>
-            <label class="radio"><input type="radio" name="scope">指定词库中的单词</label>
-            <label class="radio"><input type="radio" name="scope">手动勾选</label>
-          </div></div>
-        <div class="field full"><label>备注</label><textarea class="textarea" placeholder="选填"></textarea></div>
+          <select class="select" id="npStrategy">
+            <option>机构默认 21 天策略</option>
+            <option>自定义（待配置）</option>
+          </select></div>
+        <div class="field full"><label>选择单词范围 <span class="req">*</span></label>
+          <div class="radio-row" style="margin-bottom:10px">
+            <label class="radio"><input type="radio" name="scope" value="untrained" checked onchange="previewScope()">未掌握 / 待复习单词</label>
+            <label class="radio"><input type="radio" name="scope" value="book" onchange="previewScope()">当前词库全部单词</label>
+            <label class="radio"><input type="radio" name="scope" value="manual" onchange="previewScope()">手动勾选</label>
+          </div>
+          <div id="scopePreview" class="small muted"></div>
+          <div id="manualPick" class="hidden" style="max-height:200px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:8px"></div>
+        </div>
+        <div class="field full"><label>备注</label><textarea class="textarea" id="npNote" placeholder="选填"></textarea></div>
       </div>
       <div class="alert alert-warn mt16"><span class="ico">!</span>
-        <div>系统将按机构配置生成 21 天复习时间表。具体节点、每日上限、中断顺延等规则为<b>待确认配置项</b>。</div></div>
+        <div>系统按策略配置生成复习时间表（节点 <b id="nodeDays">—</b>）。上述参数为<b>待确认配置项</b>，
+          保存后可在计划时间轴中查看每日任务。</div></div>
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="Proto.closeModal('planModal')">取消</button>
-      <button class="btn btn-primary" onclick="Proto.closeModal('planModal');Proto.toast('21 天计划已创建','ok')">创建计划</button>
+      <button class="btn btn-primary" onclick="createPlan()">创建计划</button>
     </div>
   </div>
 </div>
@@ -184,38 +164,251 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'teacher', active: 'memory21' });
 
-document.getElementById('days').innerHTML = DB.plan21.nodes.map(n => {
-  const cls = n.state === 'done' ? 'done' : n.state === 'today' ? 'today'
-    : n.state === 'miss' ? 'miss' : n.state === 'rest' ? '' : 'plan';
-  return `<div class="day ${cls}" onclick="Proto.toast('第 ${n.day} 天 · ${n.date}${n.count ? ' · ' + n.done + '/' + n.count : ' · 休息'}')">
-    <b>第 ${n.day} 天</b>${n.date.slice(5)}
-    <div>${n.count ? `${n.done} / ${n.count}` : '休息'}</div>
-  </div>`;
-}).join('');
+const q = new URLSearchParams(location.search);
+let studentId = q.get('student') || 'S2026001';
+let planId = q.get('plan') || '';
+let plan = null;
 
-const today = DB.leitner.red.slice(0, 6).concat([
-  { en: 'class', ph: '/klɑːs/', cn: '班级；课', added: '2026-10-24', lastReview: '2026-10-31', lastResult: '认识' },
-  { en: 'look', ph: '/lʊk/', cn: '看；看起来', added: '2026-10-24', lastReview: '2026-10-31', lastResult: '认识' },
-  { en: 'first', ph: '/fɜːst/', cn: '第一的；首先', added: '2026-10-24', lastReview: '2026-10-31', lastResult: '暂不确定' },
-  { en: 'last', ph: '/lɑːst/', cn: '最后的；持续', added: '2026-10-24', lastReview: '2026-10-30', lastResult: '不认识' },
-  { en: 'happy', ph: '/ˈhæpi/', cn: '高兴的', added: '2026-10-24', lastReview: '2026-10-30', lastResult: '认识' },
-  { en: 'name', ph: '/neɪm/', cn: '名字；命名', added: '2026-10-24', lastReview: '2026-10-30', lastResult: '认识' },
-]);
+const RESULT_LABEL = { yes: '认识', no: '不认识', mid: '暂不确定' };
+const RESULT_TAG = { yes: 'tag-green', no: 'tag-red', mid: 'tag-amber' };
 
-Proto.renderRows('todayWords', today, w => `
-  <tr>
-    <td class="strong">${w.en}</td>
-    <td class="mono small muted">${w.ph}</td>
-    <td>${w.cn || (w.mean ? w.mean.map(m => m.cn).join('；') : '')}</td>
-    <td class="small muted">${w.added || '2026-10-24'}</td>
-    <td class="small muted">${w.lastReview}</td>
-    <td>${w.lastResult === '认识' ? '<span class="tag tag-green nodot">认识</span>'
-      : w.lastResult === '暂不确定' ? '<span class="tag tag-amber nodot">暂不确定</span>'
-      : '<span class="tag tag-red nodot">不认识</span>'}</td>
-  </tr>`, 6);
+function switchStudent(id) { location.href = 'memory21.html?student=' + id; }
+function switchPlan(id) { location.href = 'memory21.html?student=' + studentId + '&plan=' + id; }
+function en(id) { return (Store.word(id) || {}).en || id; }
+
+function init() {
+  const mine = Store.students().filter(s => s.teacher === 'T001');
+  document.getElementById('stuSel').innerHTML = mine
+    .map(s => `<option value="${s.id}" ${s.id === studentId ? 'selected' : ''}>${s.name} · ${s.grade}</option>`).join('');
+  document.getElementById('npStudent').innerHTML = mine
+    .map(s => `<option value="${s.id}" ${s.id === studentId ? 'selected' : ''}>${s.name}</option>`).join('');
+
+  const plans = Store.plansOf(studentId);
+  if (!plans.length) {
+    document.getElementById('planSel').innerHTML = '<option>暂无计划</option>';
+    renderNoPlan();
+    return false;
+  }
+  if (!planId || !Store.plan21(planId)) planId = plans[0].id;
+  document.getElementById('planSel').innerHTML = plans
+    .map(p => `<option value="${p.id}" ${p.id === planId ? 'selected' : ''}>${p.name}（${p.wordIds.length} 词）</option>`).join('');
+  plan = Store.plan21(planId);
+  return true;
+}
+
+function renderNoPlan() {
+  document.getElementById('days').innerHTML = '';
+  document.getElementById('statCards').innerHTML = '';
+  document.getElementById('todayWords').innerHTML =
+    '<tr><td colspan="6"><div class="empty"><p>该学员还没有 21 天计划</p>' +
+    '<button class="btn btn-primary" onclick="openPlanModal()">创建新计划</button></div></td></tr>';
+}
+
+function render() {
+  const p = Store.plan21Progress(plan);
+  const st = Store.stats(studentId);
+  const teacher = (Store.teacher('T001') || {}).name || '李婉';
+
+  document.getElementById('statCards').innerHTML = `
+    <div class="card stat"><div class="stat-label">计划状态</div>
+      <div class="stat-value" style="font-size:16px;color:var(--primary)">${plan.status}</div></div>
+    <div class="card stat"><div class="stat-label">开始日期</div>
+      <div class="stat-value" style="font-size:16px">${plan.startDate.slice(5)}</div></div>
+    <div class="card stat"><div class="stat-label">当前进度</div>
+      <div class="stat-value">${p.currentDay}<small>/ 21 天</small></div></div>
+    <div class="card stat"><div class="stat-label">今日待复习</div>
+      <div class="stat-value" style="color:var(--warning)">${p.todayTotal - p.todayDone}<small>个</small></div>
+      <div class="stat-foot">共 ${p.todayTotal} 个，已完成 ${p.todayDone}</div></div>
+    <div class="card stat"><div class="stat-label">今日已完成</div>
+      <div class="stat-value" style="color:var(--success)">${p.todayDone}<small>个</small></div></div>
+    <div class="card stat"><div class="stat-label">整体完成率</div>
+      <div class="stat-value">${p.rate}<small>%</small></div>
+      <div class="stat-foot">${p.doneWords} / ${p.totalWords} 个单词（已过节点）</div></div>`;
+
+  document.getElementById('tlTitle').innerHTML =
+    `21 天计划时间轴<span class="hint">${plan.name} · 参与单词 ${plan.wordIds.length} 个</span>`;
+  document.getElementById('strategyName').textContent = plan.strategy;
+
+  document.getElementById('days').innerHTML = p.tasks.map(t => {
+    const doneN = Store.plan21Records(plan.id).filter(r => r.taskId === t.id).length;
+    const cls = t.status === 'done' ? 'done' : t.status === 'today' ? 'today'
+      : t.status === 'miss' ? 'miss' : t.status === 'rest' ? '' : 'plan';
+    return `<div class="day ${cls}" onclick="showNode('${t.id}')">
+      <b>第 ${t.day} 天</b>${t.date.slice(5)}
+      <div>${t.wordIds.length ? `${doneN} / ${t.wordIds.length}` : '休息'}</div>
+    </div>`;
+  }).join('');
+
+  /* 今日任务 */
+  const today = p.todayTask;
+  document.getElementById('todayTitle').innerHTML =
+    `今日复习任务<span class="hint">第 ${today ? today.day : p.currentDay} 天 · ${Store.TODAY}</span>`;
+  const href = today
+    ? `memory21-review.html?task=${today.id}`
+    : `memory21.html?student=${studentId}&plan=${planId}`;
+  ['goReview', 'goReview2', 'goReview3'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.href = href;
+  });
+  document.getElementById('todayFoot').textContent = today
+    ? `共 ${today.wordIds.length} 个单词，已完成 ${p.todayDone} 个${today.status === 'done' ? ' · 今日任务已完成' : ''}`
+    : '今天不是计划的复习节点（休息日）';
+
+  Proto.renderRows('todayWords', today ? today.wordIds.map(id => {
+    const recs = Store.plan21Records(plan.id, id).sort((a, b) => a.at < b.at ? 1 : -1);
+    const mine = recs.filter(r => r.taskId === today.id);
+    const last = recs[0];
+    return {
+      id, done: mine.length > 0, result: mine.length ? mine[0].result : null,
+      lastAt: last ? last.at : '—', lastResult: last ? last.result : null
+    };
+  }) : [], r => {
+    const wd = Store.word(r.id);
+    const st2 = Store.wordState(studentId, r.id);
+    return `<tr>
+      <td class="strong">${wd.en}${r.done ? ' <span class="tag tag-green nodot" style="font-size:10px">本轮已复习</span>' : ''}</td>
+      <td class="mono small muted">${wd.ph}</td>
+      <td class="small">${wd.mean.map(m => m.cn).join('；')}</td>
+      <td class="small muted">${st2 && st2.lastTrainAt ? st2.lastTrainAt.slice(0, 10) : plan.startDate}</td>
+      <td class="small muted">${r.lastAt === '—' ? '—' : r.lastAt.slice(0, 16)}</td>
+      <td>${r.lastResult ? `<span class="tag ${RESULT_TAG[r.lastResult]} nodot">${RESULT_LABEL[r.lastResult]}</span>` : '<span class="muted small">未复习</span>'}</td>
+    </tr>`;
+  }, 6, '今天不是复习节点，无需复习');
+
+  /* 历史 */
+  const hist = p.tasks.filter(t => t.wordIds.length && t.date <= Store.TODAY).sort((a, b) => b.day - a.day);
+  Proto.renderRows('histRows', hist, t => {
+    const recs = Store.plan21Records(plan.id).filter(r => r.taskId === t.id);
+    const rate = t.wordIds.length ? Math.round(recs.length / t.wordIds.length * 100) : 0;
+    return `<tr>
+      <td class="small">${t.date}</td>
+      <td>第 ${t.day} 天</td>
+      <td class="right mono">${t.wordIds.length}</td>
+      <td class="right mono">${recs.length}</td>
+      <td><span class="bar-row" style="width:110px"><span class="bar ${rate === 100 ? 'green' : 'amber'}" style="flex:1"><i style="width:${rate}%"></i></span><span class="val">${rate}%</span></span></td>
+      <td>${t.status === 'done' ? '<span class="tag tag-green">已完成</span>'
+        : t.status === 'miss' ? '<span class="tag tag-red">已逾期</span>'
+        : t.status === 'today' ? '<span class="tag tag-blue">进行中</span>'
+        : '<span class="tag tag-slate">未开始</span>'}</td>
+      <td class="small">${recs.length ? ((Store.teacher(recs[0].teacherId) || {}).name || '—') : '—'}</td>
+    </tr>`;
+  }, 7, '暂无历史复习记录');
+
+  /* 计划详情 */
+  document.getElementById('planStatus').innerHTML = `<span class="tag ${plan.status === '进行中' ? 'tag-blue' : 'tag-slate'}">${plan.status}</span>`;
+  document.getElementById('planDesc').innerHTML = `
+    <div class="desc-item"><span class="k">计划名称</span><span class="v">${plan.name}</span></div>
+    <div class="desc-item"><span class="k">计划编号</span><span class="v mono small">${plan.id}</span></div>
+    <div class="desc-item"><span class="k">学员</span><span class="v">${Store.student(plan.studentId).name}</span></div>
+    <div class="desc-item"><span class="k">开始日期</span><span class="v">${plan.startDate}</span></div>
+    <div class="desc-item"><span class="k">参与单词</span><span class="v mono">${plan.wordIds.length} 个</span></div>
+    <div class="desc-item"><span class="k">单词范围</span><span class="v small">人教版七上 Unit 1（WB001）</span></div>
+    <div class="desc-item"><span class="k">复习策略</span><span class="v small">${plan.strategy}</span></div>
+    <div class="desc-item"><span class="k">创建人</span><span class="v small">${plan.createdBy} · ${plan.createdAt}</span></div>
+    ${plan.note ? `<div class="desc-item"><span class="k">备注</span><span class="v small">${plan.note}</span></div>` : ''}`;
+
+  document.getElementById('relTotal').textContent = plan.wordIds.length + ' 个';
+  document.getElementById('relBoth').textContent = plan.wordIds.filter(id => Store.leitnerState(studentId, id)).length + ' 个';
+  document.getElementById('relOnly').textContent = plan.wordIds.filter(id => !Store.leitnerState(studentId, id)).length + ' 个';
+}
+
+function showNode(taskId) {
+  const t = Store.plan21Task(taskId);
+  const recs = Store.plan21Records(plan.id).filter(r => r.taskId === taskId);
+  const words = t.wordIds.map(id => {
+    const r = recs.filter(x => x.wordId === id)[0];
+    return `${en(id)}${r ? '（' + RESULT_LABEL[r.result] + '）' : ''}`;
+  });
+  Proto.confirmBox(`第 ${t.day} 天 · ${t.date}`,
+    `${t.wordIds.length ? `计划单词 ${t.wordIds.length} 个，已完成 ${recs.length} 个` : '休息日，无复习任务'}
+     ${words.length ? '<br><br>' + words.join('、') : ''}
+     ${t.wordIds.length && t.date === Store.TODAY ? '<br><br><a class="btn btn-sm btn-primary" href="memory21-review.html?task=' + t.id + '">进入今日复习</a>' : ''}`,
+    '知道了', () => {});
+}
+
+/* ---------- 创建计划 ---------- */
+function openPlanModal() {
+  const cfg = Store.db.config.plan21Strategy;
+  document.getElementById('nodeDays').textContent = cfg.nodeDays.join('、') + ' 天';
+  document.getElementById('npName').value = '';
+  document.getElementById('npNote').value = '';
+  document.getElementById('npStart').value = Store.TODAY;
+  previewScope();
+  Proto.openModal('planModal');
+}
+
+function scopeWordIds(sid) {
+  const who = sid || studentId;
+  const scope = (document.querySelector('input[name=scope]:checked') || {}).value;
+  const all = Store.wordsOfBook('WB001');
+  if (scope === 'book') return all.map(w => w.id);
+  if (scope === 'manual') {
+    return Array.from(document.querySelectorAll('#manualPick input:checked')).map(x => x.value);
+  }
+  return all.filter(w => {
+    const s = Store.wordState(who, w.id);
+    return !s || s.state !== '本次通过';
+  }).map(w => w.id);
+}
+
+function previewScope() {
+  const scope = (document.querySelector('input[name=scope]:checked') || {}).value;
+  const box = document.getElementById('manualPick');
+  if (scope === 'manual') {
+    box.classList.remove('hidden');
+    const all = Store.wordsOfBook('WB001');
+    const sid = document.getElementById('npStudent').value || studentId;
+    box.innerHTML = all.map(w => {
+      const s = Store.wordState(sid, w.id);
+      return `<label class="check" style="display:flex;gap:6px;padding:4px 0;font-size:12.5px">
+        <input type="checkbox" value="${w.id}" ${(!s || s.state !== '本次通过') ? 'checked' : ''}>
+        <span><b>${w.en}</b> <span class="muted">${w.mean[0].cn}</span>
+          <span class="tag ${s ? 'tag-slate' : 'tag-slate'} nodot" style="font-size:10px">${s ? s.state : '未训练'}</span></span>
+      </label>`;
+    }).join('');
+    box.onchange = previewScope;
+  } else {
+    box.classList.add('hidden');
+  }
+  const n = scopeWordIds().length;
+  document.getElementById('scopePreview').innerHTML =
+    `将纳入 <b>${n}</b> 个单词。计划创建后拥有<b>独立</b>的单词清单与复习任务，不影响其他计划或莱特纳体系。`;
+}
+
+function createPlan() {
+  const sid = document.getElementById('npStudent').value || studentId;
+  const ids = scopeWordIds(sid);
+  const name = document.getElementById('npName').value.trim();
+  const start = document.getElementById('npStart').value;
+  if (!name) { Proto.toast('请填写计划名称', 'err'); return; }
+  if (!start) { Proto.toast('请选择开始日期', 'err'); return; }
+  if (!ids.length) { Proto.toast('请至少选择一个单词', 'err'); return; }
+  const p = Store.create21Plan({
+    studentId: sid, name, startDate: start, wordIds: ids,
+    strategy: document.getElementById('npStrategy').value,
+    note: document.getElementById('npNote').value.trim(), by: '李婉'
+  });
+  Proto.closeModal('planModal');
+  Proto.toast('计划已创建：' + p.name + '（' + ids.length + ' 词）', 'ok');
+  setTimeout(() => location.href = 'memory21.html?student=' + sid + '&plan=' + p.id, 400);
+}
+
+function cancelPlan() {
+  Proto.confirmBox('取消计划',
+    `计划 <b>${plan.name}</b> 将标记为「已取消」，已产生的复习记录<b>保留</b>，不会被删除。`,
+    '确认取消', () => {
+      plan.status = '已取消';
+      Store.save();
+      Proto.toast('计划已取消', 'warn');
+      render();
+    });
+}
+
+if (init()) render();
 </script>
 </body>
 </html>

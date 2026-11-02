@@ -9,15 +9,15 @@
 <body class="focus-page">
 
 <div class="focus-top">
-  <a class="btn btn-sm" href="student-profile.html">← 退出</a>
+  <a class="btn btn-sm" href="word-training-setup.html" id="backLink">← 退出</a>
   <div>
-    <div class="ft-title" id="topTitle">单词训练 · 陈可欣</div>
-    <div class="ft-sub" id="topSub">人教版 七年级上 Unit 1 词汇</div>
+    <div class="ft-title" id="topTitle">单词训练</div>
+    <div class="ft-sub" id="topSub">—</div>
   </div>
   <div class="grow"></div>
   <div class="text-r" style="margin-right:12px">
-    <div class="small muted">整体进度</div>
-    <div style="font-size:15px;font-weight:600" id="topProg">0 / 23</div>
+    <div class="small muted" id="topProgLabel">整体进度</div>
+    <div style="font-size:15px;font-weight:600" id="topProg">0 / 0</div>
   </div>
   <button class="btn btn-sm" onclick="openPause()">暂停训练</button>
 </div>
@@ -33,16 +33,18 @@
       <button class="modal-close" onclick="Proto.closeModal('pauseModal')">×</button></div>
     <div class="modal-body">
       <div class="alert alert-info mb16"><span class="ico">i</span>
-        <div>训练任务会保存为<b>未完成</b>状态，已产生的每个单词判断结果都已记录，返回后可继续。</div></div>
+        <div>任务会保存为<b>未完成</b>状态，已产生的每个单词判断结果都已单独落库，下次可从词库选择页或本页继续。</div></div>
       <div class="desc g1">
-        <div class="desc-item"><span class="k">本次训练</span><span class="v">23 个单词 / 5 组</span></div>
-        <div class="desc-item"><span class="k">已完成</span><span class="v" id="pauseDone">0 个</span></div>
-        <div class="desc-item"><span class="k">恢复方式</span><span class="v">从「我的学员 → 单词训练」继续本次任务</span></div>
+        <div class="desc-item"><span class="k">任务编号</span><span class="v mono" id="pNo">—</span></div>
+        <div class="desc-item"><span class="k">本次队列</span><span class="v" id="pQueue">—</span></div>
+        <div class="desc-item"><span class="k">已完成判断</span><span class="v" id="pDone">—</span></div>
+        <div class="desc-item"><span class="k">恢复方式</span><span class="v">词库选择页「有未完成的训练任务」→ 继续</span></div>
       </div>
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="Proto.closeModal('pauseModal')">继续训练</button>
-      <a class="btn btn-primary" href="student-profile.html">保存并退出</a>
+      <button class="btn" onclick="saveExit()">保存并退出</button>
+      <button class="btn btn-primary" onclick="doPause()">仅暂停</button>
     </div>
   </div>
 </div>
@@ -54,7 +56,7 @@
       <button class="modal-close" onclick="Proto.closeModal('endModal')">×</button></div>
     <div class="modal-body">
       <div class="alert alert-warn mb16"><span class="ico">!</span>
-        <div>结束原因<b>必填</b>。未完成的单词保留为「待训练」状态，不会静默跳过，可在后续训练中继续。</div></div>
+        <div>结束原因<b>必填</b>。任务将标记为<b>已中断</b>，未完成的单词保留为「待强化训练」，不会被静默跳过。</div></div>
       <div class="form-grid g1">
         <div class="field"><label>结束原因 <span class="req">*</span></label>
           <select class="select" id="endReason">
@@ -62,9 +64,10 @@
             <option>课堂时间不足</option>
             <option>学员状态不佳</option>
             <option>临时调整教学内容</option>
+            <option>音频/设备异常</option>
             <option>其他</option>
           </select></div>
-        <div class="field"><label>补充说明</label><textarea class="textarea" placeholder="选填"></textarea></div>
+        <div class="field"><label>补充说明</label><textarea class="textarea" id="endNote" placeholder="选填"></textarea></div>
       </div>
     </div>
     <div class="modal-foot">
@@ -74,163 +77,235 @@
   </div>
 </div>
 
+<!-- 误判修正 -->
+<div class="mask" id="fixModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">修正判断结果</div>
+      <button class="modal-close" onclick="Proto.closeModal('fixModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div>修正会<b>追加一条新记录</b>，原始判断记录保留，便于复盘教学偏差。</div></div>
+      <div class="desc g1 mb16" id="fixInfo"></div>
+      <div class="field mb12"><label>改为 <span class="req">*</span></label>
+        <div class="radio-row">
+          <label class="radio"><input type="radio" name="fixTo" value="yes"> 认识</label>
+          <label class="radio"><input type="radio" name="fixTo" value="no"> 不认识</label>
+        </div></div>
+      <div class="field"><label>修正原因 <span class="req">*</span></label>
+        <input class="input" id="fixNote" placeholder="如：误点 / 学员当时注意力分散 / 教师重复提示"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('fixModal')">取消</button>
+      <button class="btn btn-primary" onclick="doFix()">确认修正</button>
+    </div>
+  </div>
+</div>
+
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
-/* ========== 状态 ========== */
-const WORDS = (() => {
-  try {
-    const s = sessionStorage.getItem('proto_train_words');
-    if (s) { const a = JSON.parse(s); if (Array.isArray(a) && a.length) return a; }
-  } catch (e) {}
-  return DB.words;
-})();
+const params = new URLSearchParams(location.search);
+let task = null, groups = [], ids = [], view = 'group';
+let gi = 0, wi = 0, revealed = false, fixTarget = null, submitting = false;
 
-const GROUP_SIZE = 5;
-const groups = [];
-for (let i = 0; i < WORDS.length; i += GROUP_SIZE) groups.push(WORDS.slice(i, i + GROUP_SIZE));
+const el = () => document.getElementById('stage');
 
-const S = {
-  gi: 0, wi: 0,
-  mode: 'en2cn',
-  revealed: false,
-  answers: {},        // "gi_wi" -> 'yes' | 'no'
-  stage: 'group',     // group | groupDone | final | summary
-  fi: 0,              // 最后复习索引
-  finalAns: {},       // 索引 -> 'yes' | 'no' | 'mid'
-  finalRevealed: false,
-};
+function boot() {
+  const tid = params.get('task');
+  task = tid ? Store.trainTask(tid) : Store.activeTask(params.get('student') || 'S2026001');
+  if (!task) { location.replace('word-training-setup.html'); return; }
+  if (task.status === '预筛选中') { location.replace('word-training-prescreen.html?task=' + task.id); return; }
 
-const stageEl = () => document.getElementById('stage');
-const keyOf = (gi, wi) => gi + '_' + wi;
-const total = WORDS.length;
-let answeredTotal = 0;
+  ids = task.queueWordIds.slice();
+  groups = Store.groupsOfTask(task);
+  gi = Math.min(task.groupIndex || 0, Math.max(groups.length - 1, 0));
+  wi = Math.min(task.wordIndex || 0, Math.max((groups[gi] || []).length - 1, 0));
 
-/* ========== 顶栏 ========== */
-function updateTop() {
-  const done = Object.keys(S.answers).length;
-  if (S.stage === 'final' || S.stage === 'summary') {
-    document.getElementById('topTitle').textContent = '最后一轮复习 · 陈可欣';
-    document.getElementById('topSub').textContent = '本次共 ' + total + ' 个单词 · 不显示答案，由教师观察判断';
-    document.getElementById('topProg').textContent = Object.keys(S.finalAns).length + ' / ' + total;
-  } else {
-    document.getElementById('topTitle').textContent = '单词训练 · 陈可欣';
-    document.getElementById('topSub').textContent = '人教版 七年级上 Unit 1 词汇 · 第 ' + (S.gi + 1) + ' / ' + groups.length + ' 组';
-    document.getElementById('topProg').textContent = done + ' / ' + total;
-  }
-  document.getElementById('pauseDone').textContent = done + ' 个';
+  const stu = Store.student(task.studentId);
+  document.getElementById('topTitle').textContent = '单词训练 · ' + stu.name;
+  document.getElementById('backLink').href = 'word-training-setup.html?student=' + task.studentId;
+
+  // 依据任务状态决定进入哪个视图（刷新恢复的关键）
+  if (task.status === '已完成') view = 'summary';
+  else if (task.status === '已中断') view = 'interrupted';
+  else if (task.status === '最后一轮复习中') view = Object.keys(task.finalResults).length >= ids.length ? 'finalDone' : 'final';
+  else view = allDone(gi) ? 'groupDone' : 'group';
+
+  render();
 }
 
-/* ========== 渲染 ========== */
-function render() {
-  updateTop();
-  if (S.stage === 'group') renderGroup();
-  else if (S.stage === 'groupDone') renderGroupDone();
-  else if (S.stage === 'final') renderFinal();
-  else renderSummary();
+/* ---------- 工具 ---------- */
+function curGroup() { return groups[gi] || []; }
+function allDone(i) {
+  const g = groups[i] || [];
+  return g.length > 0 && g.every(id => !!task.results[id]);
+}
+function allGroupsDone() { return groups.every((g) => g.every(id => task.results[id])); }
+function word(id) { return Store.word(id); }
+function meanHtml(w) { return w.mean.map(m => `<div><span class="pos">${m.pos}</span> ${m.cn}</div>`).join(''); }
+
+function updateTop() {
+  const done = Object.keys(task.results).length;
+  const finalDone = Object.keys(task.finalResults).length;
+  const sub = document.getElementById('topSub');
+
+  if (view === 'final' || view === 'finalDone') {
+    document.getElementById('topTitle').textContent = '最后一轮复习 · ' + Store.student(task.studentId).name;
+    sub.textContent = `任务 ${task.id} · 本次队列 ${ids.length} 个单词 · 不直接显示答案`;
+    document.getElementById('topProgLabel').textContent = '最后复习进度';
+    document.getElementById('topProg').textContent = finalDone + ' / ' + ids.length;
+  } else if (view === 'summary') {
+    document.getElementById('topTitle').textContent = '训练已提交 · ' + Store.student(task.studentId).name;
+    sub.textContent = `任务 ${task.id} · 已完成`;
+    document.getElementById('topProgLabel').textContent = '最后复习';
+    document.getElementById('topProg').textContent = ids.length + ' / ' + ids.length;
+  } else {
+    document.getElementById('topTitle').textContent = '单词训练 · ' + Store.student(task.studentId).name;
+    sub.textContent = `${task.wordbookName} · 任务 ${task.id} · 第 ${gi + 1} / ${groups.length} 组`;
+    document.getElementById('topProgLabel').textContent = '整体进度';
+    document.getElementById('topProg').textContent = done + ' / ' + ids.length;
+  }
 }
 
 function dotsHtml() {
   return groups.map((g, i) => {
-    const done = g.every((_, wi) => S.answers[keyOf(i, wi)]);
-    const cls = done ? 'done' : i === S.gi ? 'cur' : '';
+    const d = g.every(id => task.results[id]);
+    const cls = d ? 'done' : (i === gi && view !== 'final' && view !== 'summary') ? 'cur' : '';
     return `<span class="gdot ${cls}">${i + 1}</span>`;
   }).join('');
 }
 
-function meanHtml(w) {
-  return w.mean.map(m => `<div><span class="pos">${m.pos}</span> ${m.cn}</div>`).join('');
+function render() {
+  updateTop();
+  if (view === 'group') renderGroup();
+  else if (view === 'groupDone') renderGroupDone();
+  else if (view === 'final') renderFinal();
+  else if (view === 'finalDone') renderFinalDone();
+  else if (view === 'interrupted') renderInterrupted();
+  else renderSummary();
 }
 
+/* ---------- 分组训练 ---------- */
 function renderGroup() {
-  const g = groups[S.gi];
-  const w = g[S.wi];
-  const inGroupDone = g.filter((_, i) => S.answers[keyOf(S.gi, i)]).length;
+  const g = curGroup();
+  const id = g[wi];
+  if (!id) { view = 'groupDone'; render(); return; }
+  const w = word(id);
+  const inGroupDone = g.filter(x => task.results[x]).length;
 
   let front, back;
-  if (S.mode === 'en2cn') {
-    front = `<div class="wc-en">${w.en}</div><div class="wc-ph">${w.ph}</div>`;
-    back = S.revealed
-      ? `<div class="wc-cn">${meanHtml(w)}</div>`
-      : `<div class="wc-cn muted" style="font-size:14px">（点击「显示答案」查看中文释义）</div>`;
-  } else if (S.mode === 'cn2en') {
+  if (task.mode === 'cn2en') {
     front = `<div class="wc-cn" style="font-size:22px">${meanHtml(w)}</div>`;
-    back = S.revealed
-      ? `<div class="wc-en">${w.en}</div><div class="wc-ph">${w.ph}</div>`
+    back = revealed ? `<div class="wc-en">${w.en}</div><div class="wc-ph">${w.ph}</div>`
       : `<div class="wc-en muted" style="font-size:15px">（点击「显示答案」查看英文）</div>`;
-  } else {
+  } else if (task.mode === 'listen') {
     front = `<div class="wc-en" style="font-size:22px;color:var(--text-3)">♪ 听发音判断</div>`;
-    back = S.revealed
-      ? `<div class="wc-en">${w.en}</div><div class="wc-ph">${w.ph}</div><div class="wc-cn">${meanHtml(w)}</div>`
+    back = revealed ? `<div class="wc-en">${w.en}</div><div class="wc-ph">${w.ph}</div><div class="wc-cn">${meanHtml(w)}</div>`
       : `<div class="wc-en muted" style="font-size:15px">（聆听发音后判断，需要时显示答案）</div>`;
+  } else {
+    front = `<div class="wc-en">${w.en}</div><div class="wc-ph">${w.ph}</div>`;
+    back = revealed ? `<div class="wc-cn">${meanHtml(w)}</div>`
+      : `<div class="wc-cn muted" style="font-size:14px">（点击「显示答案」查看中文释义）</div>`;
   }
 
-  const cur = S.answers[keyOf(S.gi, S.wi)];
-
-  stageEl().innerHTML = `
+  const cur = task.results[id];
+  el().innerHTML = `
     <div class="flex jcb aic mb12">
       <div class="group-dots">${dotsHtml()}</div>
-      <div class="small muted">第 ${S.gi + 1} 组 · 本组 ${inGroupDone} / ${g.length} 已完成</div>
+      <div class="small muted">第 ${gi + 1} 组 · 本组 ${inGroupDone} / ${g.length} 已完成
+        ${cur && cur.corrected ? ' · <span class="tag tag-amber nodot">已修正</span>' : ''}</div>
     </div>
 
     <div class="word-card">
-      ${front}
-      ${back}
+      ${front}${back}
       <div class="mt12">
-        <button class="audio-btn" data-label="▶ 播放发音"
-          onclick="Proto.playAudio(this,'${w.en}')">▶ 播放发音</button>
-        ${S.revealed ? '' : `<button class="btn btn-sm" style="margin-left:8px" onclick="reveal()">显示答案</button>`}
+        <button class="audio-btn" data-label="▶ 播放发音" onclick="Proto.playAudio(this,'${w.en}')">▶ 播放发音</button>
+        ${revealed ? '' : `<button class="btn btn-sm" style="margin-left:8px" onclick="reveal()">显示答案</button>`}
       </div>
     </div>
 
     <div class="flex jcb aic mt16">
       <div class="pill-tabs">
-        <button class="pill-tab ${S.mode === 'en2cn' ? 'on' : ''}" onclick="setMode('en2cn')">看英文 · 理解中文</button>
-        <button class="pill-tab ${S.mode === 'cn2en' ? 'on' : ''}" onclick="setMode('cn2en')">看中文 · 回忆英文</button>
-        <button class="pill-tab ${S.mode === 'listen' ? 'on' : ''}" onclick="setMode('listen')">听发音 · 识别单词</button>
+        <button class="pill-tab ${task.mode === 'en2cn' ? 'on' : ''}" onclick="setMode('en2cn')">看英文 · 理解中文</button>
+        <button class="pill-tab ${task.mode === 'cn2en' ? 'on' : ''}" onclick="setMode('cn2en')">看中文 · 回忆英文</button>
+        <button class="pill-tab ${task.mode === 'listen' ? 'on' : ''}" onclick="setMode('listen')">听发音 · 识别单词</button>
       </div>
       <button class="btn btn-sm btn-ghost" onclick="Proto.openModal('endModal')">结束本次训练</button>
     </div>
 
     <div class="judge-row">
-      <button class="judge no ${cur === 'no' ? 'no' : ''}" onclick="judge('no')">不认识 <kbd>1</kbd></button>
+      <button class="judge no" onclick="judge('no')">不认识 <kbd>1</kbd></button>
       <button class="judge yes" onclick="judge('yes')">认识 <kbd>2</kbd></button>
     </div>
 
     <div class="flex jcb mt12">
       <button class="btn btn-ghost btn-sm" onclick="move(-1)">← 上一个</button>
-      <div class="small muted">已记录 ${inGroupDone} / ${g.length} 个 · 不认识的单词进入待复习</div>
+      <div class="small muted">点击下方已判断的单词可<b>修正</b>（追加记录，不覆盖原始）</div>
       <button class="btn btn-ghost btn-sm" onclick="move(1)">下一个 →</button>
     </div>
 
     <div class="mini-words mt16">
       ${g.map((x, i) => {
-        const a = S.answers[keyOf(S.gi, i)];
-        const cls = a === 'yes' ? 'ok' : a === 'no' ? 'no' : '';
-        return `<span class="mini-word ${cls}">${x.en}</span>`;
+        const r = task.results[x];
+        const cls = r ? (r.result === 'yes' ? 'ok' : 'no') : '';
+        return `<span class="mini-word ${cls}" style="cursor:${r ? 'pointer' : 'default'};${i === wi ? 'outline:2px solid var(--primary);outline-offset:1px' : ''}"
+          onclick="${r ? `openFix('${x}')` : `jump(${i})`}" title="${r ? '已判断：' + (r.result === 'yes' ? '认识' : '不认识') + '（点击修正）' : '未判断'}">${word(x).en}</span>`;
       }).join('')}
     </div>`;
 }
 
-function renderGroupDone() {
-  const g = groups[S.gi];
-  const yes = g.filter((_, i) => S.answers[keyOf(S.gi, i)] === 'yes').length;
-  const no = g.length - yes;
-  const isLast = S.gi === groups.length - 1;
+function setMode(m) { task = Store.setTaskPos(task.id, { mode: m }); revealed = false; render(); }
+function reveal() { revealed = true; render(); }
+function jump(i) { wi = i; revealed = false; Store.setTaskPos(task.id, { wordIndex: wi }); render(); }
+function move(d) {
+  const n = wi + d;
+  if (n < 0 || n >= curGroup().length) return;
+  wi = n; revealed = false;
+  Store.setTaskPos(task.id, { wordIndex: wi });
+  render();
+}
 
-  stageEl().innerHTML = `
+function judge(v) {
+  if (task.status !== '强化训练中') { Proto.toast('当前阶段不能修改强化训练结果', 'err'); return; }
+  const id = curGroup()[wi];
+  Store.trainJudge(task.id, id, v, task.mode, gi);
+  task = Store.trainTask(task.id);
+
+  if (allDone(gi)) {
+    view = 'groupDone';
+    Store.setTaskPos(task.id, { groupIndex: gi, wordIndex: wi });
+    render();
+    return;
+  }
+  const firstEmpty = curGroup().findIndex(x => !task.results[x]);
+  if (firstEmpty >= 0) wi = firstEmpty;
+  revealed = false;
+  Store.setTaskPos(task.id, { groupIndex: gi, wordIndex: wi });
+  render();
+}
+
+/* ---------- 本组完成 ---------- */
+function renderGroupDone() {
+  const g = curGroup();
+  const yes = g.filter(id => task.results[id] && task.results[id].result === 'yes').length;
+  const no = g.length - yes;
+  const isLast = gi === groups.length - 1 && allGroupsDone();
+
+  el().innerHTML = `
     <div class="flex jcb aic mb12">
       <div class="group-dots">${dotsHtml()}</div>
-      <div class="small muted">第 ${S.gi + 1} / ${groups.length} 组</div>
+      <div class="small muted">第 ${gi + 1} / ${groups.length} 组</div>
     </div>
 
     <div class="card">
-      <div class="card-head"><div class="card-title">第 ${S.gi + 1} 组训练完成</div>
+      <div class="card-head"><div class="card-title">第 ${gi + 1} 组训练完成</div>
         <span class="tag tag-green nodot">${g.length} / ${g.length}</span></div>
       <div class="card-body">
         <div class="grid g3 mb16">
-          <div class="card stat"><div class="stat-label">本组单词</div><div class="stat-value">${g.length}</div></div>
+          <div class="card stat"><div class="stat-label">本组单词</div><div class="stat-value">${g.length}</div>
+            <div class="stat-foot">每组最多 5 个</div></div>
           <div class="card stat"><div class="stat-label">认识</div>
             <div class="stat-value" style="color:var(--success)">${yes}</div></div>
           <div class="card stat"><div class="stat-label">不认识</div>
@@ -238,48 +313,78 @@ function renderGroupDone() {
         </div>
 
         <div class="mini-words mb16">
-          ${g.map((x, i) => `<span class="mini-word ${S.answers[keyOf(S.gi, i)] === 'yes' ? 'ok' : 'no'}">${x.en}</span>`).join('')}
+          ${g.map(id => {
+            const r = task.results[id];
+            return `<span class="mini-word ${r.result === 'yes' ? 'ok' : 'no'}" style="cursor:pointer"
+              onclick="openFix('${id}')" title="点击修正">${word(id).en}</span>`;
+          }).join('')}
         </div>
 
         <div class="alert alert-info"><span class="ico">i</span>
-          <div>本组每个单词的判断结果都已单独记录（学员 / 单词 / 组别 / 模式 / 结果 / 时间 / 教师 / 轮次）。
-            未完成的单词不会被静默跳过。</div></div>
+          <div>每个单词的判断已单独记录（任务 / 学员 / 单词 / 组别 / 模式 / 结果 / 时间 / 教师 / 轮次）。
+            未判断的单词不会被跳过进入下一组。</div></div>
 
         <div class="flex gap8 mt16" style="justify-content:flex-end">
           <button class="btn" onclick="Proto.openModal('endModal')">结束本次训练</button>
           <button class="btn btn-primary btn-lg" onclick="nextGroup()">
-            ${isLast ? '进入最后一轮复习 →' : `继续第 ${S.gi + 2} 组 →`}</button>
+            ${isLast ? '进入最后一轮复习 →' : `继续第 ${gi + 2} 组 →`}</button>
         </div>
       </div>
     </div>`;
 }
 
+function nextGroup() {
+  if (gi === groups.length - 1) {
+    const r = Store.toFinalStage(task.id);
+    if (!r.ok) {
+      Proto.toast('还有 ' + r.missing.length + ' 个单词未完成判断，不能进入最后一轮复习', 'err');
+      const firstMissing = groups.findIndex(g => g.some(id => !task.results[id]));
+      if (firstMissing >= 0) { gi = firstMissing; view = 'group'; wi = 0; render(); }
+      return;
+    }
+    task = r.task;
+    view = 'final';
+    Proto.toast('全部 ' + groups.length + ' 组完成，进入最后一轮复习', 'ok');
+  } else {
+    gi++;
+    wi = 0;
+    view = 'group';
+    Store.setTaskPos(task.id, { groupIndex: gi, wordIndex: 0 });
+  }
+  revealed = false;
+  render();
+}
+
+/* ---------- 最后一轮复习 ---------- */
 function renderFinal() {
-  const w = WORDS[S.fi];
-  const cur = S.finalAns[S.fi];
+  const id = ids[task.finalIndex || 0] || ids[0];
+  const w = word(id);
+  const cur = task.finalResults[id];
 
-  stageEl().innerHTML = `
+  el().innerHTML = `
     <div class="alert alert-warn mb16"><span class="ico">!</span>
-      <div><b>最后一轮复习：</b>全部 ${groups.length} 组已完成。此阶段<b>不直接显示答案</b>，
-        教师观察孩子反应后判断：认识 / 不认识 / 暂不确定。</div></div>
+      <div><b>最后一轮复习：</b>全部 ${groups.length} 组已完成，覆盖 ${ids.length} 个队列单词（初筛认识的单词不在其中）。
+        此阶段<b>不直接显示答案</b>，教师观察孩子反应后判断。</div></div>
 
-    <div class="bar mb12"><i style="width:${(S.fi / total * 100).toFixed(1)}%"></i></div>
+    <div class="bar mb12"><i style="width:${((task.finalIndex || 0) / ids.length * 100).toFixed(1)}%"></i></div>
     <div class="flex jcb small muted mb12">
-      <span>复习进度 ${S.fi + 1} / ${total}</span>
-      <span>已判断 ${Object.keys(S.finalAns).length} 个</span>
+      <span>复习进度 ${(task.finalIndex || 0) + 1} / ${ids.length}</span>
+      <span>已判断 ${Object.keys(task.finalResults).length} 个</span>
     </div>
 
     <div class="word-card">
       <div class="wc-en">${w.en}</div>
       <div class="wc-ph">${w.ph}</div>
-      ${S.finalRevealed ? `<div class="wc-cn">${meanHtml(w)}</div>`
+      ${revealed ? `<div class="wc-cn">${meanHtml(w)}</div>`
         : `<div class="wc-cn muted" style="font-size:14px">（中文释义已隐藏，由教师观察孩子反应判断）</div>`}
       <div class="mt12">
-        <button class="audio-btn" data-label="▶ 播放发音"
-          onclick="Proto.playAudio(this,'${w.en}')">▶ 播放发音</button>
-        ${S.finalRevealed ? '' : `<button class="btn btn-sm" style="margin-left:8px" onclick="finalReveal()">显示答案</button>`}
+        <button class="audio-btn" data-label="▶ 播放发音" onclick="Proto.playAudio(this,'${w.en}')">▶ 播放发音</button>
+        ${revealed ? '' : `<button class="btn btn-sm" style="margin-left:8px" onclick="finalReveal()">显示答案</button>`}
       </div>
     </div>
+
+    ${cur ? `<div class="mt12 text-c"><span class="tag tag-${cur.result === 'yes' ? 'green' : cur.result === 'mid' ? 'amber' : 'red'} nodot">
+      本词已判断：${cur.result === 'yes' ? '认识' : cur.result === 'mid' ? '暂不确定' : '不认识'}（可重新选择覆盖本轮判断）</span></div>` : ''}
 
     <div class="judge-row g3 mt16">
       <button class="judge no" onclick="finalJudge('no')">不认识 <kbd>1</kbd></button>
@@ -289,23 +394,54 @@ function renderFinal() {
 
     <div class="flex jcb mt12">
       <button class="btn btn-ghost btn-sm" onclick="finalMove(-1)">← 上一个</button>
-      <div class="small muted">暂不确定的单词<b>不会</b>被视为掌握</div>
+      <div class="small muted">「暂不确定」<b>不会</b>被视为掌握</div>
       <button class="btn btn-ghost btn-sm" onclick="finalMove(1)">下一个 →</button>
     </div>`;
 }
 
-function renderSummary() {
-  const yes = Object.values(S.finalAns).filter(v => v === 'yes').length;
-  const no = Object.values(S.finalAns).filter(v => v === 'no').length;
-  const mid = Object.values(S.finalAns).filter(v => v === 'mid').length;
+function finalReveal() { revealed = true; render(); }
 
-  stageEl().innerHTML = `
+function finalJudge(v) {
+  const id = ids[task.finalIndex || 0];
+  if (task.finalResults[id] && task.finalResults[id].result !== v) {
+    Store.finalCorrect(task.id, id, v);
+  } else {
+    Store.finalJudge(task.id, id, v);
+  }
+  task = Store.trainTask(task.id);
+  const nextIdx = (task.finalIndex || 0) + 1;
+  if (nextIdx < ids.length) {
+    task = Store.setTaskPos(task.id, { finalIndex: nextIdx });
+    revealed = false;
+    render();
+  } else {
+    view = Object.keys(task.finalResults).length >= ids.length ? 'finalDone' : 'final';
+    render();
+  }
+}
+
+function finalMove(d) {
+  const n = (task.finalIndex || 0) + d;
+  if (n < 0 || n >= ids.length) return;
+  task = Store.setTaskPos(task.id, { finalIndex: n });
+  revealed = false;
+  render();
+}
+
+function renderFinalDone() {
+  const yes = ids.filter(id => task.finalResults[id] && task.finalResults[id].result === 'yes').length;
+  const no = ids.filter(id => task.finalResults[id] && task.finalResults[id].result === 'no').length;
+  const mid = ids.filter(id => task.finalResults[id] && task.finalResults[id].result === 'mid').length;
+  const need = no + mid;
+
+  el().innerHTML = `
     <div class="card">
-      <div class="card-head"><div class="card-title">本次训练完成</div>
-        <span class="tag tag-green nodot">${total} 个单词已处理</span></div>
+      <div class="card-head"><div class="card-title">最后一轮复习完成 · 请确认结果</div>
+        <span class="tag tag-green nodot">${ids.length} 个队列单词</span></div>
       <div class="card-body">
         <div class="grid g4 mb16">
-          <div class="card stat"><div class="stat-label">本次训练</div><div class="stat-value">${total}</div></div>
+          <div class="card stat"><div class="stat-label">本次队列</div><div class="stat-value">${ids.length}</div>
+            <div class="stat-foot">初筛认识 ${task.knownWordIds.length} 个未进入</div></div>
           <div class="card stat"><div class="stat-label">本次通过</div>
             <div class="stat-value" style="color:var(--success)">${yes}</div></div>
           <div class="card stat"><div class="stat-label">待复习</div>
@@ -315,138 +451,215 @@ function renderSummary() {
         </div>
 
         <div class="alert alert-info mb16"><span class="ico">i</span>
-          <div>「本次通过」<b>不等于永久掌握</b>：正式掌握状态与训练任务状态分开保存，一次通过不意味着永远记住。
+          <div>「本次通过」<b>不等于永久掌握</b>：学员正式掌握状态与训练任务状态分开保存，一次通过不意味着永远记住。
             「暂不确定」保留待确认状态，不能直接视为掌握。</div></div>
 
         <div class="section-title">加入复习体系</div>
         <div class="alert alert-warn mb16"><span class="ico">!</span>
-          <div>是否默认同时加入两套体系由<b>机构配置</b>决定。此处两个选项互相独立，可只选一套，也可都不选。</div></div>
+          <div>加入范围：本次 <b>待复习 ${need} 个</b>（不认识 ${no} + 暂不确定 ${mid}）。
+            <b>本次通过</b>的 ${yes} 个单词不加入。<br>
+            两套体系是否默认勾选由<b>机构配置</b>决定，此处互不联动，可只选一套或都不选。</div></div>
 
         <div class="field mb12">
-          <label class="check"><input type="checkbox" id="cb_leitner"> 加入 <b>莱特纳复习体系</b>（进入红盒，按盒子规则安排复习）</label>
+          <label class="check"><input type="checkbox" id="cb_leitner"> 加入 <b>莱特纳复习体系</b>（待复习单词进入红盒，今日起可复习）</label>
         </div>
         <div class="field mb12">
-          <label class="check"><input type="checkbox" id="cb_21"> 加入 <b>21 天记忆复习体系</b>（生成独立的 21 天计划节点）</label>
+          <label class="check"><input type="checkbox" id="cb_21"> 加入 <b>21 天记忆复习体系</b>（以本次待复习单词生成独立 21 天计划）</label>
         </div>
         <div class="field">
-          <label class="check"><input type="checkbox" id="cb_green"> 将易混淆单词加入 <b>绿盒子</b>（教师自主复习）</label>
+          <label class="check"><input type="checkbox" id="cb_green"> 同时将待复习单词放入 <b>绿盒子</b>（教师自主复习）</label>
         </div>
 
         <div class="divider"></div>
         <div class="flex jcb aic">
-          <span class="small muted">保存后自动生成教学记录草稿，可继续撰写学习报告</span>
+          <span class="small muted">提交后本次任务标记为「已完成」，不可重复提交</span>
           <div class="flex gap8">
-            <a class="btn" href="student-profile.html">返回学习档案</a>
-            <button class="btn btn-primary btn-lg" onclick="saveAll()">完成并保存</button>
+            <button class="btn" onclick="view = 'final'; render()">返回修改判断</button>
+            <button class="btn btn-primary btn-lg" onclick="submitAll()">提交并保存</button>
           </div>
         </div>
       </div>
     </div>`;
 }
 
-/* ========== 交互 ========== */
-function setMode(m) { S.mode = m; S.revealed = false; render(); }
-function reveal() { S.revealed = true; render(); }
-
-function judge(v) {
-  S.answers[keyOf(S.gi, S.wi)] = v;
-  const g = groups[S.gi];
-  const allDone = g.every((_, i) => S.answers[keyOf(S.gi, i)]);
-  if (allDone && S.wi === g.length - 1) {
-    S.stage = 'groupDone';
-    render();
-    return;
-  }
-  if (S.wi < g.length - 1) S.wi++;
-  else {
-    // 找到本组第一个未作答的
-    const firstEmpty = g.findIndex((_, i) => !S.answers[keyOf(S.gi, i)]);
-    if (firstEmpty >= 0) S.wi = firstEmpty;
-  }
-  S.revealed = false;
+function submitAll() {
+  if (submitting) { Proto.toast('正在提交，请勿重复点击', 'warn'); return; }
+  submitting = true;
+  const res = Store.completeTask(task.id, {
+    joinLeitner: document.getElementById('cb_leitner').checked,
+    joinPlan21: document.getElementById('cb_21').checked,
+    joinGreen: document.getElementById('cb_green').checked,
+    by: '李婉'
+  });
+  submitting = false;
+  if (!res.ok) { Proto.toast(res.reason, 'err'); return; }
+  task = Store.trainTask(task.id);
+  view = 'summary';
   render();
 }
 
-function move(d) {
-  const g = groups[S.gi];
-  const n = S.wi + d;
-  if (n < 0 || n >= g.length) return;
-  S.wi = n;
-  S.revealed = false;
+function renderSummary() {
+  const yes = ids.filter(id => task.finalResults[id] && task.finalResults[id].result === 'yes').length;
+  const no = ids.filter(id => task.finalResults[id] && task.finalResults[id].result === 'no').length;
+  const mid = ids.filter(id => task.finalResults[id] && task.finalResults[id].result === 'mid').length;
+  const j = task.joins || { leitner: [], plan21: [], green: [], planIds: [] };
+  const st = Store.student(task.studentId);
+
+  el().innerHTML = `
+    <div class="card">
+      <div class="card-head"><div class="card-title">训练完成并已提交</div>
+        <span class="tag tag-green nodot">任务 ${task.id} 已完成</span></div>
+      <div class="card-body">
+        <div class="grid g4 mb16">
+          <div class="card stat"><div class="stat-label">本次队列</div><div class="stat-value">${ids.length}</div>
+            <div class="stat-foot">初筛认识 ${task.knownWordIds.length} 个未训练</div></div>
+          <div class="card stat"><div class="stat-label">本次通过</div>
+            <div class="stat-value" style="color:var(--success)">${yes}</div></div>
+          <div class="card stat"><div class="stat-label">待复习</div>
+            <div class="stat-value" style="color:var(--danger)">${no}</div></div>
+          <div class="card stat"><div class="stat-label">暂不确定</div>
+            <div class="stat-value" style="color:var(--warning)">${mid}</div></div>
+        </div>
+
+        <div class="section-title">本次写入的复习体系</div>
+        <div class="table-wrap mb16">
+          <table class="table compact">
+            <thead><tr><th>体系</th><th class="right">单词数</th><th>结果</th></tr></thead>
+            <tbody>
+              <tr><td>莱特纳复习体系</td><td class="right mono">${j.leitner.length}</td>
+                <td>${j.leitner.length ? '<span class="tag tag-green nodot">已进入红盒，今日可复习</span>' : '<span class="tag tag-slate nodot">未加入</span>'}</td></tr>
+              <tr><td>21 天记忆复习体系</td><td class="right mono">${j.plan21.length}</td>
+                <td>${j.plan21.length
+                  ? `<span class="tag tag-green nodot">已生成独立计划 ${j.planIds.join('、')}</span>`
+                  : '<span class="tag tag-slate nodot">未加入</span>'}</td></tr>
+              <tr><td>绿盒子</td><td class="right mono">${j.green.length}</td>
+                <td>${j.green.length ? '<span class="tag tag-green nodot">已加入，教师自主复习</span>' : '<span class="tag tag-slate nodot">未加入</span>'}</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="alert alert-info mb16"><span class="ico">i</span>
+          <div>本次训练的每个单词判断、修正记录、预筛结果都已写入统一数据层。
+            学习档案、单词档案、莱特纳盒子、21 天计划现在都能读到同一份结果。</div></div>
+
+        <div class="flex gap8" style="justify-content:flex-end">
+          <a class="btn" href="word-training-setup.html?student=${task.studentId}">返回词库选择</a>
+          <a class="btn" href="word-detail.html?student=${task.studentId}&word=${ids[0] || ''}">查看单词档案</a>
+          <a class="btn btn-primary" href="student-profile.html?student=${task.studentId}">返回学习档案</a>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ---------- 中断视图 ---------- */
+function renderInterrupted() {
+  const done = Object.keys(task.results).length;
+  const left = ids.length - done;
+  el().innerHTML = `
+    <div class="card">
+      <div class="card-head"><div class="card-title">训练已中断</div>
+        <span class="tag tag-amber nodot">${task.status}</span></div>
+      <div class="card-body">
+        <div class="alert alert-warn mb16"><span class="ico">!</span>
+          <div>中断原因：<b>${task.interruptReason || '—'}</b>${task.interruptNote ? '（' + task.interruptNote + '）' : ''}
+            <br>已判断的 ${done} 个单词记录已保留；未完成的 ${left} 个单词仍为「待强化训练」。</div></div>
+        <div class="grid g3 mb16">
+          <div class="card stat"><div class="stat-label">本次队列</div><div class="stat-value">${ids.length}</div></div>
+          <div class="card stat"><div class="stat-label">已判断</div><div class="stat-value">${done}</div></div>
+          <div class="card stat"><div class="stat-label">未完成</div>
+            <div class="stat-value" style="color:var(--warning)">${left}</div></div>
+        </div>
+        <div class="flex gap8" style="justify-content:flex-end">
+          <a class="btn" href="word-training-setup.html?student=${task.studentId}">返回词库选择</a>
+          <button class="btn btn-primary btn-lg" onclick="resumeNow()">恢复并继续训练 →</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function resumeNow() {
+  task = Store.resumeTask(task.id);
+  const firstMissing = groups.findIndex(g => g.some(id => !task.results[id]));
+  gi = firstMissing >= 0 ? firstMissing : groups.length - 1;
+  wi = Math.max(curGroup().findIndex(id => !task.results[id]), 0);
+  view = allDone(gi) ? 'groupDone' : 'group';
+  Store.setTaskPos(task.id, { groupIndex: gi, wordIndex: wi });
+  Proto.toast('已恢复训练任务 ' + task.id, 'ok');
   render();
 }
 
-function nextGroup() {
-  if (S.gi === groups.length - 1) {
-    S.stage = 'final';
-    S.fi = 0;
-    Proto.toast('全部 ' + groups.length + ' 组已完成，进入最后一轮复习', 'ok');
-  } else {
-    S.gi++;
-    S.wi = 0;
-    S.stage = 'group';
-  }
-  S.revealed = false;
+/* ---------- 修正 / 暂停 / 结束 ---------- */
+function openFix(wordId) {
+  fixTarget = wordId;
+  const r = task.results[wordId];
+  const w = word(wordId);
+  document.getElementById('fixInfo').innerHTML = `
+    <div class="desc-item"><span class="k">单词</span><span class="v strong">${w.en} <span class="mono small muted">${w.ph}</span></span></div>
+    <div class="desc-item"><span class="k">原始判断</span><span class="v">
+      <span class="tag tag-${r.result === 'yes' ? 'green' : 'red'} nodot">${r.result === 'yes' ? '认识' : '不认识'}</span>
+      <span class="small muted">${r.at} · 第 ${r.groupIndex + 1} 组 · ${r.mode}</span></span></div>
+    <div class="desc-item"><span class="k">已修正次数</span><span class="v mono">${Store.detailsOf(task.id).filter(d => d.wordId === wordId && d.correction).length}</span></div>`;
+  document.querySelectorAll('input[name=fixTo]').forEach(x => { x.checked = false; });
+  document.getElementById('fixNote').value = '';
+  Proto.openModal('fixModal');
+}
+
+function doFix() {
+  const to = (document.querySelector('input[name=fixTo]:checked') || {}).value;
+  const note = document.getElementById('fixNote').value.trim();
+  if (!to) { Proto.toast('请选择修正后的结果', 'err'); return; }
+  if (!note) { Proto.toast('请填写修正原因', 'err'); return; }
+  Store.trainCorrect(task.id, fixTarget, to, note, task.results[fixTarget].groupIndex);
+  task = Store.trainTask(task.id);
+  Proto.closeModal('fixModal');
+  Proto.toast('已追加修正记录，原始记录保留', 'ok');
+  if (view === 'groupDone' && !allDone(gi)) view = 'group';
   render();
 }
 
-function finalReveal() { S.finalRevealed = true; render(); }
-
-function finalJudge(v) {
-  S.finalAns[S.fi] = v;
-  if (S.fi < total - 1) {
-    S.fi++;
-    S.finalRevealed = false;
-    render();
-  } else {
-    S.stage = 'summary';
-    render();
-  }
+function openPause() {
+  document.getElementById('pNo').textContent = task.id;
+  document.getElementById('pQueue').textContent = ids.length + ' 个单词 / ' + groups.length + ' 组';
+  document.getElementById('pDone').textContent = Object.keys(task.results).length + ' 个';
+  Proto.openModal('pauseModal');
 }
 
-function finalMove(d) {
-  const n = S.fi + d;
-  if (n < 0 || n >= total) return;
-  S.fi = n;
-  S.finalRevealed = false;
-  render();
+function doPause() {
+  task = Store.pauseTask(task.id);
+  Proto.closeModal('pauseModal');
+  Proto.toast('已暂停，任务保存在本机，可随时继续', 'ok');
 }
 
-function openPause() { Proto.openModal('pauseModal'); }
+function saveExit() {
+  task = Store.pauseTask(task.id);
+  Proto.toast('已保存并退出，可从词库选择页继续', 'ok');
+  setTimeout(() => location.href = 'word-training-setup.html?student=' + task.studentId, 500);
+}
 
 function doEnd() {
   const r = document.getElementById('endReason').value;
   if (!r) { Proto.toast('请选择结束原因', 'err'); return; }
+  Store.endTask(task.id, r, document.getElementById('endNote').value.trim());
+  task = Store.trainTask(task.id);
   Proto.closeModal('endModal');
-  Proto.toast('本次训练已结束，未完成单词保留为待训练', 'warn');
-  setTimeout(() => location.href = 'student-profile.html', 800);
+  view = 'interrupted';
+  render();
 }
 
-function saveAll() {
-  const l = document.getElementById('cb_leitner').checked;
-  const t = document.getElementById('cb_21').checked;
-  const g = document.getElementById('cb_green').checked;
-  const parts = [];
-  if (l) parts.push('莱特纳');
-  if (t) parts.push('21 天');
-  if (g) parts.push('绿盒');
-  Proto.toast(parts.length ? '已保存，待复习单词已加入：' + parts.join(' + ') : '已保存，未加入复习体系（可在档案中手动加入）', 'ok');
-  setTimeout(() => location.href = 'student-profile.html', 900);
-}
-
-/* 键盘 */
+/* ---------- 键盘 ---------- */
 document.addEventListener('keydown', e => {
-  if (S.stage === 'group') {
+  if (document.querySelector('.mask.show')) return;
+  if (view === 'group') {
     if (e.key === '1') judge('no');
     if (e.key === '2') judge('yes');
-  } else if (S.stage === 'final') {
+  } else if (view === 'final') {
     if (e.key === '1') finalJudge('no');
     if (e.key === '2') finalJudge('mid');
     if (e.key === '3') finalJudge('yes');
   }
 });
 
-render();
+boot();
 </script>
 </body>
 </html>

@@ -9,17 +9,17 @@
 <body class="focus-page">
 
 <div class="focus-top">
-  <a class="btn btn-sm" href="leitner.html">← 退出复习</a>
+  <a class="btn btn-sm" href="#" id="backLink">← 退出复习</a>
   <div>
-    <div class="ft-title">莱特纳复习 · 陈可欣</div>
-    <div class="ft-sub">复习体系：莱特纳（红黄绿盒） · 来源盒子：红盒子 + 黄盒 1</div>
+    <div class="ft-title" id="ftTitle">莱特纳复习</div>
+    <div class="ft-sub" id="ftSub">—</div>
   </div>
   <div class="grow"></div>
   <div class="text-r" style="margin-right:12px">
     <div class="small muted">复习进度</div>
-    <div style="font-size:15px;font-weight:600" id="prog">1 / 10</div>
+    <div style="font-size:15px;font-weight:600" id="prog">0 / 0</div>
   </div>
-  <button class="btn btn-sm" onclick="Proto.confirmBox('结束复习','已完成的结果会保留，未复习的单词仍留在原盒子。','结束',()=>location.href='leitner.html')">结束</button>
+  <button class="btn btn-sm" onclick="finishEarly()">结束</button>
 </div>
 
 <div class="focus-main">
@@ -29,84 +29,192 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
-const LIST = [
-  ...DB.leitner.red.slice(0, 6).map(w => ({ ...w, box: '红盒子' })),
-  { en: 'class', ph: '/klɑːs/', cn: '班级；课', box: '黄盒 1', lastResult: '认识' },
-  { en: 'look', ph: '/lʊk/', cn: '看；看起来', box: '黄盒 1', lastResult: '认识' },
-  { en: 'first', ph: '/fɜːst/', cn: '第一的；首先', box: '黄盒 1', lastResult: '暂不确定' },
-  { en: 'last', ph: '/lɑːst/', cn: '最后的；持续', box: '黄盒 1', lastResult: '不认识' },
-];
+const q = new URLSearchParams(location.search);
+const studentId = q.get('student') || 'S2026001';
+const scope = q.get('scope') || 'recommend';
+let task = null, list = [], i = 0, revealed = false, submitted = false;
 
-const S = { i: 0, revealed: false, ans: {}, stage: 'run' };
 const el = () => document.getElementById('stage');
+const w = id => Store.word(id);
+const RESULT_LABEL = { yes: '认识', no: '不认识', mid: '暂不确定' };
+
+function scopeWords() {
+  if (scope === 'recommend') {
+    const d = Store.leitnerDue(studentId);
+    return { words: d.union.map(s => s.wordId), label: '系统推荐（红盒 + 黄盒到期 + 手动，已去重）' };
+  }
+  if (scope === 'green') {
+    const words = Store.leitnerBoxWords(studentId, 'green').map(s => s.wordId);
+    return { words, label: '绿盒子（教师自主复习）' };
+  }
+  if (scope === 'red') {
+    const words = Store.leitnerBoxWords(studentId, 'red').filter(s => Store.isDue(s)).map(s => s.wordId);
+    return { words, label: '红盒子（今日到期）' };
+  }
+  const words = Store.leitnerBoxWords(studentId, scope).filter(s => Store.isDue(s)).map(s => s.wordId);
+  return { words, label: Store.boxName(scope) + '（今日到期）' };
+}
+
+function boot() {
+  const tid = q.get('task');
+  if (tid) {
+    task = Store.leitnerTask(tid);
+    list = task ? task.wordIds.slice() : [];
+  } else {
+    const s = scopeWords();
+    list = s.words;
+    if (!list.length) { renderEmpty(s.label); return; }
+    task = Store.createLeitnerTask(studentId, list, 'T001', s.label);
+  }
+
+  const stu = Store.student(studentId);
+  document.getElementById('ftTitle').textContent = '莱特纳复习 · ' + stu.name;
+  document.getElementById('ftSub').textContent =
+    '任务 ' + task.id + ' · ' + task.source + ' · 共 ' + list.length + ' 个单词';
+  document.getElementById('backLink').href = 'leitner.html?student=' + studentId;
+
+  const doneRecs = Store.leitnerRecordsOf(studentId).filter(r => r.taskId === task.id);
+  if (task.status === '已完成' || doneRecs.length >= list.length) { renderDone(); return; }
+  // 恢复到第一个未复习的单词
+  const doneSet = {};
+  doneRecs.forEach(r => doneSet[r.wordId] = 1);
+  const first = list.findIndex(id => !doneSet[id]);
+  i = first < 0 ? list.length - 1 : first;
+  render();
+}
+
+function renderEmpty(label) {
+  document.getElementById('ftSub').textContent = label;
+  el().innerHTML = `
+    <div class="card">
+      <div class="card-body">
+        <div class="empty"><div class="e-ico">✓</div>
+          <p>${label} 没有需要复习的单词</p>
+          <a class="btn btn-primary" href="leitner.html?student=${studentId}">返回盒子</a>
+        </div>
+      </div>
+    </div>`;
+}
 
 function render() {
-  document.getElementById('prog').textContent = `${Math.min(S.i + 1, LIST.length)} / ${LIST.length}`;
-  if (S.stage === 'done') { renderDone(); return; }
+  const id = list[i];
+  if (!id) { renderDone(); return; }
+  const word = w(id);
+  const st = Store.leitnerState(studentId, id) || {};
+  const box = st.box;
+  const recs = Store.leitnerRecordsOf(studentId);
+  const doneRecs = recs.filter(r => r.taskId === task.id);
+  const thisRec = doneRecs.filter(r => r.wordId === id)[0];
 
-  const w = LIST[S.i];
+  document.getElementById('prog').textContent = `${Math.min(i + 1, list.length)} / ${list.length}`;
+
   el().innerHTML = `
-    <div class="bar mb16"><i style="width:${(S.i / LIST.length * 100).toFixed(1)}%"></i></div>
+    <div class="bar mb16"><i style="width:${(doneRecs.length / list.length * 100).toFixed(1)}%"></i></div>
 
     <div class="flex jcb aic mb12">
-      <span class="tag tag-red nodot">来源：${w.box}</span>
-      <span class="small muted">上次结果：${w.lastResult || '—'}</span>
+      <div class="flex gap8 aic">
+        <span class="tag ${box === 'red' ? 'tag-red' : box === 'green' ? 'tag-green' : 'tag-amber'} nodot">来源：${Store.boxName(box)}</span>
+        <span class="small muted">到期 ${st.dueAt || '手动'} · 上次结果：${st.lastResult || '—'}</span>
+      </div>
+      <span class="small muted">已复习 ${doneRecs.length} / ${list.length}</span>
     </div>
 
     <div class="word-card">
-      <div class="wc-en">${w.en}</div>
-      <div class="wc-ph">${w.ph}</div>
-      ${S.revealed ? `<div class="wc-cn">${w.cn}</div>`
+      <div class="wc-en">${word.en}</div>
+      <div class="wc-ph">${word.ph}</div>
+      ${revealed
+        ? `<div class="wc-cn">${word.mean.map(m => `<div><span class="pos">${m.pos}</span> ${m.cn}</div>`).join('')}</div>`
         : `<div class="wc-cn muted" style="font-size:14px">（点击「显示答案」查看中文释义）</div>`}
       <div class="mt12">
-        <button class="audio-btn" data-label="▶ 播放发音" onclick="Proto.playAudio(this,'${w.en}')">▶ 播放发音</button>
-        ${S.revealed ? '' : `<button class="btn btn-sm" style="margin-left:8px" onclick="reveal()">显示答案</button>`}
+        <button class="audio-btn" data-label="▶ 播放发音" onclick="Proto.playAudio(this,'${word.en}')">▶ 播放发音</button>
+        ${revealed ? '' : `<button class="btn btn-sm" style="margin-left:8px" onclick="reveal()">显示答案</button>`}
       </div>
     </div>
 
+    ${thisRec ? `<div class="mt12 text-c">
+      <span class="tag ${thisRec.result === 'yes' ? 'tag-green' : 'tag-red'} nodot">
+        本词本轮已判：${RESULT_LABEL[thisRec.result]}（${Store.boxName(thisRec.boxFrom)} → ${Store.boxName(thisRec.boxTo)}）</span>
+    </div>` : ''}
+
     <div class="judge-row">
-      <button class="judge no" onclick="ans('no')">不认识 <kbd>1</kbd></button>
-      <button class="judge yes" onclick="ans('yes')">认识 <kbd>2</kbd></button>
+      <button class="judge no" onclick="judge('no')">不认识 <kbd>1</kbd></button>
+      <button class="judge yes" onclick="judge('yes')">认识 <kbd>2</kbd></button>
     </div>
 
     <div class="flex jcb mt12">
       <button class="btn btn-ghost btn-sm" onclick="prev()">← 上一个</button>
-      <div class="small muted">每个单词的结果单独保存，生成独立复习记录</div>
+      <div class="small muted">结果按<b>当前盒子配置</b>决定去向，每个单词单独记录</div>
       <button class="btn btn-ghost btn-sm" onclick="next()">下一个 →</button>
+    </div>
+
+    <div class="text-c mt16">
+      <button class="btn btn-sm" onclick="finishNow()">提前结束并保存已复习结果</button>
     </div>`;
 }
 
-function reveal() { S.revealed = true; render(); }
-function prev() { if (S.i > 0) { S.i--; S.revealed = false; render(); } }
-function next() { if (S.i < LIST.length - 1) { S.i++; S.revealed = false; render(); } }
+function reveal() { revealed = true; render(); }
+function prev() { if (i > 0) { i--; revealed = false; render(); } }
+function next() { if (i < list.length - 1) { i++; revealed = false; render(); } }
 
-function ans(v) {
-  S.ans[S.i] = v;
-  const w = LIST[S.i];
-  const dest = v === 'yes' ? '按配置移入下一盒' : '按配置留在/回到红盒';
-  Proto.toast(`${w.en}：${v === 'yes' ? '认识' : '不认识'} · ${dest}`);
+function judge(v) {
+  const id = list[i];
+  const st = Store.leitnerState(studentId, id);
+  if (!st) { Proto.toast('该单词不在莱特纳体系中', 'err'); next(); return; }
+  const r = Store.leitnerJudge(task.id, id, v, 'T001');
+  Proto.toast(`${w(id).en}：${RESULT_LABEL[v]} · ${Store.boxName(r.from)} → ${Store.boxName(r.to)}` +
+    (r.nextDue ? ' · 下次 ' + r.nextDue : ''), v === 'yes' ? 'ok' : 'warn');
 
-  if (S.i < LIST.length - 1) {
-    S.i++;
-    S.revealed = false;
-    render();
-  } else {
-    S.stage = 'done';
-    render();
-  }
+  const doneRecs = Store.leitnerRecordsOf(studentId).filter(x => x.taskId === task.id);
+  if (doneRecs.length >= list.length) { renderDone(); return; }
+  const doneSet = {};
+  doneRecs.forEach(x => doneSet[x.wordId] = 1);
+  const first = list.findIndex((x, k) => k > i && !doneSet[x]);
+  const any = list.findIndex(x => !doneSet[x]);
+  i = first >= 0 ? first : (any >= 0 ? any : i);
+  revealed = false;
+  render();
+}
+
+function finishEarly() {
+  Proto.confirmBox('结束复习',
+    '已完成的结果会保存，未复习的单词仍留在原盒子且仍为到期状态。',
+    '结束', () => finishNow());
+}
+
+function finishNow() {
+  if (task.status === '进行中') Store.finishLeitnerTask(task.id, 'T001');
+  renderDone();
 }
 
 function renderDone() {
-  const yes = Object.values(S.ans).filter(v => v === 'yes').length;
-  const no = Object.values(S.ans).filter(v => v === 'no').length;
+  if (task.status === '进行中') Store.finishLeitnerTask(task.id, 'T001');
+  const recs = Store.leitnerRecordsOf(studentId).filter(r => r.taskId === task.id);
+  const yes = recs.filter(r => r.result === 'yes').length;
+  const no = recs.filter(r => r.result !== 'yes').length;
+  document.getElementById('prog').textContent = `${recs.length} / ${list.length}`;
+
+  const rows = recs.map(r => {
+    const up = r.boxTo !== r.boxFrom;
+    return `<tr>
+      <td class="strong">${w(r.wordId).en}</td>
+      <td class="small">${Store.boxName(r.boxFrom)}</td>
+      <td><span class="tag ${r.result === 'yes' ? 'tag-green' : 'tag-red'} nodot">${RESULT_LABEL[r.result]}</span></td>
+      <td class="small">${up ? '<span style="color:var(--success)">' : ''}${Store.boxName(r.boxTo)}${up ? ' ↑</span>' : ''}</td>
+      <td class="small muted">${r.nextDue || '—'}</td>
+      <td class="small muted">${r.at.slice(11)}</td>
+    </tr>`;
+  }).join('');
+
   el().innerHTML = `
     <div class="card">
       <div class="card-head"><div class="card-title">本轮复习完成</div>
-        <span class="tag tag-green nodot">${LIST.length} 个单词</span></div>
+        <span class="tag tag-green nodot">${recs.length} / ${list.length} 个单词</span></div>
       <div class="card-body">
         <div class="grid g3 mb16">
-          <div class="card stat"><div class="stat-label">复习单词</div><div class="stat-value">${LIST.length}</div></div>
+          <div class="card stat"><div class="stat-label">复习单词</div><div class="stat-value">${recs.length}</div>
+            <div class="stat-foot">任务 ${task.id}</div></div>
           <div class="card stat"><div class="stat-label">认识</div>
             <div class="stat-value" style="color:var(--success)">${yes}</div></div>
           <div class="card stat"><div class="stat-label">不认识</div>
@@ -114,38 +222,36 @@ function renderDone() {
         </div>
 
         <div class="alert alert-info mb12"><span class="ico">i</span>
-          <div><b>单词去向由盒子配置决定</b>（如：答对进入下一黄盒、答错回到红盒、是否重置间隔），
-            原型不预设具体算法。本次结果已生成独立复习记录。</div></div>
-        <div class="alert alert-warn mb12"><span class="ico">!</span>
-          <div>莱特纳复习结果<b>只改变莱特纳体系内的复习计划</b>，<b>不影响</b> 21 天记忆复习体系的计划与任务。</div></div>
+          <div><b>盒子变化按当前配置计算：</b>认识 → 配置的「答对去向」，不认识 → 配置的「答错去向」，
+            下次到期时间 = 今天 + 目标盒子间隔天数。配置可在「莱特纳复习 → 盒子配置」中调整。</div></div>
+        <div class="alert alert-warn mb16"><span class="ico">!</span>
+          <div>本次结果<b>只改变莱特纳体系</b>的盒子与复习计划，<b>不影响</b> 21 天记忆复习体系的计划、节点与记录。</div></div>
 
+        <div class="section-title">单词去向</div>
         <div class="table-wrap mb16">
           <table class="table compact">
-            <thead><tr><th>单词</th><th>来源盒子</th><th>本次结果</th><th>记录时间</th><th>复习教师</th></tr></thead>
-            <tbody>
-              ${LIST.map((w, i) => `<tr><td class="strong">${w.en}</td><td class="small">${w.box}</td>
-                <td>${S.ans[i] === 'yes' ? '<span class="tag tag-green nodot">认识</span>'
-                  : '<span class="tag tag-red nodot">不认识</span>'}</td>
-                <td class="small muted">2026-11-02 10:12</td><td>李婉</td></tr>`).join('')}
-            </tbody>
+            <thead><tr><th>单词</th><th>原盒子</th><th>本次结果</th><th>新盒子</th><th>下次到期</th><th>时间</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="6"><div class="empty"><p>本轮没有完成任何单词</p></div></td></tr>'}</tbody>
           </table>
         </div>
 
         <div class="flex gap8" style="justify-content:flex-end">
-          <a class="btn" href="leitner.html">返回盒子</a>
-          <a class="btn btn-primary" href="student-profile.html">返回学习档案</a>
+          <a class="btn" href="leitner.html?student=${studentId}">返回盒子</a>
+          <a class="btn" href="word-detail.html?student=${studentId}&word=${list[0] || ''}">查看单词档案</a>
+          <a class="btn btn-primary" href="student-profile.html?student=${studentId}">返回学习档案</a>
         </div>
       </div>
     </div>`;
 }
 
 document.addEventListener('keydown', e => {
-  if (S.stage !== 'run') return;
-  if (e.key === '1') ans('no');
-  if (e.key === '2') ans('yes');
+  if (document.querySelector('.mask.show')) return;
+  if (!task || task.status === '已完成') return;
+  if (e.key === '1') judge('no');
+  if (e.key === '2') judge('yes');
 });
 
-render();
+boot();
 </script>
 </body>
 </html>

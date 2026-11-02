@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>单词学习档案</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学管理<span class="sep">/</span><a href="student-profile.html" id="crumbStu">学员学习档案</a><span class="sep">/</span>单词学习档案</div>
+          <h1 class="page-title" id="pageTitle">单词学习档案</h1>
+          <div class="page-sub" id="pageSub">—</div>
+        </div>
+        <div class="page-actions">
+          <select class="select" style="width:170px" id="stuSel" onchange="switchStudent(this.value)"></select>
+          <a class="btn" href="student-profile.html" id="backBtn">返回学习档案</a>
+          <a class="btn btn-primary" href="word-training-setup.html" id="trainBtn">开始单词训练</a>
+        </div>
+      </div>
+
+      <div class="grid g-2-1" style="align-items:start">
+        <!-- 左：词条 + 四层状态 -->
+        <div>
+          <div class="card mb16">
+            <div class="card-body">
+              <div class="grid g2" style="align-items:center;gap:20px">
+                <div>
+                  <div style="font-size:38px;font-weight:600;letter-spacing:-.5px" id="wEn">—</div>
+                  <div class="mono" style="font-size:15px;color:var(--text-3);margin-top:4px" id="wPh">—</div>
+                  <div style="margin-top:12px;font-size:16px;line-height:1.8" id="wMean">—</div>
+                  <div class="flex gap8 mt16">
+                    <button class="audio-btn" data-label="▶ 播放发音" onclick="playW(this)">▶ 播放发音</button>
+                    <button class="btn btn-sm" onclick="Proto.speak(document.getElementById('wEn').textContent,'en-US')">重听</button>
+                  </div>
+                </div>
+                <div class="desc g1">
+                  <div class="desc-item"><span class="k">词性</span><span class="v" id="wPos">—</span></div>
+                  <div class="desc-item"><span class="k">所属词库</span><span class="v small" id="wBook">—</span></div>
+                  <div class="desc-item"><span class="k">词库位置</span><span class="v mono" id="wSeq">—</span></div>
+                  <div class="desc-item"><span class="k">词条状态</span><span class="v" id="wStatus">—</span></div>
+                  <div class="desc-item"><span class="k">学员</span><span class="v" id="wStu">—</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card mb16">
+            <div class="card-head"><div class="card-title">四层数据状态<span class="hint">分别存储，互不覆盖</span></div></div>
+            <div class="card-body tight">
+              <table class="table compact">
+                <thead><tr><th>数据层</th><th>当前值</th><th>说明</th></tr></thead>
+                <tbody>
+                  <tr><td class="strong">① 基础单词</td><td>启用 · <span id="t1">—</span></td>
+                    <td class="small muted">词库资源层，全机构共用，与学员无关</td></tr>
+                  <tr><td class="strong">② 学员单词状态</td><td id="t2">—</td>
+                    <td class="small muted">学员档案层，训练结果写这里</td></tr>
+                  <tr><td class="strong">③ 莱特纳状态</td><td id="t3">—</td>
+                    <td class="small muted">盒子 + 到期日 + 最近复习，仅由莱特纳复习改动</td></tr>
+                  <tr><td class="strong">④ 21 天计划</td><td id="t4">—</td>
+                    <td class="small muted">计划成员 + 节点任务，仅由 21 天复习改动</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card-foot">
+              <span class="small muted">同一个单词可以同时在莱特纳和 21 天体系，两边记录互相独立</span>
+            </div>
+          </div>
+
+          <!-- 莱特纳 -->
+          <div class="card mb16">
+            <div class="card-head"><div class="card-title">当前莱特纳状态</div>
+              <span class="small muted" id="ltHead">—</span></div>
+            <div class="card-body" id="ltBox"></div>
+          </div>
+
+          <!-- 21 天 -->
+          <div class="card">
+            <div class="card-head"><div class="card-title">参与的 21 天计划</div>
+              <a class="btn btn-sm" href="memory21.html" id="planLink">查看计划</a></div>
+            <div class="card-body tight">
+              <table class="table compact">
+                <thead><tr><th>计划</th><th>加入日期</th><th class="right">今日是否复习</th><th class="right">计划内记录数</th><th>最近结果</th></tr></thead>
+                <tbody id="planRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右：单词切换 + 索引 -->
+        <div>
+          <div class="card mb16">
+            <div class="card-head"><div class="card-title">切换单词</div></div>
+            <div class="card-body">
+              <input class="input mb12" id="search" placeholder="搜索英文或中文释义" oninput="renderList()">
+              <div id="wordList" style="max-height:460px;overflow:auto;display:flex;flex-direction:column;gap:2px"></div>
+            </div>
+            <div class="card-foot"><span class="small muted" id="listFoot">—</span></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">状态图例</div></div>
+            <div class="card-body" style="font-size:12px;line-height:2;color:var(--text-2)">
+              <div><span class="tag tag-slate">未训练</span> 无任何训练记录</div>
+              <div><span class="tag tag-blue">初筛认识</span> 预筛认识，未强化训练</div>
+              <div><span class="tag tag-amber">待强化训练</span> 初筛不认识，待训练</div>
+              <div><span class="tag tag-purple">待最后复习</span> 已强化，未做最后判断</div>
+              <div><span class="tag tag-green">本次通过</span> 最后复习判为认识</div>
+              <div><span class="tag tag-red">待复习</span> 最后复习不认识</div>
+              <div><span class="tag tag-amber">暂不确定</span> 保留待确认，不视为掌握</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 记录区 -->
+      <div class="card mt16">
+        <div class="tabs" id="recTabs">
+          <button class="tab active" data-pane="rp1">预筛选记录<span class="count" id="c1">0</span></button>
+          <button class="tab" data-pane="rp2">强化训练记录<span class="count" id="c2">0</span></button>
+          <button class="tab" data-pane="rp3">最后一轮复习<span class="count" id="c3">0</span></button>
+          <button class="tab" data-pane="rp4">复习历史（两体系）<span class="count" id="c4">0</span></button>
+        </div>
+
+        <div class="tab-pane active" id="rp1">
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>时间</th><th>训练任务</th><th>词库</th><th>判断</th><th>是否进入队列</th><th>教师</th></tr></thead>
+              <tbody id="psRows"></tbody>
+            </table>
+          </div>
+          <div class="card-foot"><span class="small muted">预筛结果逐词保存，认识的单词不进入强化队列，但记录保留</span></div>
+        </div>
+
+        <div class="tab-pane" id="rp2">
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>时间</th><th>训练任务</th><th>组别</th><th>训练模式</th><th>轮次</th><th>结果</th><th>教师</th><th>备注</th></tr></thead>
+              <tbody id="tdRows"></tbody>
+            </table>
+          </div>
+          <div class="card-foot"><span class="small muted">误判修正为追加记录，原始记录不删除（上表按轮次排序）</span></div>
+        </div>
+
+        <div class="tab-pane" id="rp3">
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>时间</th><th>训练任务</th><th>最终判断</th><th>是否被修正</th><th>任务状态</th></tr></thead>
+              <tbody id="frRows"></tbody>
+            </table>
+          </div>
+          <div class="card-foot"><span class="small muted">只有最后一轮复习的判断才决定「本次通过 / 待复习 / 暂不确定」</span></div>
+        </div>
+
+        <div class="tab-pane" id="rp4">
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>时间</th><th>体系</th><th>来源盒子 / 节点</th><th>结果</th><th>去向</th><th>教师</th></tr></thead>
+              <tbody id="rvRows"></tbody>
+            </table>
+          </div>
+          <div class="card-foot"><span class="small muted">莱特纳与 21 天记录分别存放，任何一方复习都不会改写对方记录</span></div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- 原因填写（加入绿盒 / 手动移动盒子） -->
+<div class="mask" id="reasonModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title" id="rsTitle">加入绿盒子</div>
+      <button class="modal-close" onclick="Proto.closeModal('reasonModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div id="rsDesc">—</div></div>
+      <div class="field"><label>原因 <span class="req">*</span></label>
+        <input class="input" id="rsNote" placeholder="如：课堂易混淆 / 与已学单词冲突 / 教师根据表现调整">
+        <div class="tip">原因会记入操作留痕（操作人、时间、原因），不可为空</div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('reasonModal')">取消</button>
+      <button class="btn btn-primary" onclick="doReason()">确认</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'teacher', active: 'student-profile' });
+
+const q = new URLSearchParams(location.search);
+let studentId = q.get('student') || 'S2026001';
+let wordId = q.get('word') || '';
+
+const STATE_TAG = {
+  '未训练': 'tag-slate', '初筛认识': 'tag-blue', '待强化训练': 'tag-amber', '强化训练中': 'tag-cyan',
+  '待最后复习': 'tag-purple', '本次通过': 'tag-green', '待复习': 'tag-red', '暂不确定': 'tag-amber'
+};
+const RESULT_LABEL = { yes: '认识', no: '不认识', mid: '暂不确定' };
+const RESULT_TAG = { yes: 'tag-green', no: 'tag-red', mid: 'tag-amber' };
+
+function switchStudent(id) { location.href = 'word-detail.html?student=' + id + '&word=' + wordId; }
+function switchWord(id) {
+  wordId = id;
+  history.replaceState(null, '', 'word-detail.html?student=' + studentId + '&word=' + id);
+  renderAll();
+}
+
+function initSelect() {
+  const mine = Store.students().filter(s => s.teacher === 'T001');
+  document.getElementById('stuSel').innerHTML = mine
+    .map(s => `<option value="${s.id}" ${s.id === studentId ? 'selected' : ''}>${s.name} · ${s.grade}</option>`).join('');
+  const b = 'student-profile.html?student=' + studentId;
+  document.getElementById('backBtn').href = b;
+  document.getElementById('crumbStu').href = b;
+  document.getElementById('trainBtn').href = 'word-training-setup.html?student=' + studentId;
+}
+
+function wordSeq(w) {
+  const bk = Store.wordbook('WB001');
+  if (!bk) return '—';
+  return '第 ' + (bk.wordIds.indexOf(w.id) + 1) + ' / ' + bk.wordIds.length + ' 个';
+}
+
+function playW(btn) {
+  Proto.playAudio(btn, document.getElementById('wEn').textContent);
+}
+
+/* ---------- 主体渲染 ---------- */
+function renderAll() {
+  const stu = Store.student(studentId);
+  const words = Store.wordsOfBook('WB001');
+  if (!wordId || !Store.word(wordId)) wordId = words[0].id;
+  const w = Store.word(wordId);
+  const st = Store.wordState(studentId, wordId);
+  const ls = Store.leitnerState(studentId, wordId);
+  const plans = Store.plansOf(studentId).filter(p => p.wordIds.indexOf(wordId) >= 0);
+
+  document.getElementById('pageTitle').textContent = w.en + ' · 单词学习档案';
+  document.getElementById('pageSub').textContent =
+    `${stu.name} · ${stu.grade} · ${stu.book} · 单词是基础资源，学习状态按学员分别存储`;
+
+  document.getElementById('wEn').textContent = w.en;
+  document.getElementById('wPh').textContent = w.ph;
+  document.getElementById('wMean').innerHTML = w.mean
+    .map(m => `<div><span class="pos" style="color:var(--info);font-size:13px;margin-right:6px">${m.pos}</span>${m.cn}</div>`).join('');
+  document.getElementById('wPos').textContent = w.pos;
+  document.getElementById('wBook').textContent = '人教版 七年级上 Unit 1（WB001）';
+  document.getElementById('wSeq').textContent = wordSeq(w);
+  document.getElementById('wStatus').innerHTML = '<span class="tag tag-green">启用</span>';
+  document.getElementById('wStu').textContent = stu.name + '（' + stu.id + '）';
+
+  /* 四层状态 */
+  document.getElementById('t1').textContent = w.en + ' ' + w.ph;
+  document.getElementById('t2').innerHTML = st
+    ? `<span class="tag ${STATE_TAG[st.state]}">${st.state}</span>
+       <span class="small muted">初筛：${st.prescreenKnown === null ? '未预筛' : st.prescreenKnown ? '认识' : '不认识'}</span>`
+    : '<span class="tag tag-slate">未训练</span>';
+  document.getElementById('t3').innerHTML = ls
+    ? `<span class="tag ${ls.box === 'red' ? 'tag-red' : ls.box === 'green' ? 'tag-green' : 'tag-amber'} nodot">${Store.boxName(ls.box)}</span>
+       <span class="small muted">到期 ${ls.dueAt || '手动'}</span>`
+    : '<span class="tag tag-slate nodot">未加入</span>';
+  document.getElementById('t4').innerHTML = plans.length
+    ? plans.map(p => `<span class="tag tag-blue nodot">${p.name}</span>`).join(' ')
+    : '<span class="tag tag-slate nodot">未加入</span>';
+
+  /* 莱特纳详情 */
+  const ltHead = document.getElementById('ltHead');
+  const ltBox = document.getElementById('ltBox');
+  if (!ls) {
+    ltHead.textContent = '未加入莱特纳体系';
+    ltBox.innerHTML = `<div class="alert alert-info"><span class="ico">i</span>
+      <div>该单词尚未加入莱特纳体系。可在训练完成后勾选加入，或在
+        <a href="leitner.html?student=${studentId}">莱特纳复习</a>页手动加入绿盒。</div></div>
+      <div class="flex gap8 mt12">
+        <button class="btn btn-sm" onclick="joinGreen()">加入绿盒子</button>
+      </div>`;
+  } else {
+    ltHead.textContent = Store.boxName(ls.box) + ' · 加入于 ' + ls.addedAt;
+    const hist = Store.leitnerRecordsOf(studentId, wordId);
+    ltBox.innerHTML = `
+      <div class="grid g3 mb16">
+        <div><div class="stat-label">当前盒子</div>
+          <div class="bc-num" style="font-size:18px">${Store.boxName(ls.box)}</div>
+          <div class="small muted">来源：${ls.source}</div></div>
+        <div><div class="stat-label">到期时间</div>
+          <div class="bc-num" style="font-size:18px">${ls.dueAt || '手动'}</div>
+          <div class="small muted">${Store.isDue(ls) ? '<span style="color:var(--danger)">已到期</span>' : '未到期'}</div></div>
+        <div><div class="stat-label">最近复习</div>
+          <div class="bc-num" style="font-size:18px">${ls.lastResult}</div>
+          <div class="small muted">${ls.lastReviewAt || '未复习'}</div></div>
+      </div>
+      ${ls.box === 'green' ? `<div class="alert alert-success mb12"><span class="ico">i</span>
+        <div>绿盒由教师自主管理，<b>不按黄盒间隔自动移动</b>；加入原因：${ls.reason || '—'}
+          （${ls.by || '—'}）</div></div>` : ''}
+      <div class="flex gap8" style="flex-wrap:wrap">
+        ${ls.box !== 'green' ? `<button class="btn btn-sm" onclick="joinGreen()">移入绿盒子</button>` : ''}
+        <button class="btn btn-sm" onclick="moveTo('red')">手动移入红盒</button>
+        <button class="btn btn-sm" onclick="moveTo('Y1')">手动移入黄盒 1</button>
+        <a class="btn btn-sm btn-primary" href="leitner.html?student=${studentId}">去莱特纳复习</a>
+      </div>
+      ${hist.length ? `<div class="divider"></div>
+        <div class="small muted">该单词最近复习记录：${hist[0].at} · ${Store.boxName(hist[0].boxFrom)} → ${Store.boxName(hist[0].boxTo)} · ${RESULT_LABEL[hist[0].result]}</div>` : ''}`;
+  }
+
+  /* 21 天计划表 */
+  Proto.renderRows('planRows', plans, p => {
+    const tasks = Store.plan21Tasks(p.id).filter(t => t.wordIds.indexOf(wordId) >= 0);
+    const today = tasks.filter(t => t.date === Store.TODAY);
+    const recs = Store.plan21Records(p.id, wordId);
+    const last = recs.slice(-1)[0];
+    return `<tr>
+      <td class="strong">${p.name}</td>
+      <td class="small muted">${p.startDate}</td>
+      <td class="right">${today.length ? '<span class="tag tag-blue nodot">是</span>' : '<span class="muted small">否</span>'}</td>
+      <td class="right mono">${recs.length}</td>
+      <td>${last ? `<span class="tag ${RESULT_TAG[last.result]} nodot">${RESULT_LABEL[last.result]}</span>
+        <span class="small muted">${last.at}</span>` : '<span class="muted small">未复习</span>'}</td>
+    </tr>`;
+  }, 5, '该单词未加入任何 21 天计划');
+  document.getElementById('planLink').href = 'memory21.html?student=' + studentId;
+
+  /* 记录表 */
+  const pss = Store.prescreensOf(studentId, wordId);
+  const tds = Store.trainDetailsOf(studentId, wordId);
+  const frs = Store.finalReviewsOf(studentId, wordId);
+  const lrs = Store.leitnerRecordsOf(studentId, wordId);
+  const p21 = Store.plansOf(studentId).reduce((acc, p) => acc.concat(Store.plan21Records(p.id, wordId).map(r => ({ ...r, planName: p.name }))), []);
+
+  document.getElementById('c1').textContent = pss.length;
+  document.getElementById('c2').textContent = tds.length;
+  document.getElementById('c3').textContent = frs.length;
+  document.getElementById('c4').textContent = lrs.length + p21.length;
+
+  Proto.renderRows('psRows', pss, p => {
+    const t = Store.trainTask(p.taskId) || {};
+    const inQueue = (t.queueWordIds || []).indexOf(wordId) >= 0;
+    return `<tr><td class="small">${p.at}</td>
+      <td class="mono small">${p.taskId}</td>
+      <td class="small">${(Store.wordbook(p.wordbookId) || {}).name || p.wordbookId}</td>
+      <td>${p.known ? '<span class="tag tag-blue nodot">认识</span>' : '<span class="tag tag-amber nodot">不认识</span>'}</td>
+      <td>${inQueue ? '<span class="tag tag-green nodot">进入队列</span>' : '<span class="tag tag-slate nodot">未进入</span>'}</td>
+      <td class="small">${(Store.teacher(p.teacherId) || {}).name || p.teacherId}</td></tr>`;
+  }, 6, '该单词还没有预筛选记录');
+
+  Proto.renderRows('tdRows', tds, d => `
+    <tr><td class="small">${d.at}</td>
+      <td class="mono small">${d.taskId}</td>
+      <td class="small">第 ${(d.groupIndex || 0) + 1} 组</td>
+      <td class="small">${d.mode === 'en2cn' ? '看英文理解中文' : d.mode === 'cn2en' ? '看中文回忆英文' : '听发音识别'}</td>
+      <td class="mono small">第 ${d.round || 1} 次</td>
+      <td><span class="tag ${RESULT_TAG[d.result]} nodot">${RESULT_LABEL[d.result]}</span>
+        ${d.correction ? `<span class="tag tag-purple nodot">修正</span>` : ''}</td>
+      <td class="small">${(Store.teacher(d.teacherId) || {}).name || d.teacherId}</td>
+      <td class="small muted">${d.correction ? '由「' + RESULT_LABEL[d.correctionFrom] + '」修正，原因：' + (d.correctionNote || '—') : '—'}</td></tr>`, 8,
+    '该单词还没有强化训练记录');
+
+  Proto.renderRows('frRows', frs, r => `
+    <tr><td class="small">${r.at}</td>
+      <td class="mono small">${r.taskId}</td>
+      <td><span class="tag ${RESULT_TAG[r.result]} nodot">${RESULT_LABEL[r.result]}</span></td>
+      <td>${r.correctedFrom ? `<span class="tag tag-purple nodot">由「${RESULT_LABEL[r.correctedFrom]}」改判</span>` : '<span class="muted small">否</span>'}</td>
+      <td class="small">${r.status}</td></tr>`, 5, '该单词还没有最后一轮复习判断');
+
+  const rv = lrs.map(r => ({
+    at: r.at, sys: '莱特纳', from: Store.boxName(r.boxFrom), result: r.result,
+    to: Store.boxName(r.boxTo) + (r.nextDue ? ' · 下次 ' + r.nextDue : ''), teacher: r.teacherId
+  })).concat(p21.map(r => ({
+    at: r.at, sys: '21 天', from: '第 ' + r.day + ' 天', result: r.result,
+    to: r.planName + ' · 仅有记录，不改盒子', teacher: r.teacherId
+  }))).sort((a, b) => a.at < b.at ? 1 : -1);
+
+  Proto.renderRows('rvRows', rv, r => `
+    <tr><td class="small">${r.at}</td>
+      <td>${r.sys === '莱特纳' ? '<span class="tag tag-amber nodot">莱特纳</span>' : '<span class="tag tag-blue nodot">21 天</span>'}</td>
+      <td class="small">${r.from}</td>
+      <td><span class="tag ${RESULT_TAG[r.result]} nodot">${RESULT_LABEL[r.result]}</span></td>
+      <td class="small">${r.to}</td>
+      <td class="small">${(Store.teacher(r.teacher) || {}).name || r.teacher}</td></tr>`, 6,
+    '该单词还没有复习记录');
+
+  renderList();
+}
+
+/* ---------- 左侧单词列表 ---------- */
+function renderList() {
+  const kw = (document.getElementById('search').value || '').trim().toLowerCase();
+  const words = Store.wordsOfBook('WB001').filter(w =>
+    !kw || w.en.toLowerCase().indexOf(kw) >= 0 || w.mean.some(m => m.cn.indexOf(kw) >= 0));
+  document.getElementById('listFoot').textContent = `共 ${words.length} 个单词 · 当前 ${Store.word(wordId).en}`;
+  document.getElementById('wordList').innerHTML = words.map(w => {
+    const st = Store.wordState(studentId, w.id);
+    const ls = Store.leitnerState(studentId, w.id);
+    const on = w.id === wordId;
+    return `<a href="javascript:switchWord('${w.id}')" style="display:flex;align-items:center;justify-content:space-between;
+      gap:8px;padding:6px 8px;border-radius:6px;font-size:13px;text-decoration:none;
+      color:${on ? 'var(--primary-dark)' : 'var(--text-2)'};background:${on ? 'var(--primary-soft)' : 'transparent'}">
+      <span><b>${w.en}</b> <span class="small muted">${w.mean[0].cn}</span></span>
+      <span class="tag ${st ? STATE_TAG[st.state] : 'tag-slate'} nodot" style="font-size:10.5px">${ls ? Store.boxName(ls.box) : (st ? st.state : '未训练')}</span>
+    </a>`;
+  }).join('') || '<div class="empty"><p>没有匹配的单词</p></div>';
+}
+
+/* ---------- 绿盒 / 手动移动 ---------- */
+let reasonAction = null;
+
+function joinGreen() {
+  const w = Store.word(wordId);
+  const ls = Store.leitnerState(studentId, wordId);
+  reasonAction = function (note) {
+    Store.addToGreen(studentId, wordId, note, '李婉');
+    Proto.toast('已加入绿盒', 'ok');
+    renderAll();
+  };
+  document.getElementById('rsTitle').textContent = '加入绿盒子';
+  document.getElementById('rsDesc').innerHTML =
+    `将 <b>${w.en}</b> 加入 ${Store.student(studentId).name} 的绿盒子${ls ? '（当前：' + Store.boxName(ls.box) + '）' : ''}。<br>
+     绿盒由教师自主管理，<b>不按黄盒间隔自动移动</b>；加入原因会写入操作留痕。`;
+  document.getElementById('rsNote').value = '';
+  Proto.openModal('reasonModal');
+}
+
+function moveTo(box) {
+  const w = Store.word(wordId);
+  const ls = Store.leitnerState(studentId, wordId);
+  reasonAction = function (note) {
+    Store.moveBox(studentId, wordId, box, note, '李婉');
+    Proto.toast('已移动到 ' + Store.boxName(box), 'ok');
+    renderAll();
+  };
+  document.getElementById('rsTitle').textContent = '手动移动盒子';
+  document.getElementById('rsDesc').innerHTML =
+    `将 <b>${w.en}</b> 从 <b>${Store.boxName(ls.box)}</b> 移动到 <b>${Store.boxName(box)}</b>。<br>
+     手动移动必须记录原因，不篡改历史复习记录。`;
+  document.getElementById('rsNote').value = '';
+  Proto.openModal('reasonModal');
+}
+
+function doReason() {
+  const note = document.getElementById('rsNote').value.trim();
+  if (!note) { Proto.toast('请填写原因', 'err'); return; }
+  const fn = reasonAction;
+  Proto.closeModal('reasonModal');
+  if (fn) fn(note);
+}
+
+initSelect();
+renderAll();
+</script>
+</body>
+</html>

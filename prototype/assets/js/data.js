@@ -242,59 +242,8 @@ const DB = {
     { i: 8, en: 'I love my new class and my new family.', cn: '我喜欢我的新班级和新的大家庭。' },
   ],
 
-  /* 莱特纳体系：红盒 + 黄盒组 + 绿盒 */
-  leitner: {
-    red: [
-      { en: 'friend', ph: '/frend/', cn: '朋友', from: 'WB001', added: '2026-10-20', due: '2026-11-02', lastReview: '2026-10-28', lastResult: '不认识' },
-      { en: 'question', ph: '/ˈkwestʃən/', cn: '问题', from: 'WB001', added: '2026-10-20', due: '2026-11-02', lastReview: '2026-10-28', lastResult: '不认识' },
-      { en: 'answer', ph: '/ˈɑːnsə(r)/', cn: '回答', from: 'WB001', added: '2026-10-20', due: '2026-11-02', lastReview: '2026-10-28', lastResult: '暂不确定' },
-      { en: 'library', ph: '/ˈlaɪbrəri/', cn: '图书馆', from: 'WB001', added: '2026-10-22', due: '2026-11-02', lastReview: '2026-10-30', lastResult: '不认识' },
-      { en: 'classroom', ph: '/ˈklɑːsruːm/', cn: '教室', from: 'WB001', added: '2026-10-22', due: '2026-11-02', lastReview: '2026-10-30', lastResult: '认识' },
-      { en: 'family', ph: '/ˈfæməli/', cn: '家；家人', from: 'WB001', added: '2026-10-24', due: '2026-11-02', lastReview: '2026-10-31', lastResult: '暂不确定' },
-    ],
-    yellow: [
-      { id: 'Y1', name: '黄盒 1', interval: '2 天', count: 8, due: 3, last: '2026-10-31', enabled: true },
-      { id: 'Y2', name: '黄盒 2', interval: '5 天', count: 6, due: 0, last: '2026-10-28', enabled: true },
-      { id: 'Y3', name: '黄盒 3', interval: '10 天', count: 9, due: 2, last: '2026-10-24', enabled: true },
-    ],
-    green: [
-      { en: 'happy', ph: '/ˈhæpi/', cn: '高兴的', reason: '教师手动加入', by: '李婉', added: '2026-10-26', lastReview: '2026-10-30' },
-      { en: 'first', ph: '/fɜːst/', cn: '第一的', reason: '课堂易混淆', by: '李婉', added: '2026-10-26', lastReview: '—' },
-      { en: 'last', ph: '/lɑːst/', cn: '最后的', reason: '课堂易混淆', by: '李婉', added: '2026-10-26', lastReview: '—' },
-      { en: 'look', ph: '/lʊk/', cn: '看', reason: '教师手动加入', by: '李婉', added: '2026-10-22', lastReview: '2026-10-27' },
-    ],
-  },
-
-  /* 21 天计划 */
-  plan21: {
-    name: '11 月记忆强化计划',
-    start: '2026-10-24',
-    words: 23,
-    currentDay: 10,
-    nodes: [
-      { day: 1, date: '2026-10-24', count: 23, done: 23, state: 'done' },
-      { day: 2, date: '2026-10-25', count: 23, done: 23, state: 'done' },
-      { day: 3, date: '2026-10-26', count: 18, done: 18, state: 'done' },
-      { day: 4, date: '2026-10-27', count: 0, done: 0, state: 'rest' },
-      { day: 5, date: '2026-10-28', count: 16, done: 16, state: 'done' },
-      { day: 6, date: '2026-10-29', count: 0, done: 0, state: 'rest' },
-      { day: 7, date: '2026-10-30', count: 14, done: 11, state: 'miss' },
-      { day: 8, date: '2026-10-31', count: 14, done: 14, state: 'done' },
-      { day: 9, date: '2026-11-01', count: 0, done: 0, state: 'rest' },
-      { day: 10, date: '2026-11-02', count: 12, done: 0, state: 'today' },
-      { day: 11, date: '2026-11-03', count: 0, done: 0, state: 'rest' },
-      { day: 12, date: '2026-11-04', count: 10, done: 0, state: 'plan' },
-      { day: 13, date: '2026-11-05', count: 0, done: 0, state: 'rest' },
-      { day: 14, date: '2026-11-06', count: 10, done: 0, state: 'plan' },
-      { day: 15, date: '2026-11-07', count: 0, done: 0, state: 'rest' },
-      { day: 16, date: '2026-11-08', count: 8, done: 0, state: 'plan' },
-      { day: 17, date: '2026-11-09', count: 0, done: 0, state: 'rest' },
-      { day: 18, date: '2026-11-10', count: 8, done: 0, state: 'plan' },
-      { day: 19, date: '2026-11-11', count: 0, done: 0, state: 'rest' },
-      { day: 20, date: '2026-11-12', count: 6, done: 0, state: 'plan' },
-      { day: 21, date: '2026-11-13', count: 6, done: 0, state: 'plan' },
-    ],
-  },
+  /* 莱特纳 / 21 天等学习域数据已迁至 assets/js/store.js（统一数据层），
+     本文件仅保留机构、人员、商品、订单、课程、词库资源等基础演示数据。 */
 
   reports: [
     { id: 'RP001', date: '2026-10-31', student: '陈可欣', course: 'C20261031001', topic: 'Unit 3 词汇强化 + 短文听读',

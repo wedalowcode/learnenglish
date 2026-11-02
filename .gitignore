@@ -1,0 +1,17 @@
+# IDE / AI 工作目录
+.workbuddy/
+.trae/
+
+# 本地临时测试脚本
+prototype/_test/
+
+# 系统 / 编辑器
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 依赖构建（如有）
+node_modules/
+dist/
+*.log
