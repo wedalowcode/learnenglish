@@ -162,7 +162,7 @@
         <div class="tab-pane" id="rp4">
           <div class="table-wrap">
             <table class="table compact">
-              <thead><tr><th>时间</th><th>体系</th><th>来源盒子 / 节点</th><th>结果</th><th>去向</th><th>教师</th></tr></thead>
+              <thead><tr><th>时间</th><th>体系</th><th>来源盒子 / 节点</th><th>结果</th><th>去向</th><th>教师</th><th>记录类型</th></tr></thead>
               <tbody id="rvRows"></tbody>
             </table>
           </div>
@@ -376,19 +376,26 @@ function renderAll() {
 
   const rv = lrs.map(r => ({
     at: r.at, sys: '莱特纳', from: Store.boxName(r.boxFrom), result: r.result,
-    to: Store.boxName(r.boxTo) + (r.nextDue ? ' · 下次 ' + r.nextDue : ''), teacher: r.teacherId
+    to: Store.boxName(r.boxTo) + (r.nextDue ? ' · 下次 ' + r.nextDue : ''),
+    teacher: r.teacherId,
+    correction: !!r.correction, correctionFrom: r.correctionFrom, correctionNote: r.correctionNote
   })).concat(p21.map(r => ({
     at: r.at, sys: '21 天', from: '第 ' + r.day + ' 天', result: r.result,
-    to: r.planName + ' · 仅有记录，不改盒子', teacher: r.teacherId
+    to: r.planName + ' · 仅有记录，不改盒子', teacher: r.teacherId,
+    correction: !!r.correction, correctionFrom: r.correctionFrom, correctionNote: r.correctionNote
   }))).sort((a, b) => a.at < b.at ? 1 : -1);
 
   Proto.renderRows('rvRows', rv, r => `
     <tr><td class="small">${r.at}</td>
       <td>${r.sys === '莱特纳' ? '<span class="tag tag-amber nodot">莱特纳</span>' : '<span class="tag tag-blue nodot">21 天</span>'}</td>
       <td class="small">${r.from}</td>
-      <td><span class="tag ${RESULT_TAG[r.result]} nodot">${RESULT_LABEL[r.result]}</span></td>
+      <td><span class="tag ${RESULT_TAG[r.result]} nodot">${RESULT_LABEL[r.result]}</span>
+        ${r.correction ? '<span class="tag tag-purple nodot" style="margin-left:4px">修正</span>' : ''}</td>
       <td class="small">${r.to}</td>
-      <td class="small">${(Store.teacher(r.teacher) || {}).name || r.teacher}</td></tr>`, 6,
+      <td class="small">${(Store.teacher(r.teacher) || {}).name || r.teacher}</td>
+      <td class="small muted">${r.correction
+        ? '由「' + RESULT_LABEL[r.correctionFrom] + '」修正，原因：' + (r.correctionNote || '—')
+        : '首次判断'}</td></tr>`, 7,
     '该单词还没有复习记录');
 
   renderList();

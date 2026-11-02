@@ -211,7 +211,12 @@ function cancelTask(id) {
   Proto.confirmBox('放弃本次训练任务',
     `任务 <b>${id}</b> 会被标记为「已取消」，已产生的单词判断记录<b>保留</b>在明细中，未完成单词仍为待训练状态。`,
     '确认放弃', () => {
-      Store.cancelTask(id);
+      try {
+        Store.cancelTask(id);
+      } catch (e) {
+        Proto.toast(e.message, 'err');
+        return;
+      }
       Proto.toast('任务已取消', 'warn');
       render();
     });

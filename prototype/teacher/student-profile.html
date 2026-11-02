@@ -22,7 +22,7 @@
         <div class="page-actions">
           <select class="select" style="width:170px" id="stuSel" onchange="switchStudent(this.value)"></select>
           <a class="btn" href="my-students.html">返回</a>
-          <a class="btn" href="article-training.html">文章训练</a>
+          <a class="btn" href="article-training.html" id="atLink">文章训练</a>
           <a class="btn" href="leitner.html" id="ltLink">莱特纳复习</a>
           <a class="btn btn-primary" href="word-training-setup.html" id="wtLink">单词训练</a>
         </div>
@@ -165,25 +165,13 @@
           <div class="table-wrap">
             <table class="table">
               <thead><tr><th>文章</th><th>教材 / 单元</th><th class="right">句子数</th><th class="right">训练次数</th>
-                <th>最近训练</th><th>完成情况</th><th>操作</th></tr></thead>
-              <tbody>
-                <tr><td class="strong">My First Day at School</td><td class="small">人教版 / Unit 1</td>
-                  <td class="right mono">8</td><td class="right mono">4</td><td class="small">2026-11-02</td>
-                  <td><span class="tag tag-green nodot">8/8 完成</span></td>
-                  <td><a class="btn-link" href="article-training.html">再训练</a></td></tr>
-                <tr><td class="strong">A Trip to the Library</td><td class="small">人教版 / Unit 2</td>
-                  <td class="right mono">6</td><td class="right mono">3</td><td class="small">2026-10-30</td>
-                  <td><span class="tag tag-amber nodot">4/6 完成</span></td>
-                  <td><a class="btn-link" href="article-training.html">继续训练</a></td></tr>
-                <tr><td class="strong">The Four Seasons</td><td class="small">外研版 / Module 1</td>
-                  <td class="right mono">7</td><td class="right mono">2</td><td class="small">2026-10-18</td>
-                  <td><span class="tag tag-green nodot">7/7 完成</span></td>
-                  <td><a class="btn-link" href="article-training.html">再训练</a></td></tr>
-              </tbody>
+                <th>最近训练</th><th>完成情况</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody id="articleRows"></tbody>
             </table>
           </div>
           <div class="alert alert-info mt12"><span class="ico">i</span>
-            <div>文章训练只记录听读完成情况，<b>不直接改变单词掌握状态</b>（本轮迭代未改动文章训练数据层）。</div></div>
+            <div>文章训练记录来自统一数据层：每个任务的完整音频、逐句播放/查看中文/跟读确认、教师评价都已落库，
+              刷新或换页后可继续未完成任务。文章训练<b>不改变单词掌握状态</b>。</div></div>
         </div>
 
         <!-- 报告 -->
@@ -233,7 +221,7 @@ function init() {
   document.getElementById('stuName').textContent = stu.name;
   document.getElementById('stuSub').textContent =
     `${stu.grade} · ${stu.book} · 当前教师 ${stu.teacherName} · 入学 ${stu.created} · 课时余额 ${stu.remain}`;
-  ['ltLink', 'wtLink', 'ltGo', 'planGo', 'newTask'].forEach(id => {
+  ['ltLink', 'wtLink', 'atLink', 'ltGo', 'planGo', 'newTask'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.href = el.getAttribute('href').split('?')[0] + '?student=' + studentId;
   });
@@ -329,19 +317,20 @@ function renderOverview() {
   });
   Store.leitnerTasksOf(studentId).forEach(t => {
     if (t.status !== '已完成') return;
+    const ls = Store.leitnerTaskStat(t.id);
     items.push({
       at: t.completedAt, type: '莱特纳复习', text: t.source,
-      n: t.stats.total + ' 词', tag: `认识 ${t.stats.yes}`, tag2: `待复习 ${t.stats.no + t.stats.mid}`, teacher: '李婉'
+      n: ls.total + ' 词', tag: `认识 ${ls.yes}`, tag2: `待复习 ${ls.no + ls.mid}`, teacher: '李婉'
     });
   });
   Store.plansOf(studentId).forEach(p => {
     Store.plan21Tasks(p.id).forEach(t => {
-      const recs = Store.plan21Records(p.id).filter(r => r.taskId === t.id);
-      if (!recs.length) return;
-      const yes = recs.filter(r => r.result === 'yes').length;
+      const st = Store.plan21TaskStat(t.id);
+      if (!st.done) return;
+      const lastAt = (Store.plan21TaskRecords(t.id).slice(-1)[0] || {}).at;
       items.push({
-        at: recs[recs.length - 1].at, type: '21 天复习', text: `${p.name} · 第 ${t.day} 天`,
-        n: recs.length + ' 词', tag: `认识 ${yes}`, tag2: `不认识 ${recs.length - yes}`, teacher: '李婉'
+        at: lastAt, type: '21 天复习', text: `${p.name} · 第 ${t.day} 天`,
+        n: st.done + ' 词', tag: `认识 ${st.yes}`, tag2: `不认识 ${st.no + st.mid}`, teacher: '李婉'
       });
     });
   });
@@ -455,7 +444,7 @@ function renderPlan() {
     ${prog.tasks.map(t => {
       const cls = t.status === 'done' ? 'done' : t.status === 'today' ? 'today'
         : t.status === 'miss' ? 'miss' : t.status === 'rest' ? '' : 'plan';
-      const done = Store.plan21Records(p.id).filter(r => r.taskId === t.id).length;
+      const done = Store.plan21TaskStat(t.id).done;
       return `<div class="day ${cls}"><b>D${t.day}</b>${t.date.slice(5)}
         ${t.wordIds.length ? `<div>${done}/${t.wordIds.length}</div>` : '<div>休息</div>'}</div>`;
     }).join('')}
@@ -463,8 +452,7 @@ function renderPlan() {
 
   const rows = [];
   prog.tasks.filter(t => t.wordIds.length).forEach(t => {
-    const recs = Store.plan21Records(p.id).filter(r => r.taskId === t.id);
-    rows.push({ p, t, done: recs.length });
+    rows.push({ p, t, done: Store.plan21TaskStat(t.id).done });
   });
   Proto.renderRows('planTaskRows', rows.slice(-10).reverse(), r => `
     <tr><td class="small">${r.p.name}</td><td>第 ${r.t.day} 天</td><td class="small">${r.t.date}</td>
@@ -515,6 +503,44 @@ function renderReports() {
   }, 7, '暂无已完成训练，报告从训练结果生成');
 }
 
+/* ---------- 文章训练 ---------- */
+function renderArticles() {
+  const tasks = Store.articleTasksOf(studentId);
+  // 按文章聚合：训练次数 / 最近一次 / 最近一次完成情况
+  const byArticle = {};
+  tasks.forEach(t => {
+    const k = t.articleId;
+    if (!byArticle[k]) byArticle[k] = { articleId: k, name: t.articleName, list: [] };
+    byArticle[k].list.push(t);
+  });
+  const ARTICLES = DB.articles || [];
+  const rows = Object.keys(byArticle).map(k => {
+    const g = byArticle[k];
+    const last = g.list[0];
+    const meta = ARTICLES.filter(a => a.id === last.articleId)[0] || {};
+    const d = Store.articleTaskDetails(last.id);
+    const done = d.filter(x => x.readDone).length;
+    const running = g.list.filter(x => x.status === '进行中').length;
+    return `<tr>
+      <td class="strong">${g.name}</td>
+      <td class="small">${meta.book || '—'} / ${meta.unit || '—'}</td>
+      <td class="right mono">${d.length}</td>
+      <td class="right mono">${g.list.length}</td>
+      <td class="small muted">${last.startedAt}</td>
+      <td><span class="tag ${done === d.length ? 'tag-green' : 'tag-amber'} nodot">${done}/${d.length} 完成</span></td>
+      <td><span class="tag ${last.status === '已完成' ? 'tag-green' : last.status === '进行中' ? 'tag-blue' : 'tag-amber'} nodot">${last.status}</span></td>
+      <td class="ops">${running
+        ? `<a class="btn-link" href="article-training.html?student=${studentId}&task=${last.id}">继续训练</a>`
+        : `<a class="btn-link" href="article-training.html?student=${studentId}&article=${last.articleId}">再训练</a>`}</td>
+    </tr>`;
+  }).join('');
+
+  const tb = document.getElementById('articleRows');
+  if (!tb) return;
+  tb.innerHTML = rows || `<tr><td colspan="8"><div class="empty"><p>该学员还没有文章训练记录</p>
+    <a class="btn btn-sm btn-primary" href="article-training.html?student=${studentId}">去训练</a></div></td></tr>`;
+}
+
 function renderAll() {
   renderStats();
   renderOverview();
@@ -522,6 +548,7 @@ function renderAll() {
   renderLeitner();
   renderPlan();
   renderTasks();
+  renderArticles();
   renderReports();
 }
 

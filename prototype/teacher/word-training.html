@@ -101,6 +101,34 @@
   </div>
 </div>
 
+<!-- 最后一轮复习修正 -->
+<div class="mask" id="finalFixModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">修正最后一轮复习结果</div>
+      <button class="modal-close" onclick="Proto.closeModal('finalFixModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div>修正会<b>追加修正记录</b>并保留原始判断，当前有效结果以最新一次为准。修正后仍不可重复提交。</div></div>
+      <div class="desc g2 mb16">
+        <div class="desc-item"><span class="k">单词</span><span class="v strong" id="ff_word">—</span></div>
+        <div class="desc-item"><span class="k">原始结果</span><span class="v" id="ff_from">—</span></div>
+      </div>
+      <div class="field mb12"><label>改为 <span class="req">*</span></label>
+        <div class="radio-row">
+          <label class="radio"><input type="radio" name="ffRes" value="yes"> 认识</label>
+          <label class="radio"><input type="radio" name="ffRes" value="mid"> 暂不确定</label>
+          <label class="radio"><input type="radio" name="ffRes" value="no"> 不认识</label>
+        </div></div>
+      <div class="field"><label>修正原因 <span class="req">*</span></label>
+        <input class="input" id="ff_note" placeholder="如：误点 / 学员当时注意力分散 / 教师重复提示"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('finalFixModal')">取消</button>
+      <button class="btn btn-primary" onclick="doFinalFix()">确认修正</button>
+    </div>
+  </div>
+</div>
+
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
@@ -268,9 +296,15 @@ function move(d) {
 }
 
 function judge(v) {
-  if (task.status !== '强化训练中') { Proto.toast('当前阶段不能修改强化训练结果', 'err'); return; }
   const id = curGroup()[wi];
-  Store.trainJudge(task.id, id, v, task.mode, gi);
+  try {
+    Store.trainJudge(task.id, id, v, task.mode, gi);
+  } catch (e) {
+    Proto.toast(e.message, 'err');
+    task = Store.trainTask(task.id);
+    render();
+    return;
+  }
   task = Store.trainTask(task.id);
 
   if (allDone(gi)) {
@@ -383,30 +417,38 @@ function renderFinal() {
       </div>
     </div>
 
-    ${cur ? `<div class="mt12 text-c"><span class="tag tag-${cur.result === 'yes' ? 'green' : cur.result === 'mid' ? 'amber' : 'red'} nodot">
-      本词已判断：${cur.result === 'yes' ? '认识' : cur.result === 'mid' ? '暂不确定' : '不认识'}（可重新选择覆盖本轮判断）</span></div>` : ''}
+    ${cur ? `<div class="mt12 text-c">
+      <span class="tag tag-${cur.result === 'yes' ? 'green' : cur.result === 'mid' ? 'amber' : 'red'} nodot">
+      本词已判断：${cur.result === 'yes' ? '认识' : cur.result === 'mid' ? '暂不确定' : '不认识'}</span>
+      ${cur.correctedFrom ? `<span class="tag tag-amber nodot" style="margin-left:6px">已修正（原：${cur.correctedFrom === 'yes' ? '认识' : cur.correctedFrom === 'mid' ? '暂不确定' : '不认识'}）</span>` : ''}
+      <div class="mt8"><button class="btn btn-sm" onclick="openFinalFix('${id}')">修正本次判断</button></div>
+    </div>` : ''}
 
-    <div class="judge-row g3 mt16">
+    ${cur ? '' : `<div class="judge-row g3 mt16">
       <button class="judge no" onclick="finalJudge('no')">不认识 <kbd>1</kbd></button>
       <button class="judge mid" onclick="finalJudge('mid')">暂不确定 <kbd>2</kbd></button>
       <button class="judge yes" onclick="finalJudge('yes')">认识 <kbd>3</kbd></button>
-    </div>
+    </div>`}
 
     <div class="flex jcb mt12">
       <button class="btn btn-ghost btn-sm" onclick="finalMove(-1)">← 上一个</button>
-      <div class="small muted">「暂不确定」<b>不会</b>被视为掌握</div>
+      <div class="small muted">「暂不确定」<b>不会</b>被视为掌握；已判断的单词只能修正</div>
       <button class="btn btn-ghost btn-sm" onclick="finalMove(1)">下一个 →</button>
     </div>`;
 }
 
 function finalReveal() { revealed = true; render(); }
 
+/** 最后一轮复习的首次判断（已判断必须走修正） */
 function finalJudge(v) {
   const id = ids[task.finalIndex || 0];
-  if (task.finalResults[id] && task.finalResults[id].result !== v) {
-    Store.finalCorrect(task.id, id, v);
-  } else {
+  try {
     Store.finalJudge(task.id, id, v);
+  } catch (e) {
+    Proto.toast(e.message, 'err');
+    task = Store.trainTask(task.id);
+    render();
+    return;
   }
   task = Store.trainTask(task.id);
   const nextIdx = (task.finalIndex || 0) + 1;
@@ -415,8 +457,45 @@ function finalJudge(v) {
     revealed = false;
     render();
   } else {
-    view = Object.keys(task.finalResults).length >= ids.length ? 'finalDone' : 'final';
+    const st = Store.trainTaskStat(task.id);
+    view = st.finalMissing.length ? 'final' : 'finalDone';
+    if (st.finalMissing.length) {
+      task = Store.setTaskPos(task.id, { finalIndex: ids.indexOf(st.finalMissing[0]) });
+      Proto.toast('还有 ' + st.finalMissing.length + ' 个单词未判断', 'warn');
+    }
     render();
+  }
+}
+
+/** 最后一轮复习修正：必填原因 */
+let finalFixTarget = null;
+function openFinalFix(wordId) {
+  finalFixTarget = wordId;
+  const cur = task.finalResults[wordId];
+  if (!cur) { Proto.toast('该单词尚无判断记录', 'err'); return; }
+  document.getElementById('ff_word').textContent = word(wordId).en;
+  document.getElementById('ff_from').textContent =
+    cur.result === 'yes' ? '认识' : cur.result === 'mid' ? '暂不确定' : '不认识';
+  document.querySelectorAll('input[name=ffRes]').forEach(r => r.checked = false);
+  document.getElementById('ff_note').value = '';
+  Proto.openModal('finalFixModal');
+}
+
+function doFinalFix() {
+  const picked = document.querySelector('input[name=ffRes]:checked');
+  const note = document.getElementById('ff_note').value.trim();
+  if (!picked) { Proto.toast('请选择修正后的结果', 'err'); return; }
+  if (!note) { Proto.toast('修正必须填写原因', 'err'); return; }
+  try {
+    Store.finalCorrect(task.id, finalFixTarget, picked.value, note);
+    Proto.closeModal('finalFixModal');
+    Proto.toast('已修正最后一轮复习结果（原始判断保留）', 'ok');
+    task = Store.trainTask(task.id);
+    finalFixTarget = null;
+    view = Store.trainTaskStat(task.id).finalMissing.length ? 'final' : 'finalDone';
+    render();
+  } catch (e) {
+    Proto.toast(e.message, 'err');
   }
 }
 
@@ -455,18 +534,21 @@ function renderFinalDone() {
             「暂不确定」保留待确认状态，不能直接视为掌握。</div></div>
 
         <div class="section-title">加入复习体系</div>
+        ${need === 0 ? `<div class="alert alert-warn mb16"><span class="ico">!</span>
+          <div><b>本次没有待复习单词</b>：${yes} 个队列单词全部通过最后复习。
+            提交后<b>不会</b>创建空 21 天计划，也<b>不会</b>生成空莱特纳任务，直接完成本次训练。</div></div>` : `
         <div class="alert alert-warn mb16"><span class="ico">!</span>
           <div>加入范围：本次 <b>待复习 ${need} 个</b>（不认识 ${no} + 暂不确定 ${mid}）。
             <b>本次通过</b>的 ${yes} 个单词不加入。<br>
-            两套体系是否默认勾选由<b>机构配置</b>决定，此处互不联动，可只选一套或都不选。</div></div>
+            两套体系是否默认勾选由<b>机构配置</b>决定，此处互不联动，可只选一套或都不选。</div></div>`}
 
-        <div class="field mb12">
+        <div class="field mb12" ${need === 0 ? 'style="display:none"' : ''}>
           <label class="check"><input type="checkbox" id="cb_leitner"> 加入 <b>莱特纳复习体系</b>（待复习单词进入红盒，今日起可复习）</label>
         </div>
-        <div class="field mb12">
+        <div class="field mb12" ${need === 0 ? 'style="display:none"' : ''}>
           <label class="check"><input type="checkbox" id="cb_21"> 加入 <b>21 天记忆复习体系</b>（以本次待复习单词生成独立 21 天计划）</label>
         </div>
-        <div class="field">
+        <div class="field" ${need === 0 ? 'style="display:none"' : ''}>
           <label class="check"><input type="checkbox" id="cb_green"> 同时将待复习单词放入 <b>绿盒子</b>（教师自主复习）</label>
         </div>
 
@@ -485,14 +567,28 @@ function renderFinalDone() {
 function submitAll() {
   if (submitting) { Proto.toast('正在提交，请勿重复点击', 'warn'); return; }
   submitting = true;
-  const res = Store.completeTask(task.id, {
-    joinLeitner: document.getElementById('cb_leitner').checked,
-    joinPlan21: document.getElementById('cb_21').checked,
-    joinGreen: document.getElementById('cb_green').checked,
-    by: '李婉'
-  });
+  let res;
+  try {
+    res = Store.completeTask(task.id, {
+      joinLeitner: document.getElementById('cb_leitner').checked,
+      joinPlan21: document.getElementById('cb_21').checked,
+      joinGreen: document.getElementById('cb_green').checked,
+      by: '李婉'
+    });
+  } catch (e) {
+    submitting = false;
+    Proto.toast(e.message, 'err');
+    return;
+  }
   submitting = false;
   if (!res.ok) { Proto.toast(res.reason, 'err'); return; }
+  if (res.noReview) {
+    Proto.toast(res.message, 'warn');
+  } else if (res.warnings && res.warnings.length) {
+    Proto.toast('已提交，但有 1 项未写入：' + res.warnings[0], 'warn');
+  } else {
+    Proto.toast('训练结果已提交并写入复习体系', 'ok');
+  }
   task = Store.trainTask(task.id);
   view = 'summary';
   render();
@@ -503,7 +599,7 @@ function renderSummary() {
   const no = ids.filter(id => task.finalResults[id] && task.finalResults[id].result === 'no').length;
   const mid = ids.filter(id => task.finalResults[id] && task.finalResults[id].result === 'mid').length;
   const j = task.joins || { leitner: [], plan21: [], green: [], planIds: [] };
-  const st = Store.student(task.studentId);
+  const empty = !!j.empty || (ids.length > 0 && no + mid === 0);
 
   el().innerHTML = `
     <div class="card">
@@ -521,19 +617,29 @@ function renderSummary() {
             <div class="stat-value" style="color:var(--warning)">${mid}</div></div>
         </div>
 
+        ${empty ? `<div class="alert alert-warn mb16"><span class="ico">!</span>
+          <div><b>本次没有待复习单词，无需加入复习体系。</b>队列中 ${yes} 个单词全部通过最后复习，
+            系统<b>没有</b>创建空的 21 天计划，也<b>没有</b>生成空的莱特纳任务。
+            通过的单词只记录在训练任务与单词档案中，不进入复习体系。</div></div>` : ''}
+
         <div class="section-title">本次写入的复习体系</div>
         <div class="table-wrap mb16">
           <table class="table compact">
             <thead><tr><th>体系</th><th class="right">单词数</th><th>结果</th></tr></thead>
             <tbody>
               <tr><td>莱特纳复习体系</td><td class="right mono">${j.leitner.length}</td>
-                <td>${j.leitner.length ? '<span class="tag tag-green nodot">已进入红盒，今日可复习</span>' : '<span class="tag tag-slate nodot">未加入</span>'}</td></tr>
+                <td>${j.leitner.length ? '<span class="tag tag-green nodot">已进入红盒，今日可复习</span>'
+                  : empty ? '<span class="tag tag-slate nodot">无待复习单词，未创建任务</span>'
+                  : '<span class="tag tag-slate nodot">未勾选加入</span>'}</td></tr>
               <tr><td>21 天记忆复习体系</td><td class="right mono">${j.plan21.length}</td>
                 <td>${j.plan21.length
                   ? `<span class="tag tag-green nodot">已生成独立计划 ${j.planIds.join('、')}</span>`
-                  : '<span class="tag tag-slate nodot">未加入</span>'}</td></tr>
+                  : empty ? '<span class="tag tag-slate nodot">无待复习单词，未创建计划</span>'
+                  : '<span class="tag tag-slate nodot">未勾选加入</span>'}</td></tr>
               <tr><td>绿盒子</td><td class="right mono">${j.green.length}</td>
-                <td>${j.green.length ? '<span class="tag tag-green nodot">已加入，教师自主复习</span>' : '<span class="tag tag-slate nodot">未加入</span>'}</td></tr>
+                <td>${j.green.length ? '<span class="tag tag-green nodot">已加入，教师自主复习</span>'
+                  : empty ? '<span class="tag tag-slate nodot">无待复习单词，未加入</span>'
+                  : '<span class="tag tag-slate nodot">未勾选加入</span>'}</td></tr>
             </tbody>
           </table>
         </div>
@@ -609,7 +715,12 @@ function doFix() {
   const note = document.getElementById('fixNote').value.trim();
   if (!to) { Proto.toast('请选择修正后的结果', 'err'); return; }
   if (!note) { Proto.toast('请填写修正原因', 'err'); return; }
-  Store.trainCorrect(task.id, fixTarget, to, note, task.results[fixTarget].groupIndex);
+  try {
+    Store.trainCorrect(task.id, fixTarget, to, note, (task.results[fixTarget] || {}).groupIndex);
+  } catch (e) {
+    Proto.toast(e.message, 'err');
+    return;
+  }
   task = Store.trainTask(task.id);
   Proto.closeModal('fixModal');
   Proto.toast('已追加修正记录，原始记录保留', 'ok');
@@ -639,7 +750,12 @@ function saveExit() {
 function doEnd() {
   const r = document.getElementById('endReason').value;
   if (!r) { Proto.toast('请选择结束原因', 'err'); return; }
-  Store.endTask(task.id, r, document.getElementById('endNote').value.trim());
+  try {
+    Store.endTask(task.id, r, document.getElementById('endNote').value.trim());
+  } catch (e) {
+    Proto.toast(e.message, 'err');
+    return;
+  }
   task = Store.trainTask(task.id);
   Proto.closeModal('endModal');
   view = 'interrupted';

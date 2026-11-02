@@ -16,7 +16,7 @@
   </div>
   <div class="grow"></div>
   <div class="text-r" style="margin-right:12px">
-    <div class="small muted">复习进度</div>
+    <div class="small muted">复习进度（唯一单词）</div>
     <div style="font-size:15px;font-weight:600" id="prog">0 / 0</div>
   </div>
   <button class="btn btn-sm" onclick="finishEarly()">结束</button>
@@ -24,6 +24,40 @@
 
 <div class="focus-main">
   <div class="focus-wrap" id="stage"></div>
+</div>
+
+<!-- 修正弹窗 -->
+<div class="mask" id="fixModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">修正莱特纳判断</div>
+      <button class="modal-close" onclick="Proto.closeModal('fixModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-warn mb16"><span class="ico">!</span>
+        <div>修正会<b>以本轮开始前的原盒子为基准重新计算</b>目标盒子，不会在当前盒子上再推一次，
+          因此不会导致盒子被重复推进。原始记录保留，另追加一条修正记录。</div></div>
+      <div class="desc g2 mb16">
+        <div class="desc-item"><span class="k">单词</span><span class="v strong" id="fx_word">—</span></div>
+        <div class="desc-item"><span class="k">原盒子 → 现盒子</span><span class="v" id="fx_box">—</span></div>
+        <div class="desc-item"><span class="k">原始结果</span><span class="v" id="fx_from">—</span></div>
+        <div class="desc-item"><span class="k">修正后新盒子</span><span class="v" id="fx_preview">—</span></div>
+      </div>
+      <div class="form-grid g1">
+        <div class="field"><label>修正为 <span class="req">*</span></label>
+          <div class="radio-row">
+            <label class="radio"><input type="radio" name="fxRes" value="yes" onchange="previewFix()"> 认识</label>
+            <label class="radio"><input type="radio" name="fxRes" value="mid" onchange="previewFix()"> 暂不确定</label>
+            <label class="radio"><input type="radio" name="fxRes" value="no" onchange="previewFix()"> 不认识</label>
+          </div></div>
+        <div class="field"><label>修正原因 <span class="req">*</span></label>
+          <textarea class="textarea" id="fx_note" placeholder="必填，例如：学员认读错误，实际不认识该词"></textarea>
+          <div class="tip">原因写入修正记录，可在单词档案的复习历史中追溯</div></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('fixModal')">取消</button>
+      <button class="btn btn-primary" onclick="doFix()">确认修正</button>
+    </div>
+  </div>
 </div>
 
 <script>window.PROTO_ROOT = '../';</script>
@@ -34,7 +68,8 @@
 const q = new URLSearchParams(location.search);
 const studentId = q.get('student') || 'S2026001';
 const scope = q.get('scope') || 'recommend';
-let task = null, list = [], i = 0, revealed = false, submitted = false;
+let task = null, list = [], i = 0, revealed = false;
+let fixTarget = null;
 
 const el = () => document.getElementById('stage');
 const w = id => Store.word(id);
@@ -61,12 +96,17 @@ function boot() {
   const tid = q.get('task');
   if (tid) {
     task = Store.leitnerTask(tid);
-    list = task ? task.wordIds.slice() : [];
+    if (!task) { renderEmpty('复习任务不存在'); return; }
+    list = task.wordIds.slice();
   } else {
     const s = scopeWords();
     list = s.words;
     if (!list.length) { renderEmpty(s.label); return; }
-    task = Store.createLeitnerTask(studentId, list, 'T001', s.label);
+    try {
+      task = Store.createLeitnerTask(studentId, list, 'T001', s.label);
+    } catch (e) {
+      renderEmpty(e.message); return;
+    }
   }
 
   const stu = Store.student(studentId);
@@ -75,13 +115,18 @@ function boot() {
     '任务 ' + task.id + ' · ' + task.source + ' · 共 ' + list.length + ' 个单词';
   document.getElementById('backLink').href = 'leitner.html?student=' + studentId;
 
-  const doneRecs = Store.leitnerRecordsOf(studentId).filter(r => r.taskId === task.id);
-  if (task.status === '已完成' || doneRecs.length >= list.length) { renderDone(); return; }
-  // 恢复到第一个未复习的单词
-  const doneSet = {};
-  doneRecs.forEach(r => doneSet[r.wordId] = 1);
-  const first = list.findIndex(id => !doneSet[id]);
-  i = first < 0 ? list.length - 1 : first;
+  if (task.status === '已完成') { renderDone(); return; }
+  refresh();
+}
+
+function stat() { return Store.leitnerTaskStat(task.id); }
+
+function refresh() {
+  task = Store.leitnerTask(task.id);
+  const s = stat();
+  if (s.complete) { if (task.status === '进行中') Store.finishLeitnerTask(task.id, 'T001'); task = Store.leitnerTask(task.id); renderDone(); return; }
+  const first = list.findIndex(id => !Store.leitnerFirstRecord(task.id, id));
+  if (first >= 0) i = first;
   render();
 }
 
@@ -91,7 +136,7 @@ function renderEmpty(label) {
     <div class="card">
       <div class="card-body">
         <div class="empty"><div class="e-ico">✓</div>
-          <p>${label} 没有需要复习的单词</p>
+          <p>${label}</p>
           <a class="btn btn-primary" href="leitner.html?student=${studentId}">返回盒子</a>
         </div>
       </div>
@@ -103,22 +148,23 @@ function render() {
   if (!id) { renderDone(); return; }
   const word = w(id);
   const st = Store.leitnerState(studentId, id) || {};
-  const box = st.box;
-  const recs = Store.leitnerRecordsOf(studentId);
-  const doneRecs = recs.filter(r => r.taskId === task.id);
-  const thisRec = doneRecs.filter(r => r.wordId === id)[0];
+  const s = stat();
+  const recs = Store.leitnerTaskRecords ? Store.leitnerTaskRecords(task.id) : [];
+  const thisRecs = recs.filter(r => r.wordId === id);
+  const first = Store.leitnerFirstRecord(task.id, id);
+  const eff = thisRecs.length ? thisRecs[thisRecs.length - 1] : null;
 
-  document.getElementById('prog').textContent = `${Math.min(i + 1, list.length)} / ${list.length}`;
+  document.getElementById('prog').textContent = `${s.done} / ${s.total}`;
 
   el().innerHTML = `
-    <div class="bar mb16"><i style="width:${(doneRecs.length / list.length * 100).toFixed(1)}%"></i></div>
+    <div class="bar mb16"><i style="width:${(s.done / s.total * 100).toFixed(1)}%"></i></div>
 
     <div class="flex jcb aic mb12">
       <div class="flex gap8 aic">
-        <span class="tag ${box === 'red' ? 'tag-red' : box === 'green' ? 'tag-green' : 'tag-amber'} nodot">来源：${Store.boxName(box)}</span>
+        <span class="tag ${st.box === 'red' ? 'tag-red' : st.box === 'green' ? 'tag-green' : 'tag-amber'} nodot">来源：${first ? Store.boxName(first.boxFrom) : Store.boxName(st.box)}</span>
         <span class="small muted">到期 ${st.dueAt || '手动'} · 上次结果：${st.lastResult || '—'}</span>
       </div>
-      <span class="small muted">已复习 ${doneRecs.length} / ${list.length}</span>
+      <span class="small muted">已复习 ${s.done} / ${s.total}${s.corrections ? ' · 修正 ' + s.corrections + ' 次' : ''}</span>
     </div>
 
     <div class="word-card">
@@ -133,19 +179,21 @@ function render() {
       </div>
     </div>
 
-    ${thisRec ? `<div class="mt12 text-c">
-      <span class="tag ${thisRec.result === 'yes' ? 'tag-green' : 'tag-red'} nodot">
-        本词本轮已判：${RESULT_LABEL[thisRec.result]}（${Store.boxName(thisRec.boxFrom)} → ${Store.boxName(thisRec.boxTo)}）</span>
+    ${first ? `<div class="mt12 text-c">
+      <span class="tag ${eff.result === 'yes' ? 'tag-green' : 'tag-red'} nodot">
+        本词本轮已判：${RESULT_LABEL[eff.result]}（${Store.boxName(eff.boxFrom)} → ${Store.boxName(eff.boxTo)}）</span>
+      ${eff.correction ? `<span class="tag tag-amber nodot" style="margin-left:6px">已修正（原：${RESULT_LABEL[eff.correctionFrom]}）</span>` : ''}
+      <div class="mt8"><button class="btn btn-sm" onclick="openFix('${id}')">修正本次判断</button></div>
     </div>` : ''}
 
-    <div class="judge-row">
+    ${first ? '' : `<div class="judge-row">
       <button class="judge no" onclick="judge('no')">不认识 <kbd>1</kbd></button>
       <button class="judge yes" onclick="judge('yes')">认识 <kbd>2</kbd></button>
-    </div>
+    </div>`}
 
     <div class="flex jcb mt12">
       <button class="btn btn-ghost btn-sm" onclick="prev()">← 上一个</button>
-      <div class="small muted">结果按<b>当前盒子配置</b>决定去向，每个单词单独记录</div>
+      <div class="small muted">结果按<b>当前盒子配置</b>决定去向，每个单词单独记录；已判词只能修正</div>
       <button class="btn btn-ghost btn-sm" onclick="next()">下一个 →</button>
     </div>
 
@@ -160,78 +208,145 @@ function next() { if (i < list.length - 1) { i++; revealed = false; render(); } 
 
 function judge(v) {
   const id = list[i];
-  const st = Store.leitnerState(studentId, id);
-  if (!st) { Proto.toast('该单词不在莱特纳体系中', 'err'); next(); return; }
-  const r = Store.leitnerJudge(task.id, id, v, 'T001');
-  Proto.toast(`${w(id).en}：${RESULT_LABEL[v]} · ${Store.boxName(r.from)} → ${Store.boxName(r.to)}` +
-    (r.nextDue ? ' · 下次 ' + r.nextDue : ''), v === 'yes' ? 'ok' : 'warn');
-
-  const doneRecs = Store.leitnerRecordsOf(studentId).filter(x => x.taskId === task.id);
-  if (doneRecs.length >= list.length) { renderDone(); return; }
-  const doneSet = {};
-  doneRecs.forEach(x => doneSet[x.wordId] = 1);
-  const first = list.findIndex((x, k) => k > i && !doneSet[x]);
-  const any = list.findIndex(x => !doneSet[x]);
-  i = first >= 0 ? first : (any >= 0 ? any : i);
+  try {
+    const r = Store.leitnerJudge(task.id, id, v, 'T001');
+    Proto.toast(`${w(id).en}：${RESULT_LABEL[v]} · ${Store.boxName(r.from)} → ${Store.boxName(r.to)}` +
+      (r.nextDue ? ' · 下次 ' + r.nextDue : ''), v === 'yes' ? 'ok' : 'warn');
+  } catch (e) {
+    Proto.toast(e.message, 'err');
+  }
   revealed = false;
-  render();
+  refresh();
 }
 
+/* ---------- 修正 ---------- */
+function openFix(wordId) {
+  fixTarget = wordId;
+  const first = Store.leitnerFirstRecord(task.id, wordId);
+  if (!first) { Proto.toast('该单词本轮尚无判断记录', 'err'); return; }
+  const st = Store.leitnerState(studentId, wordId) || {};
+  document.getElementById('fx_word').textContent = w(wordId).en;
+  const recs = Store.leitnerTaskRecords(task.id).filter(r => r.wordId === wordId);
+  const eff = recs[recs.length - 1];
+  document.getElementById('fx_box').textContent = Store.boxName(first.boxFrom) + ' → ' + Store.boxName(st.box);
+  document.getElementById('fx_from').textContent = RESULT_LABEL[eff.result];
+  document.getElementById('fx_preview').textContent = '选择结果后显示';
+  document.querySelectorAll('input[name=fxRes]').forEach(r => r.checked = false);
+  document.getElementById('fx_note').value = '';
+  Proto.openModal('fixModal');
+}
+
+function previewFix() {
+  const picked = document.querySelector('input[name=fxRes]:checked');
+  if (!picked || !fixTarget) return;
+  const first = Store.leitnerFirstRecord(task.id, fixTarget);
+  // 用与 Store 相同的算法预览目标盒子
+  const cfg = Store.leitnerConfig();
+  let to = first.boxFrom;
+  if (first.boxFrom !== 'green') {
+    const rule = first.boxFrom === 'red' ? cfg.red : cfg.yellow.filter(y => y.id === first.boxFrom)[0];
+    if (rule) to = picked.value === 'yes' ? rule.onCorrect : rule.onWrong;
+  }
+  document.getElementById('fx_preview').textContent =
+    Store.boxName(first.boxFrom) + ' → ' + Store.boxName(to);
+}
+
+function doFix() {
+  const picked = document.querySelector('input[name=fxRes]:checked');
+  const note = document.getElementById('fx_note').value.trim();
+  if (!picked) { Proto.toast('请选择修正后的结果', 'err'); return; }
+  if (!note) { Proto.toast('修正必须填写原因', 'err'); return; }
+  try {
+    const r = Store.leitnerCorrect(task.id, fixTarget, picked.value, note, 'T001');
+    Proto.closeModal('fixModal');
+    Proto.toast(`已修正：${RESULT_LABEL[r.result]} · ${Store.boxName(r.from)} → ${Store.boxName(r.to)}（未重复推进）`, 'ok');
+    fixTarget = null;
+    refresh();
+  } catch (e) {
+    Proto.toast(e.message, 'err');
+  }
+}
+
+/* ---------- 结束 ---------- */
 function finishEarly() {
+  const s = stat();
   Proto.confirmBox('结束复习',
-    '已完成的结果会保存，未复习的单词仍留在原盒子且仍为到期状态。',
+    `已复习 ${s.done} / ${s.total} 个单词，未复习的 ${s.remain} 个仍留在原盒子且仍为到期状态。`,
     '结束', () => finishNow());
 }
 
 function finishNow() {
+  const s = stat();
+  if (s.complete) { finishAndShow(); return; }
+  const r = Store.finishLeitnerTask(task.id, 'T001');
+  if (!r.ok) Proto.toast(r.reason, 'warn');
+  task = Store.leitnerTask(task.id);
+  renderDone();
+}
+
+function finishAndShow() {
   if (task.status === '进行中') Store.finishLeitnerTask(task.id, 'T001');
+  task = Store.leitnerTask(task.id);
   renderDone();
 }
 
 function renderDone() {
-  if (task.status === '进行中') Store.finishLeitnerTask(task.id, 'T001');
-  const recs = Store.leitnerRecordsOf(studentId).filter(r => r.taskId === task.id);
-  const yes = recs.filter(r => r.result === 'yes').length;
-  const no = recs.filter(r => r.result !== 'yes').length;
-  document.getElementById('prog').textContent = `${recs.length} / ${list.length}`;
+  if (task.status === '进行中') {
+    const r = Store.finishLeitnerTask(task.id, 'T001');
+    if (!r.ok) Proto.toast(r.reason, 'warn');
+    task = Store.leitnerTask(task.id);
+  }
+  const s = Store.leitnerTaskStat(task.id);
+  const recs = Store.leitnerTaskRecords(task.id).filter(r => !r.correction);
+  document.getElementById('prog').textContent = `${s.done} / ${s.total}`;
 
   const rows = recs.map(r => {
-    const up = r.boxTo !== r.boxFrom;
+    const all = Store.leitnerTaskRecords(task.id).filter(x => x.wordId === r.wordId);
+    const eff = all[all.length - 1];
+    const fixed = all.filter(x => x.correction).length;
+    const up = eff.boxTo !== eff.boxFrom;
     return `<tr>
       <td class="strong">${w(r.wordId).en}</td>
-      <td class="small">${Store.boxName(r.boxFrom)}</td>
-      <td><span class="tag ${r.result === 'yes' ? 'tag-green' : 'tag-red'} nodot">${RESULT_LABEL[r.result]}</span></td>
-      <td class="small">${up ? '<span style="color:var(--success)">' : ''}${Store.boxName(r.boxTo)}${up ? ' ↑</span>' : ''}</td>
-      <td class="small muted">${r.nextDue || '—'}</td>
-      <td class="small muted">${r.at.slice(11)}</td>
+      <td class="small">${Store.boxName(eff.boxFrom)}</td>
+      <td><span class="tag ${eff.result === 'yes' ? 'tag-green' : 'tag-red'} nodot">${RESULT_LABEL[eff.result]}</span>
+        ${fixed ? `<span class="tag tag-amber nodot" style="margin-left:4px">修正 ${fixed}</span>` : ''}</td>
+      <td class="small">${up ? '<span style="color:var(--success)">' : ''}${Store.boxName(eff.boxTo)}${up ? ' ↑</span>' : ''}</td>
+      <td class="small muted">${eff.nextDue || '—'}</td>
+      <td class="small muted">${eff.at.slice(11)}</td>
+      <td class="ops"><button class="btn-link" onclick="openFix('${r.wordId}')">修正</button></td>
     </tr>`;
   }).join('');
 
   el().innerHTML = `
     <div class="card">
-      <div class="card-head"><div class="card-title">本轮复习完成</div>
-        <span class="tag tag-green nodot">${recs.length} / ${list.length} 个单词</span></div>
+      <div class="card-head"><div class="card-title">本轮复习${s.complete ? '完成' : '已保存（未全部完成）'}</div>
+        <span class="tag ${s.complete ? 'tag-green' : 'tag-amber'} nodot">唯一单词 ${s.done} / ${s.total}</span></div>
       <div class="card-body">
-        <div class="grid g3 mb16">
-          <div class="card stat"><div class="stat-label">复习单词</div><div class="stat-value">${recs.length}</div>
+        <div class="grid g4 mb16">
+          <div class="card stat"><div class="stat-label">复习单词</div><div class="stat-value">${s.done}</div>
             <div class="stat-foot">任务 ${task.id}</div></div>
           <div class="card stat"><div class="stat-label">认识</div>
-            <div class="stat-value" style="color:var(--success)">${yes}</div></div>
-          <div class="card stat"><div class="stat-label">不认识</div>
-            <div class="stat-value" style="color:var(--danger)">${no}</div></div>
+            <div class="stat-value" style="color:var(--success)">${s.yes}</div></div>
+          <div class="card stat"><div class="stat-label">不认识 / 暂不确定</div>
+            <div class="stat-value" style="color:var(--danger)">${s.no} / ${s.mid}</div></div>
+          <div class="card stat"><div class="stat-label">修正次数</div><div class="stat-value">${s.corrections}</div>
+            <div class="stat-foot">原始记录 ${s.records} 条</div></div>
         </div>
+
+        ${s.complete ? '' : `<div class="alert alert-warn mb12"><span class="ico">!</span>
+          <div>本轮<b>未全部完成</b>：剩余 ${s.remain} 个单词仍留在原盒子且仍为到期状态，可再次发起复习。</div></div>`}
 
         <div class="alert alert-info mb12"><span class="ico">i</span>
           <div><b>盒子变化按当前配置计算：</b>认识 → 配置的「答对去向」，不认识 → 配置的「答错去向」，
-            下次到期时间 = 今天 + 目标盒子间隔天数。配置可在「莱特纳复习 → 盒子配置」中调整。</div></div>
+            下次到期时间 = 今天 + 目标盒子间隔天数。完成数按唯一单词统计，修正不会重复推进盒子。</div></div>
         <div class="alert alert-warn mb16"><span class="ico">!</span>
           <div>本次结果<b>只改变莱特纳体系</b>的盒子与复习计划，<b>不影响</b> 21 天记忆复习体系的计划、节点与记录。</div></div>
 
         <div class="section-title">单词去向</div>
         <div class="table-wrap mb16">
           <table class="table compact">
-            <thead><tr><th>单词</th><th>原盒子</th><th>本次结果</th><th>新盒子</th><th>下次到期</th><th>时间</th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="6"><div class="empty"><p>本轮没有完成任何单词</p></div></td></tr>'}</tbody>
+            <thead><tr><th>单词</th><th>原盒子</th><th>本次结果</th><th>新盒子</th><th>下次到期</th><th>时间</th><th style="width:70px">操作</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="7"><div class="empty"><p>本轮没有完成任何单词</p></div></td></tr>'}</tbody>
           </table>
         </div>
 

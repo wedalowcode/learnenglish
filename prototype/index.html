@@ -203,7 +203,7 @@
           </div>
         </div>
         <div>
-          <div class="section-title">本轮数据模型（14 张表）</div>
+          <div class="section-title">数据模型（21 张业务表）</div>
           <div class="note-list" style="columns:2;column-gap:18px">
             <div>words 基础单词</div>
             <div>wordbooks 词库</div>
@@ -213,19 +213,114 @@
             <div>trainDetails 训练明细</div>
             <div>studentWordStates 学员单词档案</div>
             <div>leitnerStates 莱特纳状态</div>
+            <div>leitnerConfig 盒子配置</div>
             <div>leitnerTasks 复习任务</div>
             <div>leitnerRecords 复习记录</div>
             <div>leitnerOps 手动操作留痕</div>
             <div>plans21 / plan21Tasks / plan21Records</div>
+            <div>articleTasks 文章训练任务</div>
+            <div>articleTaskDetails 文章逐句明细</div>
+            <div>flows / accounts 课时流水与账户</div>
+            <div>flowReversals 冲正记录</div>
+            <div>familyChecks 家庭复习勾选</div>
           </div>
           <div class="alert alert-warn mt16"><span class="ico">!</span>
-            <div>五层数据<b>分开存储</b>：基础单词、学员状态、莱特纳、21 天、训练过程。
+            <div>各层数据<b>分开存储</b>：基础单词、学员状态、莱特纳、21 天、训练过程、文章训练、财务。
               任一体系复习只改自己的层，不会覆盖另一体系。</div></div>
           <div class="flex gap8 mt12" style="flex-wrap:wrap">
             <a class="btn btn-sm" href="teacher/word-training-setup.html">A 单词训练</a>
             <a class="btn btn-sm" href="teacher/leitner.html">B 莱特纳</a>
             <a class="btn btn-sm" href="teacher/memory21.html">C 21 天</a>
             <a class="btn btn-sm" href="teacher/word-detail.html">D 单词档案</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head">
+      <div class="card-title">第二轮迭代 · 数据层业务完整性加固
+        <span class="hint">校验下沉到 Store · 首次判断与修正分离 · 历史只追加</span></div>
+      <div class="flex gap8">
+        <span class="badge-role">存储版本 v3</span>
+        <button class="btn btn-sm" onclick="resetStore()">重置演示数据</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div><b>本轮不新增页面，只修数据完整性。</b>所有业务校验都在 <code>Store</code> 层执行——
+          页面按钮被绕过、脚本被直接调用、重复点击都不会产生脏数据。
+          任何 <code>ok:true</code> 都代表数据已真实写入并持久化。</div></div>
+
+      <div class="grid g2" style="gap:16px">
+        <div>
+          <div class="section-title">修了什么</div>
+          <div class="note-list">
+            <div style="margin-bottom:9px"><b>1 · 复习记录重复提交</b><br>
+              21 天与莱特纳：单词必须属于当前任务 / 节点；同任务同词只能一条<b>首次判断</b>记录；
+              重复提交被拒绝并提示走「修正」。完成度按<b>唯一 wordId</b> 统计，修正不会虚增。</div>
+            <div style="margin-bottom:9px"><b>2 · 修正与首次判断分离</b><br>
+              新增 <code>plan21Correct / leitnerCorrect</code>；训练侧 <code>trainCorrect / finalCorrect</code>
+              统一<b>必填原因</b>。修正追加新记录，保留原结果、新结果、时间、教师、原因。</div>
+            <div style="margin-bottom:9px"><b>3 · 莱特纳修正不重复推进盒子</b><br>
+              修正以「本轮开始前的原盒子」为基准重算目标盒子，不在已推进的盒子上再推一次。</div>
+            <div style="margin-bottom:9px"><b>4 · 空复习计划</b><br>
+              全部通过时<b>不创建</b>空 21 天计划、不生成空任务、不写 undefined；
+              <code>create21Plan</code> 拒绝空清单并自动去重、过滤无效单词。</div>
+            <div style="margin-bottom:9px"><b>5 · 文章训练接入 Store</b><br>
+              新增 <code>articleTasks / articleTaskDetails</code>；逐句播放、查看中文、跟读确认逐条落库；
+              刷新可继续，提前结束保留已有记录，<b>不触碰单词掌握状态</b>。</div>
+            <div style="margin-bottom:9px"><b>6 · 家长端复习词表</b><br>
+              删除页面私有 <code>WORDS</code> 数组，改为按学员从 Store 派生，支持体系 / 词库筛选；
+              家庭复习勾选写入辅助表，<b>不改变</b>正式学习状态；打印内容与筛选结果一致。</div>
+            <div><b>7 · 课时冲正</b><br>
+              校验原流水存在 / 类型可冲正 / 金额不超原始变动 / 禁止重复全额冲正；
+              新增方向相反流水、更新账户余额、原流水保留、记录原因与关联流水。</div>
+          </div>
+        </div>
+        <div>
+          <div class="section-title">端到端验证路径</div>
+          <div class="note-list">
+            <div style="margin-bottom:10px">
+              <b>① 21 天重复提交与修正</b><br>
+              21 天记忆复习 → 执行今日 → 判一个词 → 刷新页面（进度保持、该词显示"已判"）
+              → 该词只出现「修正本次判断」→ 改判并填原因 → 完成页看"记录数 2 条 / 修正 1 次"，
+              唯一完成数不变。
+            </div>
+            <div style="margin-bottom:10px">
+              <b>② 莱特纳修正不重复推进</b><br>
+              莱特纳复习 → 红盒子复习 → 判「认识」（红 → 黄盒1）→ 修正为「不认识」
+              → 盒子回到<b>红盒</b>而不是黄盒2 → 完成页「单词去向」显示原盒子=红盒。
+            </div>
+            <div style="margin-bottom:10px">
+              <b>③ 全部通过不建空计划</b><br>
+              单词训练走完最后一轮复习 → 全部判「认识」→ 结果确认页提示"没有待复习单词"
+              → 提交 → 汇总页显示未创建计划，去 21 天页确认计划数未增加。
+            </div>
+            <div style="margin-bottom:10px">
+              <b>④ 文章训练刷新恢复</b><br>
+              学员档案 → 文章训练 → 选文章 → 播完整音频 → 逐句完成 2 句 → 刷新浏览器
+              → 回到同一任务、已完成句数仍是 2 → 提前结束 → 档案页看到"2 / 8 完成 · 提前结束"。
+            </div>
+            <div style="margin-bottom:10px">
+              <b>⑤ 家长端复习词表</b><br>
+              家长端待复习单词表 → 切「莱特纳 / 21 天 / 全部」与词库筛选（行数随之变化）
+              → 勾选家庭复习 → 刷新仍在 → 回教师端确认单词状态与盒子<b>未变</b>。
+            </div>
+            <div>
+              <b>⑥ 课时冲正</b><br>
+              财务管理 → 课时流水 → 对 FL20261029006 点「冲正」→ 填课时/原因/说明
+              → 确认 → 列表多一条 +1 的冲正流水、账户余额 +1、下方冲正记录表新增一行；
+              再点该流水显示「已冲正」，重复冲正被拒绝。
+            </div>
+          </div>
+          <div class="flex gap8 mt12" style="flex-wrap:wrap">
+            <a class="btn btn-sm" href="teacher/memory21-review.html">① 21 天复习</a>
+            <a class="btn btn-sm" href="teacher/leitner-review.html?scope=red">② 莱特纳复习</a>
+            <a class="btn btn-sm" href="teacher/article-training.html">④ 文章训练</a>
+            <a class="btn btn-sm" href="parent/review-words.html">⑤ 家长端词表</a>
+            <a class="btn btn-sm" href="admin/hour-flow.html">⑥ 课时流水</a>
           </div>
         </div>
       </div>

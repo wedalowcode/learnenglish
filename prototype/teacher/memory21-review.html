@@ -16,7 +16,7 @@
   </div>
   <div class="grow"></div>
   <div class="text-r" style="margin-right:12px">
-    <div class="small muted">复习进度</div>
+    <div class="small muted">复习进度（唯一单词）</div>
     <div style="font-size:15px;font-weight:600" id="prog">0 / 0</div>
   </div>
   <button class="btn btn-sm" onclick="finishEarly()">结束</button>
@@ -26,6 +26,38 @@
   <div class="focus-wrap" id="stage"></div>
 </div>
 
+<!-- 修正弹窗 -->
+<div class="mask" id="fixModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">修正 21 天复习结果</div>
+      <button class="modal-close" onclick="Proto.closeModal('fixModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-warn mb16"><span class="ico">!</span>
+        <div>修正<b>不会删除或覆盖原始记录</b>：系统会追加一条修正记录，保留原始结果、修改结果、修改时间与教师，
+          当前有效结果以最新一条为准。修正<b>不改变</b>节点完成度（同一个单词只算一个）。</div></div>
+      <div class="desc g2 mb16">
+        <div class="desc-item"><span class="k">单词</span><span class="v strong" id="fx_word">—</span></div>
+        <div class="desc-item"><span class="k">原始结果</span><span class="v" id="fx_from">—</span></div>
+      </div>
+      <div class="form-grid g1">
+        <div class="field"><label>修正为 <span class="req">*</span></label>
+          <div class="radio-row" id="fx_opts">
+            <label class="radio"><input type="radio" name="fxRes" value="yes"> 认识</label>
+            <label class="radio"><input type="radio" name="fxRes" value="mid"> 暂不确定</label>
+            <label class="radio"><input type="radio" name="fxRes" value="no"> 不认识</label>
+          </div></div>
+        <div class="field"><label>修正原因 <span class="req">*</span></label>
+          <textarea class="textarea" id="fx_note" placeholder="必填，例如：学员口误，实际认识该词"></textarea>
+          <div class="tip">原因将写入修正记录，可在单词档案的复习历史中追溯</div></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('fixModal')">取消</button>
+      <button class="btn btn-primary" onclick="doFix()">确认修正</button>
+    </div>
+  </div>
+</div>
+
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
@@ -33,11 +65,13 @@
 <script>
 const q = new URLSearchParams(location.search);
 let task = null, plan = null, list = [], i = 0, revealed = false;
+let fixTarget = null;
 
 const el = () => document.getElementById('stage');
 const w = id => Store.word(id);
 const RESULT_LABEL = { yes: '认识', no: '不认识', mid: '暂不确定' };
 
+/* ---------- 加载 ---------- */
 function boot() {
   const tid = q.get('task');
   task = tid ? Store.plan21Task(tid) : null;
@@ -56,18 +90,19 @@ function boot() {
     `计划：${plan.name} · 第 ${task.day} 天 · 今日任务 ${list.length} 个`;
   document.getElementById('backLink').href = 'memory21.html?student=' + plan.studentId + '&plan=' + plan.id;
 
-  const done = doneSet();
-  if (done.size >= list.length) { renderDone(); return; }
-  const first = list.findIndex(id => !done.has(id));
-  i = first < 0 ? list.length - 1 : first;
+  refresh();
+}
+
+function refresh() {
+  task = Store.plan21Task(task.id);
+  const stat = Store.plan21TaskStat(task.id);
+  if (stat.complete) { renderDone(); return; }
+  const first = list.findIndex(id => !Store.plan21FirstRecord(task.id, id));
+  if (first >= 0 && first !== i) i = first;
   render();
 }
 
-function doneSet() {
-  const s = new Set();
-  Store.plan21Records(plan.id).filter(r => r.taskId === task.id).forEach(r => s.add(r.wordId));
-  return s;
-}
+function stat() { return Store.plan21TaskStat(task.id); }
 
 function renderEmpty(msg) {
   el().innerHTML = `<div class="card"><div class="card-body">
@@ -75,19 +110,21 @@ function renderEmpty(msg) {
     <a class="btn btn-primary" href="memory21.html">返回计划</a></div></div></div>`;
 }
 
+/* ---------- 复习主界面 ---------- */
 function render() {
   const id = list[i];
   if (!id) { renderDone(); return; }
   const word = w(id);
-  const done = doneSet();
-  const recs = Store.plan21Records(plan.id, id).sort((a, b) => a.at < b.at ? 1 : -1);
-  const thisRec = recs.filter(r => r.taskId === task.id)[0];
-  const lastRec = recs[0];
+  const s = stat();
+  const recs = Store.plan21TaskRecords(task.id).filter(r => r.wordId === id);
+  const thisRec = Store.plan21FirstRecord(task.id, id);
+  const eff = recs.length ? recs[recs.length - 1] : null;
+  const allRecs = Store.plan21Records(plan.id, id).sort((a, b) => a.at < b.at ? 1 : -1);
 
-  document.getElementById('prog').textContent = `${Math.min(i + 1, list.length)} / ${list.length}`;
+  document.getElementById('prog').textContent = `${s.done} / ${s.total}`;
 
   el().innerHTML = `
-    <div class="bar mb16"><i style="width:${(done.size / list.length * 100).toFixed(1)}%"></i></div>
+    <div class="bar mb16"><i style="width:${(s.done / s.total * 100).toFixed(1)}%"></i></div>
 
     <div class="alert alert-info mb16"><span class="ico">i</span>
       <div>当前处于 <b>21 天记忆复习</b> 体系（计划：${plan.name} · 第 ${task.day} 天）。
@@ -95,7 +132,8 @@ function render() {
 
     <div class="flex jcb aic mb12">
       <span class="tag tag-blue nodot">计划第 ${task.day} 天 · ${task.date}</span>
-      <span class="small muted">上次结果：${lastRec ? RESULT_LABEL[lastRec.result] + ' · ' + lastRec.at.slice(5, 10) : '—'} · 已复习 ${done.size} / ${list.length}</span>
+      <span class="small muted">上次结果：${allRecs.length ? RESULT_LABEL[allRecs[0].result] + ' · ' + allRecs[0].at.slice(5, 10) : '—'}
+        · 已复习唯一单词 ${s.done} / ${s.total}${s.corrections ? ' · 修正 ' + s.corrections + ' 次' : ''}</span>
     </div>
 
     <div class="word-card">
@@ -110,17 +148,21 @@ function render() {
       </div>
     </div>
 
-    ${thisRec ? `<div class="mt12 text-c"><span class="tag ${thisRec.result === 'yes' ? 'tag-green' : 'tag-red'} nodot">
-      本词今日已判：${RESULT_LABEL[thisRec.result]}（${thisRec.at.slice(11)}）</span></div>` : ''}
+    ${thisRec ? `<div class="mt12 text-c">
+      <span class="tag ${eff.result === 'yes' ? 'tag-green' : 'tag-red'} nodot">
+        本词今日已判：${RESULT_LABEL[eff.result]}（${eff.at.slice(11)}）</span>
+      ${eff.correction ? `<span class="tag tag-amber nodot" style="margin-left:6px">已修正（原：${RESULT_LABEL[eff.correctionFrom]}）</span>` : ''}
+      <div class="mt8"><button class="btn btn-sm" onclick="openFix('${id}')">修正本次判断</button></div>
+    </div>` : ''}
 
-    <div class="judge-row">
+    ${thisRec ? '' : `<div class="judge-row">
       <button class="judge no" onclick="ans('no')">不认识 <kbd>1</kbd></button>
       <button class="judge yes" onclick="ans('yes')">认识 <kbd>2</kbd></button>
-    </div>
+    </div>`}
 
     <div class="flex jcb mt12">
       <button class="btn btn-ghost btn-sm" onclick="prev()">← 上一个</button>
-      <div class="small muted">记录：是否认识 / 时间 / 教师 / 轮次 / 计划节点</div>
+      <div class="small muted">已判断的单词不再接受普通提交，只能走「修正」</div>
       <button class="btn btn-ghost btn-sm" onclick="next()">下一个 →</button>
     </div>
 
@@ -133,59 +175,114 @@ function reveal() { revealed = true; render(); }
 function prev() { if (i > 0) { i--; revealed = false; render(); } }
 function next() { if (i < list.length - 1) { i++; revealed = false; render(); } }
 
+/* ---------- 首次判断 ---------- */
 function ans(v) {
   const id = list[i];
-  Store.plan21Judge(task.id, id, v, 'T001');
-  task = Store.plan21Task(task.id);
+  try {
+    Store.plan21Judge(task.id, id, v, 'T001');
+  } catch (e) {
+    Proto.toast(e.message, 'err');
+    refresh();
+    return;
+  }
   Proto.toast(`${w(id).en}：${RESULT_LABEL[v]} · 已写入第 ${task.day} 天任务（不改莱特纳盒子）`,
     v === 'yes' ? 'ok' : 'warn');
-
-  const done = doneSet();
-  if (done.size >= list.length) { renderDone(); return; }
-  const first = list.findIndex((x, k) => k > i && !done.has(x));
-  const any = list.findIndex(x => !done.has(x));
-  i = first >= 0 ? first : (any >= 0 ? any : i);
   revealed = false;
-  render();
+  refresh();
 }
 
+/* ---------- 修正 ---------- */
+function openFix(wordId) {
+  fixTarget = wordId;
+  const cur = Store.plan21FirstRecord(task.id, wordId);
+  if (!cur) { Proto.toast('该单词尚无判断记录，请先做首次判断', 'err'); return; }
+  const eff = Store.plan21TaskRecords(task.id).filter(r => r.wordId === wordId).slice(-1)[0];
+  document.getElementById('fx_word').textContent = w(wordId).en;
+  document.getElementById('fx_from').textContent = RESULT_LABEL[eff.result];
+  document.querySelectorAll('input[name=fxRes]').forEach(r => r.checked = false);
+  document.getElementById('fx_note').value = '';
+  Proto.openModal('fixModal');
+}
+
+function doFix() {
+  const picked = document.querySelector('input[name=fxRes]:checked');
+  const note = document.getElementById('fx_note').value.trim();
+  if (!picked) { Proto.toast('请选择修正后的结果', 'err'); return; }
+  if (!note) { Proto.toast('修正必须填写原因', 'err'); return; }
+  try {
+    const r = Store.plan21Correct(task.id, fixTarget, picked.value, note, 'T001');
+    Proto.closeModal('fixModal');
+    Proto.toast(`已修正：${RESULT_LABEL[r.from]} → ${RESULT_LABEL[r.to]}（已追加修正记录）`, 'ok');
+    fixTarget = null;
+    refresh();
+  } catch (e) {
+    Proto.toast(e.message, 'err');
+  }
+}
+
+/* ---------- 结束 ---------- */
 function finishEarly() {
+  const s = stat();
   Proto.confirmBox('结束复习',
-    '已完成的结果会保存到本节点，未复习的单词仍保留在今日任务中。', '结束', () => finishNow());
+    `已完成 ${s.done} / ${s.total} 个单词，未复习的 ${s.remain} 个仍保留为未完成状态。`, '结束', () => finishNow());
 }
 
 function finishNow() {
-  Store.finish21Task(task.id);
-  task = Store.plan21Task(task.id);
+  const s = stat();
+  if (s.complete) { renderDone(); return; }
+  const r = Store.finish21Task(task.id, { reason: '教师提前结束' });
+  if (!r.ok) Proto.toast(r.reason, 'warn');
   renderDone();
 }
 
+/* ---------- 完成页 ---------- */
 function renderDone() {
-  Store.finish21Task(task.id);
   task = Store.plan21Task(task.id);
-  const recs = Store.plan21Records(plan.id).filter(r => r.taskId === task.id);
-  const yes = recs.filter(r => r.result === 'yes').length;
-  const no = recs.length - yes;
+  const s = Store.plan21TaskStat(task.id);
   const prog = Store.plan21Progress(plan);
-  document.getElementById('prog').textContent = `${recs.length} / ${list.length}`;
+  document.getElementById('prog').textContent = `${s.done} / ${s.total}`;
+
+  const rows = list.map(id => {
+    const recs = Store.plan21TaskRecords(task.id).filter(r => r.wordId === id);
+    const eff = recs.length ? recs[recs.length - 1] : null;
+    const wd = w(id);
+    const fixed = recs.filter(r => r.correction).length;
+    return `<tr>
+      <td class="strong">${wd.en}</td>
+      <td class="small">${wd.mean.map(m => m.cn).join('；')}</td>
+      <td>${eff ? `<span class="tag ${eff.result === 'yes' ? 'tag-green' : 'tag-red'} nodot">${RESULT_LABEL[eff.result]}</span>` : '<span class="muted small">未复习</span>'}</td>
+      <td class="mono small">${recs.length ? recs.length + ' 条' : '—'}</td>
+      <td class="small">${fixed ? `<span class="tag tag-amber nodot">修正 ${fixed} 次</span>` : '<span class="muted">—</span>'}</td>
+      <td class="small muted">${eff ? eff.at.slice(11) : '—'}</td>
+      <td class="ops">${recs.length ? `<button class="btn-link" onclick="openFix('${id}')">修正</button>` : '<span class="muted small">—</span>'}</td>
+    </tr>`;
+  }).join('');
 
   el().innerHTML = `
     <div class="card">
-      <div class="card-head"><div class="card-title">第 ${task.day} 天复习完成</div>
-        <span class="tag tag-green nodot">${recs.length} / ${list.length} 个单词</span></div>
+      <div class="card-head"><div class="card-title">第 ${task.day} 天复习${s.complete ? '完成' : '已保存（未全部完成）'}</div>
+        <span class="tag ${s.complete ? 'tag-green' : 'tag-amber'} nodot">
+          唯一单词 ${s.done} / ${s.total}</span></div>
       <div class="card-body">
-        <div class="grid g3 mb16">
-          <div class="card stat"><div class="stat-label">今日任务</div><div class="stat-value">${list.length}</div>
+        <div class="grid g4 mb16">
+          <div class="card stat"><div class="stat-label">今日任务</div><div class="stat-value">${s.total}</div>
             <div class="stat-foot">${task.date}</div></div>
           <div class="card stat"><div class="stat-label">认识</div>
-            <div class="stat-value" style="color:var(--success)">${yes}</div></div>
-          <div class="card stat"><div class="stat-label">不认识</div>
-            <div class="stat-value" style="color:var(--danger)">${no}</div></div>
+            <div class="stat-value" style="color:var(--success)">${s.yes}</div></div>
+          <div class="card stat"><div class="stat-label">不认识 / 暂不确定</div>
+            <div class="stat-value" style="color:var(--danger)">${s.no} / ${s.mid}</div></div>
+          <div class="card stat"><div class="stat-label">修正次数</div>
+            <div class="stat-value">${s.corrections}</div>
+            <div class="stat-foot">原始记录 ${s.records} 条</div></div>
         </div>
 
+        ${s.complete ? '' : `<div class="alert alert-warn mb12"><span class="ico">!</span>
+          <div>本节点<b>尚未全部完成</b>：剩余 ${s.remain} 个单词仍保留为未完成状态，
+            节点状态为「${task.status === 'miss' ? '漏做' : '今日未完成'}」，可稍后继续。</div></div>`}
+
         <div class="alert alert-info mb12"><span class="ico">i</span>
-          <div>已保存<b>单词级</b>复习结果并更新第 ${task.day} 天节点完成情况。
-            后续节点是否因此调整（如答错追加复习）由<b>机构配置</b>决定。</div></div>
+          <div>完成度按<b>唯一 wordId</b> 计算，修正记录不会让完成数虚增。
+            已完成的单词只能通过「修正」修改，原始判断记录永久保留。</div></div>
         <div class="alert alert-warn mb16"><span class="ico">!</span>
           <div>本次结果<b>不影响莱特纳盒子状态</b>：莱特纳体系的盒子、到期日与复习计划保持不变。</div></div>
 
@@ -200,18 +297,8 @@ function renderDone() {
         <div class="section-title">本节点单词结果</div>
         <div class="table-wrap mb16">
           <table class="table compact">
-            <thead><tr><th>单词</th><th>中文释义</th><th>本次结果</th><th>轮次</th><th>时间</th></tr></thead>
-            <tbody>
-              ${list.map(id => {
-                const r = recs.filter(x => x.wordId === id)[0];
-                const wd = Store.word(id);
-                return `<tr><td class="strong">${wd.en}</td>
-                  <td class="small">${wd.mean.map(m => m.cn).join('；')}</td>
-                  <td>${r ? `<span class="tag ${r.result === 'yes' ? 'tag-green' : 'tag-red'} nodot">${RESULT_LABEL[r.result]}</span>` : '<span class="muted small">未复习</span>'}</td>
-                  <td class="mono small">${r ? '第 ' + r.round + ' 次' : '—'}</td>
-                  <td class="small muted">${r ? r.at.slice(11) : '—'}</td></tr>`;
-              }).join('')}
-            </tbody>
+            <thead><tr><th>单词</th><th>中文释义</th><th>当前有效结果</th><th>记录数</th><th>修正</th><th>最后操作</th><th style="width:70px">操作</th></tr></thead>
+            <tbody>${rows}</tbody>
           </table>
         </div>
 

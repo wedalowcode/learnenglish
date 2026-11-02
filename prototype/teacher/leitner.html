@@ -229,7 +229,11 @@ function render() {
   const due = Store.leitnerDue(studentId);
   const st = Store.stats(studentId);
   const tasks = Store.leitnerTasksOf(studentId);
-  const todayRecs = Store.leitnerRecordsOf(studentId).filter(r => r.at.slice(0, 10) === Store.TODAY);
+  const todayAll = Store.leitnerRecordsOf(studentId).filter(r => r.at.slice(0, 10) === Store.TODAY);
+  // 完成数按唯一 wordId 统计：修正记录不会让"今日已完成"虚增
+  const effToday = {};
+  todayAll.forEach(r => { effToday[r.wordId] = r; });
+  const todayRecs = Object.keys(effToday).map(id => effToday[id]);
   const lastTask = tasks.filter(t => t.status === '已完成')[0];
 
   document.getElementById('statCards').innerHTML = `
@@ -246,7 +250,7 @@ function render() {
       <div class="stat-foot">红 ${st.leitnerRed} · 黄 ${st.leitnerYellow} · 绿 ${st.leitnerGreen}（不重复计数）</div></div>
     <div class="card stat"><div class="stat-label">最近一次复习</div>
       <div class="stat-value" style="font-size:16px">${lastTask ? lastTask.completedAt.slice(5) : '—'}</div>
-      <div class="stat-foot">${lastTask ? `认识 ${lastTask.stats.yes} · 不认识 ${lastTask.stats.no} · 不确定 ${lastTask.stats.mid}` : '暂无复习记录'}</div></div>`;
+      <div class="stat-foot">${lastTask ? `认识 ${(lastTask.stats || {}).yes || 0} · 不认识 ${(lastTask.stats || {}).no || 0} · 不确定 ${(lastTask.stats || {}).mid || 0}` : '暂无复习记录'}</div></div>`;
 
   renderRed(due);
   renderYellow(due);
@@ -329,14 +333,15 @@ function renderGreen(due) {
 function renderHistory(tasks) {
   document.getElementById('histCount').textContent = `共 ${tasks.length} 次`;
   Proto.renderRows('histRows', tasks.slice(0, 8), t => {
-    const recs = Store.leitnerRecordsOf(studentId).filter(r => r.taskId === t.id);
+    const s = Store.leitnerTaskStat(t.id);
     return `<tr>
       <td class="small">${t.completedAt || t.createdAt}</td>
       <td class="small">${t.source}</td>
-      <td class="right mono">${t.wordIds.length}</td>
-      <td class="right mono" style="color:var(--success)">${recs.filter(r => r.result === 'yes').length}</td>
-      <td class="right mono" style="color:var(--danger)">${recs.filter(r => r.result !== 'yes').length}</td>
-      <td><span class="tag ${t.status === '已完成' ? 'tag-green' : 'tag-blue'}">${t.status}</span></td>
+      <td class="right mono">${s.total}</td>
+      <td class="right mono" style="color:var(--success)">${s.yes}</td>
+      <td class="right mono" style="color:var(--danger)">${s.no + s.mid}</td>
+      <td><span class="tag ${t.status === '已完成' ? 'tag-green' : 'tag-blue'}">${t.status}</span>
+        ${s.corrections ? `<span class="tag tag-purple nodot" style="margin-left:4px">修正 ${s.corrections}</span>` : ''}</td>
       <td class="ops"><button class="btn-link" onclick="openTaskDetail('${t.id}')">明细</button></td>
     </tr>`;
   }, 7, '还没有复习记录，完成一次复习后在此查看');
@@ -452,17 +457,20 @@ function startRecommend() {
 function openWordHistory(wordId) {
   const recs = Store.leitnerRecordsOf(studentId, wordId);
   const s = Store.leitnerState(studentId, wordId);
+  const firstOnly = recs.filter(r => !r.correction);
   document.getElementById('hmTitle').textContent = en(wordId) + ' · 复习历史';
   document.getElementById('hmInfo').innerHTML = `
     <div class="grid g4 mb16">
       <div><div class="stat-label">当前盒子</div><div style="font-weight:600">${s ? Store.boxName(s.box) : '—'}</div></div>
       <div><div class="stat-label">到期时间</div><div style="font-weight:600">${s && s.dueAt ? s.dueAt : '手动'}</div></div>
       <div><div class="stat-label">最近结果</div><div style="font-weight:600">${s ? s.lastResult : '—'}</div></div>
-      <div><div class="stat-label">复习次数</div><div style="font-weight:600">${recs.length}</div></div>
+      <div><div class="stat-label">复习次数</div><div style="font-weight:600">${firstOnly.length}</div>
+        <div class="small muted">另有修正 ${recs.length - firstOnly.length} 次</div></div>
     </div>`;
   Proto.renderRows('hmRows', recs, r => `
     <tr><td class="small">${r.at}</td><td class="small">${Store.boxName(r.boxFrom)}</td>
-      <td><span class="tag ${RESULT_TAG[r.result]} nodot">${RESULT_LABEL[r.result]}</span></td>
+      <td><span class="tag ${RESULT_TAG[r.result]} nodot">${RESULT_LABEL[r.result]}</span>
+        ${r.correction ? '<span class="tag tag-purple nodot" style="margin-left:4px">修正</span>' : ''}</td>
       <td class="small">${Store.boxName(r.boxTo)}</td><td class="small muted">${r.nextDue || '—'}</td>
       <td class="small">${(Store.teacher(r.teacherId) || {}).name || r.teacherId}</td></tr>`,
     6, '该单词还没有复习记录');
@@ -472,16 +480,24 @@ function openWordHistory(wordId) {
 function openTaskDetail(taskId) {
   const t = Store.leitnerTask(taskId);
   const recs = Store.leitnerRecordsOf(studentId).filter(r => r.taskId === taskId);
+  const st = Store.leitnerTaskStat(taskId);
   document.getElementById('hmTitle').textContent = '复习任务 ' + taskId + ' 明细';
   document.getElementById('hmInfo').innerHTML = `
     <div class="desc g3 mb16">
       <div class="desc-item"><span class="k">来源</span><span class="v">${t.source}</span></div>
       <div class="desc-item"><span class="k">开始时间</span><span class="v">${t.createdAt}</span></div>
       <div class="desc-item"><span class="k">完成时间</span><span class="v">${t.completedAt || '—'}</span></div>
+    </div>
+    <div class="desc g4 mb16">
+      <div class="desc-item"><span class="k">任务单词</span><span class="v mono">${st.total}</span></div>
+      <div class="desc-item"><span class="k">已完成（唯一）</span><span class="v mono">${st.done}</span></div>
+      <div class="desc-item"><span class="k">未完成</span><span class="v mono">${st.remain}</span></div>
+      <div class="desc-item"><span class="k">修正次数</span><span class="v mono">${st.corrections}</span></div>
     </div>`;
   Proto.renderRows('hmRows', recs, r => `
     <tr><td class="small">${r.at}</td><td class="small">${Store.boxName(r.boxFrom)}</td>
-      <td><span class="tag ${RESULT_TAG[r.result]} nodot">${RESULT_LABEL[r.result]}</span></td>
+      <td><span class="tag ${RESULT_TAG[r.result]} nodot">${RESULT_LABEL[r.result]}</span>
+        ${r.correction ? '<span class="tag tag-purple nodot" style="margin-left:4px">修正</span>' : ''}</td>
       <td class="small">${Store.boxName(r.boxTo)}</td><td class="small muted">${r.nextDue || '—'}</td>
       <td class="small">${(Store.teacher(r.teacherId) || {}).name || r.teacherId}</td></tr>`, 6, '暂无单词记录');
   Proto.openModal('histModal');

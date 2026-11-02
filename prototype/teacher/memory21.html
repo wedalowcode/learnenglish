@@ -234,7 +234,7 @@ function render() {
   document.getElementById('strategyName').textContent = plan.strategy;
 
   document.getElementById('days').innerHTML = p.tasks.map(t => {
-    const doneN = Store.plan21Records(plan.id).filter(r => r.taskId === t.id).length;
+    const doneN = Store.plan21TaskStat(t.id).done;
     const cls = t.status === 'done' ? 'done' : t.status === 'today' ? 'today'
       : t.status === 'miss' ? 'miss' : t.status === 'rest' ? '' : 'plan';
     return `<div class="day ${cls}" onclick="showNode('${t.id}')">
@@ -283,12 +283,13 @@ function render() {
   const hist = p.tasks.filter(t => t.wordIds.length && t.date <= Store.TODAY).sort((a, b) => b.day - a.day);
   Proto.renderRows('histRows', hist, t => {
     const recs = Store.plan21Records(plan.id).filter(r => r.taskId === t.id);
-    const rate = t.wordIds.length ? Math.round(recs.length / t.wordIds.length * 100) : 0;
+    const stat = Store.plan21TaskStat(t.id);
+    const rate = t.wordIds.length ? Math.round(stat.done / t.wordIds.length * 100) : 0;
     return `<tr>
       <td class="small">${t.date}</td>
       <td>第 ${t.day} 天</td>
       <td class="right mono">${t.wordIds.length}</td>
-      <td class="right mono">${recs.length}</td>
+      <td class="right mono">${stat.done}</td>
       <td><span class="bar-row" style="width:110px"><span class="bar ${rate === 100 ? 'green' : 'amber'}" style="flex:1"><i style="width:${rate}%"></i></span><span class="val">${rate}%</span></span></td>
       <td>${t.status === 'done' ? '<span class="tag tag-green">已完成</span>'
         : t.status === 'miss' ? '<span class="tag tag-red">已逾期</span>'
@@ -319,12 +320,14 @@ function render() {
 function showNode(taskId) {
   const t = Store.plan21Task(taskId);
   const recs = Store.plan21Records(plan.id).filter(r => r.taskId === taskId);
+  const stat = Store.plan21TaskStat(taskId);
+  const eff = Store.plan21Effective(taskId);
   const words = t.wordIds.map(id => {
-    const r = recs.filter(x => x.wordId === id)[0];
-    return `${en(id)}${r ? '（' + RESULT_LABEL[r.result] + '）' : ''}`;
+    const r = eff[id];
+    return `${en(id)}${r ? '（' + RESULT_LABEL[r.result] + (r.correction ? '·已修正' : '') + '）' : ''}`;
   });
   Proto.confirmBox(`第 ${t.day} 天 · ${t.date}`,
-    `${t.wordIds.length ? `计划单词 ${t.wordIds.length} 个，已完成 ${recs.length} 个` : '休息日，无复习任务'}
+    `${t.wordIds.length ? `计划单词 ${t.wordIds.length} 个，已完成 ${stat.done} 个${stat.corrections ? '（含修正 ' + stat.corrections + ' 次）' : ''}` : '休息日，无复习任务'}
      ${words.length ? '<br><br>' + words.join('、') : ''}
      ${t.wordIds.length && t.date === Store.TODAY ? '<br><br><a class="btn btn-sm btn-primary" href="memory21-review.html?task=' + t.id + '">进入今日复习</a>' : ''}`,
     '知道了', () => {});
@@ -387,13 +390,19 @@ function createPlan() {
   if (!name) { Proto.toast('请填写计划名称', 'err'); return; }
   if (!start) { Proto.toast('请选择开始日期', 'err'); return; }
   if (!ids.length) { Proto.toast('请至少选择一个单词', 'err'); return; }
-  const p = Store.create21Plan({
-    studentId: sid, name, startDate: start, wordIds: ids,
-    strategy: document.getElementById('npStrategy').value,
-    note: document.getElementById('npNote').value.trim(), by: '李婉'
-  });
+  let p;
+  try {
+    p = Store.create21Plan({
+      studentId: sid, name, startDate: start, wordIds: ids,
+      strategy: document.getElementById('npStrategy').value,
+      note: document.getElementById('npNote').value.trim(), by: '李婉'
+    });
+  } catch (e) {
+    Proto.toast(e.message, 'err');
+    return;
+  }
   Proto.closeModal('planModal');
-  Proto.toast('计划已创建：' + p.name + '（' + ids.length + ' 词）', 'ok');
+  Proto.toast('计划已创建：' + p.name + '（' + p.wordIds.length + ' 词）', 'ok');
   setTimeout(() => location.href = 'memory21.html?student=' + sid + '&plan=' + p.id, 400);
 }
 
