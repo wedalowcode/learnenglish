@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>词库管理</title>
 <link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .bk-name { font-weight: 600; color: var(--text); }
+  .bk-name:hover { color: var(--primary); }
+  .srcfile { font-size: 11.5px; color: var(--text-3); max-width: 190px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
+  .num-b { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .reuse { font-size: 11px; color: var(--text-3); }
+</style>
 </head>
 <body>
 <div class="layout">
@@ -17,48 +25,75 @@
         <div>
           <div class="crumb">资源中心<span class="sep">/</span>词库管理</div>
           <h1 class="page-title">词库管理</h1>
-          <div class="page-sub">词库与单词是多对多关系 · 词库内单独保存单词排序</div>
+          <div class="page-sub">一份 Excel 一个词库 · 基础单词跨词库复用 · 词库内排序独立 · 学员学习状态不受词库影响</div>
         </div>
         <div class="page-actions">
           <a class="btn" href="import.html">批量导入</a>
-          <button class="btn btn-primary" onclick="openForm()">+ 新增词库</button>
+          <button class="btn btn-primary" onclick="openForm()">+ 新建空词库</button>
         </div>
       </div>
 
+      <div class="grid g4 mb16">
+        <div class="card stat"><div class="stat-label">词库数量</div>
+          <div class="stat-value" id="sBooks">0<small>个</small></div>
+          <div class="stat-foot" id="sBooksFoot"></div></div>
+        <div class="card stat"><div class="stat-label">词库关联总数</div>
+          <div class="stat-value" id="sLinks">0<small>条</small></div>
+          <div class="stat-foot">一个单词可被多个词库引用</div></div>
+        <div class="card stat"><div class="stat-label">基础单词</div>
+          <div class="stat-value" id="sWords">0<small>个</small></div>
+          <div class="stat-foot" id="sWordsFoot"></div></div>
+        <div class="card stat"><div class="stat-label">最近导入</div>
+          <div class="stat-value" id="sImport" style="font-size:19px">—</div>
+          <div class="stat-foot" id="sImportFoot">暂无导入记录</div></div>
+      </div>
+
       <div class="card filter">
-        <div class="field"><label>词库名称</label><input class="input" id="kw" placeholder="输入名称" oninput="render()"></div>
+        <div class="field"><label>词库名称 / 来源文件</label>
+          <input class="input" id="kw" placeholder="输入关键词" oninput="render()"></div>
+        <div class="field"><label>分类</label>
+          <select class="select" id="cat" onchange="render()"><option value="">全部</option></select></div>
+        <div class="field"><label>适用学段</label>
+          <select class="select" id="stage" onchange="render()"><option value="">全部</option></select></div>
         <div class="field"><label>教材版本</label>
-          <select class="select" id="bk" onchange="render()"><option value="">全部</option><option>人教版</option><option>外研版</option></select></div>
-        <div class="field"><label>年级</label>
-          <select class="select" id="gr" onchange="render()"><option value="">全部</option>
-            <option>三年级</option><option>五年级</option><option>六年级</option><option>七年级</option><option>八年级</option><option>九年级</option></select></div>
-        <div class="field"><label>学期</label>
-          <select class="select" onchange="render()"><option value="">全部</option><option>上学期</option><option>下学期</option></select></div>
+          <select class="select" id="bk" onchange="render()"><option value="">全部</option></select></div>
         <div class="field"><label>状态</label>
-          <select class="select" id="st" onchange="render()"><option value="">全部</option><option>启用</option><option>停用</option></select></div>
-        <div class="filter-actions"><button class="btn btn-primary" onclick="render()">查询</button>
-          <button class="btn" onclick="reset()">重置</button></div>
+          <select class="select" id="st" onchange="render()"><option value="">全部</option>
+            <option>启用</option><option>停用</option></select></div>
+        <div class="filter-actions"><button class="btn" onclick="resetFilter()">重置</button></div>
       </div>
 
       <div class="card mt16">
-        <div class="card-head"><div class="card-title">词库列表<span class="hint" id="cnt"></span></div>
-          <span class="small muted">基础单词复用，学员学习状态独立记录</span></div>
+        <div class="card-head">
+          <div class="card-title">词库列表<span class="hint" id="cnt"></span></div>
+          <span class="small muted" id="sortTip"></span>
+        </div>
         <div class="card-body tight">
           <div class="table-wrap">
             <table class="table">
-              <thead><tr><th style="width:74px">编号</th><th>词库名称</th><th>教材版本</th><th>年级</th><th>学期</th>
-                <th>单元</th><th class="right">单词数量</th><th>创建时间</th><th>状态</th><th style="width:190px">操作</th></tr></thead>
+              <thead><tr>
+                <th style="width:70px">编号</th>
+                <th>词库名称</th>
+                <th style="width:86px">分类</th>
+                <th style="width:120px">适用</th>
+                <th style="width:80px">版本</th>
+                <th style="width:150px">来源文件</th>
+                <th class="right" style="width:88px">单词数</th>
+                <th style="width:110px">导入时间</th>
+                <th style="width:64px">状态</th>
+                <th style="width:170px">操作</th>
+              </tr></thead>
               <tbody id="rows"></tbody>
             </table>
           </div>
-          <div class="pager"><span>共 <b id="total">6</b> 条</span>
-            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
-          </div>
+          <div class="pager"><span id="totalTip">共 0 条</span></div>
         </div>
       </div>
 
       <div class="alert alert-info mt16"><span class="ico">i</span>
-        <div>同一个单词可以出现在不同教材版本、年级、学期或单元的多个词库中，但<b>基础单词信息尽量复用</b>；学员对该单词的学习状态独立记录，不随词库共用。</div>
+        <div>同一个单词可以出现在多个词库中，系统只保存<b>一条基础单词</b>和<b>多条词库关联</b>；
+          词库内排序写在关联上，调整本词库顺序不会影响其他词库。停用词库只影响新建训练时的可选范围，
+          已发生的训练记录和学员复习任务<b>不受影响</b>。</div>
       </div>
 
     </main>
@@ -67,32 +102,37 @@
 
 <div class="mask" id="formModal">
   <div class="modal wide">
-    <div class="modal-head"><div class="modal-title" id="ftitle">新增词库</div>
-      <button class="modal-close" onclick="Proto.closeModal('formModal')">×</button></div>
+    <div class="modal-head">
+      <div class="modal-title" id="ftitle">新建空词库</div>
+      <button class="modal-close" onclick="Proto.closeModal('formModal')">×</button>
+    </div>
     <div class="modal-body">
       <div class="form-grid g3">
         <div class="field full"><label>词库名称 <span class="req">*</span></label>
-          <input class="input" placeholder="如 人教版 七年级上 Unit 1 词汇"></div>
-        <div class="field"><label>教材版本 <span class="req">*</span></label>
-          <select class="select"><option>人教版</option><option>外研版</option><option>其他版本</option></select></div>
-        <div class="field"><label>年级 <span class="req">*</span></label>
-          <select class="select"><option>三年级</option><option>四年级</option><option>五年级</option>
-            <option>六年级</option><option>七年级</option><option>八年级</option><option>九年级</option></select></div>
-        <div class="field"><label>学期 <span class="req">*</span></label>
-          <select class="select"><option>上学期</option><option>下学期</option></select></div>
-        <div class="field"><label>单元</label>
-          <select class="select"><option>Unit 1</option><option>Unit 2</option><option>Unit 3</option><option>Unit 4</option></select></div>
-        <div class="field"><label>状态</label>
-          <select class="select"><option>启用</option><option>停用</option></select></div>
-        <div class="field"><label>排序</label><input class="input" type="number" value="10"></div>
-        <div class="field full"><label>说明</label><textarea class="textarea" placeholder="选填"></textarea></div>
+          <input class="input" id="fName" placeholder="如 人教版 七年级上 Unit 1 词汇"></div>
+        <div class="field"><label>分类</label>
+          <select class="select" id="fCat"></select></div>
+        <div class="field"><label>适用学段</label>
+          <select class="select" id="fStage"><option value="">未指定</option></select></div>
+        <div class="field"><label>教材版本</label>
+          <input class="input" id="fVersion" placeholder="可留空"></div>
+        <div class="field"><label>年级</label>
+          <input class="input" id="fGrade" placeholder="可留空"></div>
+        <div class="field"><label>学期</label>
+          <select class="select" id="fTerm"><option value="">未指定</option>
+            <option>上学期</option><option>下学期</option></select></div>
+        <div class="field"><label>组织方式</label>
+          <select class="select" id="fOrg"><option value="">未指定</option></select></div>
+        <div class="field full"><label>说明</label>
+          <textarea class="textarea" id="fDesc" placeholder="选填"></textarea></div>
       </div>
       <div class="alert alert-info mt16"><span class="ico">i</span>
-        <div>创建空词库后，可在词库详情中逐个添加单词，或使用 Excel 批量导入。</div></div>
+        <div>词库只填名称即可创建，教材 / 年级 / 学期都允许留空。
+          建好后可在词库详情里逐个添加单词，或回到「批量导入」用 Excel 写入。</div></div>
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="Proto.closeModal('formModal')">取消</button>
-      <button class="btn btn-primary" onclick="Proto.closeModal('formModal');Proto.toast('词库已创建','ok')">保存</button>
+      <button class="btn btn-primary" onclick="saveForm()">保存</button>
     </div>
   </div>
 </div>
@@ -100,65 +140,170 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'admin', active: 'wordbook-list' });
 
-function render() {
-  const kw = document.getElementById('kw').value.trim();
-  const bk = document.getElementById('bk').value;
-  const gr = document.getElementById('gr').value;
-  const st = document.getElementById('st').value;
-  const rows = DB.books.filter(b => {
-    if (kw && !b.name.includes(kw)) return false;
-    if (bk && b.book !== bk) return false;
-    if (gr && b.grade !== gr) return false;
-    if (st && b.status !== st) return false;
-    return true;
-  });
-  document.getElementById('cnt').textContent = `筛选结果 ${rows.length} 条`;
-  document.getElementById('total').textContent = rows.length;
+let editingId = '';
 
-  Proto.renderRows('rows', rows, b => `
-    <tr>
-      <td class="mono small">${b.id}</td>
-      <td class="strong"><a href="wordbook-detail.html">${b.name}</a></td>
-      <td>${b.book}</td>
-      <td>${b.grade}</td>
-      <td>${b.term}</td>
-      <td>${b.unit}</td>
-      <td class="right mono">${b.count}</td>
-      <td class="small muted">${b.created}</td>
-      <td>${b.status === '启用' ? '<span class="tag tag-green">启用</span>' : '<span class="tag tag-slate">停用</span>'}</td>
-      <td class="ops">
-        <a class="btn-link" href="wordbook-detail.html">详情</a>
-        <button class="btn-link" onclick="openForm('${b.name}')">编辑</button>
-        <a class="btn-link" href="import.html">导入</a>
-        <button class="btn-link ${b.status === '启用' ? 'danger' : ''}"
-          onclick="toggle('${b.name}','${b.status}')">${b.status === '启用' ? '停用' : '启用'}</button>
-      </td>
-    </tr>`, 10, '没有符合条件的词库');
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function opt(v, cur) {
+  return `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(v)}</option>`;
 }
 
-function reset() {
+/* 筛选项来自真实数据，不写死 */
+function fillSelects() {
+  const f = Store.wordbookFacets();
+  const cat = document.getElementById('cat');
+  cat.innerHTML = '<option value="">全部</option>' + f.categories.map(c => opt(c, cat.value)).join('');
+  const st = document.getElementById('stage');
+  st.innerHTML = '<option value="">全部</option>' + f.schoolStages.map(c => opt(c, st.value)).join('');
+  const bk = document.getElementById('bk');
+  bk.innerHTML = '<option value="">全部</option>' + f.bookVersions.map(c => opt(c, bk.value)).join('');
+
+  document.getElementById('fCat').innerHTML = Store.WB_CATEGORIES.map(c => `<option>${c}</option>`).join('');
+  document.getElementById('fStage').innerHTML = '<option value="">未指定</option>'
+    + Store.WB_STAGES.map(c => `<option>${c}</option>`).join('');
+  document.getElementById('fOrg').innerHTML = '<option value="">未指定</option>'
+    + Store.WB_ORG.map(c => `<option>${c}</option>`).join('');
+}
+
+function render() {
+  const q = {
+    kw: document.getElementById('kw').value.trim(),
+    category: document.getElementById('cat').value,
+    schoolStage: document.getElementById('stage').value,
+    bookVersion: document.getElementById('bk').value,
+    status: document.getElementById('st').value
+  };
+  const list = Store.searchWordbooks(q);
+
+  document.getElementById('cnt').textContent = `筛选结果 ${list.length} 个`;
+  document.getElementById('totalTip').textContent = `共 ${list.length} 个词库`;
+  document.getElementById('sortTip').textContent = '按导入时间倒序';
+
+  document.getElementById('rows').innerHTML = list.length ? list.map(b => {
+    const applied = [b.schoolStage, b.grade, b.term].filter(Boolean).join(' / ') || '<span class="muted">未指定</span>';
+    const stTag = b.status === '启用' ? '<span class="tag tag-green nodot">启用</span>'
+      : '<span class="tag tag-slate nodot">停用</span>';
+    return `<tr>
+      <td class="mono small">${b.id}</td>
+      <td><a class="bk-name" href="wordbook-detail.html?id=${b.id}">${esc(b.name)}</a>
+        <div class="reuse">${b.category}${b.organization ? ' · ' + b.organization : ''}</div></td>
+      <td class="small">${esc(b.category)}</td>
+      <td class="small">${applied}</td>
+      <td class="small">${esc(b.bookVersion) || '<span class="muted">—</span>'}</td>
+      <td><span class="srcfile" title="${esc(b.sourceFile)}">${esc(b.sourceFile) || '<span class="muted">人工创建</span>'}</span></td>
+      <td class="right num-b">${b.wordCount}</td>
+      <td class="small muted">${esc((b.createdAt || '').slice(0, 16))}</td>
+      <td>${stTag}</td>
+      <td class="ops">
+        <a class="btn-link" href="wordbook-detail.html?id=${b.id}">详情</a>
+        <button class="btn-link" onclick="openForm('${b.id}')">编辑</button>
+        <a class="btn-link" href="import.html?book=${b.id}">继续导入</a>
+        <button class="btn-link ${b.status === '启用' ? 'danger' : ''}"
+          onclick="toggle('${b.id}')">${b.status === '启用' ? '停用' : '启用'}</button>
+      </td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="10"><div class="empty"><p>没有符合条件的词库</p>
+      <a class="btn btn-sm" href="import.html">去批量导入</a></div></td></tr>`;
+
+  renderStats(list);
+}
+
+function renderStats(list) {
+  const all = Store.wordbooks();
+  const links = all.reduce((n, b) => n + b.wordCount, 0);
+  const words = Store.db.words.length;
+  document.getElementById('sBooks').innerHTML = all.length + '<small>个</small>';
+  document.getElementById('sBooksFoot').textContent =
+    '启用 ' + all.filter(b => b.status === '启用').length + ' · 停用 ' + all.filter(b => b.status === '停用').length;
+  document.getElementById('sLinks').innerHTML = links + '<small>条</small>';
+  document.getElementById('sWords').innerHTML = words + '<small>个</small>';
+  document.getElementById('sWordsFoot').textContent = links > words
+    ? '复用节省 ' + (links - words) + ' 条重复单词' : '暂无重复引用';
+
+  const jobs = Store.importJobs();
+  if (jobs.length) {
+    const j = jobs[0];
+    document.getElementById('sImport').textContent = j.createdAt.slice(5, 16);
+    document.getElementById('sImportFoot').textContent =
+      j.fileName + ' · ' + (j.status === '已入库' ? j.stats.newLinks + ' 条关联' : j.status);
+  } else {
+    document.getElementById('sImport').textContent = '—';
+    document.getElementById('sImportFoot').textContent = '暂无导入记录';
+  }
+}
+
+function resetFilter() {
   document.getElementById('kw').value = '';
-  ['bk', 'gr', 'st'].forEach(id => document.getElementById(id).value = '');
+  ['cat', 'stage', 'bk', 'st'].forEach(id => document.getElementById(id).value = '');
   render();
 }
 
-function openForm(name) {
-  document.getElementById('ftitle').textContent = name ? '编辑词库 · ' + name : '新增词库';
+/* ---------------- 新建 / 编辑 ---------------- */
+function openForm(id) {
+  editingId = id || '';
+  const f = id ? Store.wordbook(id) : null;
+  document.getElementById('ftitle').textContent = f ? '编辑词库 · ' + f.name : '新建空词库';
+  document.getElementById('fName').value = f ? f.name : '';
+  document.getElementById('fCat').value = f ? f.category : '教材';
+  document.getElementById('fStage').value = f ? (f.schoolStage || '') : '';
+  document.getElementById('fVersion').value = f ? (f.bookVersion || '') : '';
+  document.getElementById('fGrade').value = f ? (f.grade || '') : '';
+  document.getElementById('fTerm').value = f ? (f.term || '') : '';
+  document.getElementById('fOrg').value = f ? (f.organization || '') : '';
+  document.getElementById('fDesc').value = f ? (f.description || '') : '';
   Proto.openModal('formModal');
 }
 
-function toggle(name, status) {
-  if (status === '启用') {
-    Proto.confirmBox('停用词库', `停用 <b>${name}</b> 后，教师将无法在训练中选择该词库。<br><br>
-      学员已有的训练记录与复习任务<b>不受影响</b>。`, '确认停用', () => Proto.toast('词库已停用', 'ok'));
+function saveForm() {
+  const payload = {
+    name: document.getElementById('fName').value.trim(),
+    category: document.getElementById('fCat').value,
+    schoolStage: document.getElementById('fStage').value,
+    bookVersion: document.getElementById('fVersion').value.trim(),
+    grade: document.getElementById('fGrade').value.trim(),
+    term: document.getElementById('fTerm').value,
+    organization: document.getElementById('fOrg').value,
+    description: document.getElementById('fDesc').value.trim()
+  };
+  try {
+    if (editingId) {
+      Store.updateWordbook(editingId, payload);
+      Proto.toast('词库已更新', 'ok');
+    } else {
+      const b = Store.createWordbook(payload);
+      Proto.toast('词库「' + b.name + '」已创建，可进入详情添加单词', 'ok');
+    }
+    Proto.closeModal('formModal');
+    fillSelects();
+    render();
+  } catch (e) {
+    Proto.toast(e.message, 'err');
+  }
+}
+
+function toggle(id) {
+  const b = Store.wordbook(id);
+  if (!b) return;
+  if (b.status === '启用') {
+    Proto.confirmBox('停用词库', `停用 <b>${esc(b.name)}</b> 后，新建训练时不能再选择它。<br><br>
+      已有的训练记录、复习任务和学员学习状态<b>不受影响</b>。`, '确认停用', () => {
+      Store.setWordbookStatus(id, '停用');
+      render(); fillSelects();
+      Proto.toast('词库已停用', 'ok');
+    });
   } else {
+    Store.setWordbookStatus(id, '启用');
+    render(); fillSelects();
     Proto.toast('词库已启用', 'ok');
   }
 }
 
+fillSelects();
 render();
 </script>
 </body>

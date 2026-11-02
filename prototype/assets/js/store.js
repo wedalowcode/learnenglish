@@ -3,14 +3,35 @@
    ------------------------------------------------------------
    第一轮：建立学习域唯一数据源。
    第二轮：加固业务完整性（judge/correct 分离、唯一 wordId 计数）。
-   第三轮（本版）从「功能闭环」转向「课程闭环」，原则：
+   第三轮：从「功能闭环」转向「课程闭环」。
+   第五轮（本版）补上「兼职教师全生命周期」，原则：
+     1. 教师是机构持续维护的教学资源，不是一次性创建、使用、删除的员工记录：
+        档案永不物理删除，退出只是合作状态的一种。
+     2. 教师档案与登录账号分离：teachers.accountId ↔ users.teacherId，
+        账号状态（未开通/正常/已禁用）不参与教师合作状态判断。
+     3. 教师—学员关系独立成表 teacherStudents，是「谁现在负责谁」的唯一事实来源；
+        students.teacher / teacherName 只是派生缓存，供旧页面读取。
+     4. 合作状态、课程状态、账号状态三套词表互不混用；
+        历史课程永不被教师资料变更或改派覆盖。
+     5. 教师的每次状态变更都写合作流水 + 资料变更记录，只追加不覆盖。
+   第四轮原则（继续有效）补上「资源入库」这一环：
+     5. 一份 Excel = 一个词库；批量导入是最主要的词库来源，不是单文件演示。
+     6. 词库模型拆成三段：基础单词 words ↔ 关联 wordbookWords ↔ 词库 wordbooks。
+        基础单词按英文唯一，跨词库同名单词只增加关联，绝不重复建基础单词。
+     7. 词库内排序（seq）、来源文件、原始行号都记在关联上，不写在基础单词上。
+     8. 导入以「文件」为原子单位：先算完整计划再一次性写入，失败回滚；
+        一个文件失败不影响其他文件已经入库的词库。
+     9. 导入永不改写学员学习状态：只补基础单词的空字段，不覆盖已有内容。
+   第三轮原则（继续有效）：
      1. 课程是所有教学行为的上下文：每条判断记录都归属到当时那节课。
      2. 任务型对象只用一套状态词表：未开始 / 进行中 / 已完成 / 已中断 / 已取消。
         模块内阶段（预筛选、强化训练、最后复习）放在 phase，不再混进 status。
      3. 聚合层 courseRecords 只存「关联 + 汇总快照」，不复制教学明细。
      4. 课程状态与教学报告状态完全分离，报告未发布家长不可见。
    分层存储（互不覆盖）：
-     基础单词 words / 词库 wordbooks / 关系 wordbookWords
+     教师 teachers / 登录账号 users / 师生关系 teacherStudents
+     合作流水 teacherCooperations / 资料变更 teacherChanges
+     基础单词 words / 词库 wordbooks / 关联 wordbookWords / 导入批次 importBatches + importJobs
      学员状态 studentWordStates
      莱特纳 leitnerStates + leitnerConfig + leitnerTasks + leitnerRecords + leitnerOps
      21 天 plans21 + plan21Tasks + plan21Records
@@ -25,8 +46,8 @@
   'use strict';
 
   var W = typeof window !== 'undefined' ? window : globalThis;
-  var KEY = 'ee_proto_store_v4';
-  var VERSION = 4;
+  var KEY = 'ee_proto_store_v6';
+  var VERSION = 6;
   var TODAY = '2026-11-02';
 
   /* ---------------- 统一状态词表 ----------------
@@ -59,6 +80,68 @@
   var REPORT_STATUS = {
     NONE: '未生成', DRAFT: '编辑中', SUBMITTED: '已提交', PUBLISHED: '已发布'
   };
+
+  /* ============================================================
+     教师域：三套互不混用的状态词表
+     ------------------------------------------------------------
+     合作状态 = 这个人和机构是什么关系（人事事实）
+     账号状态 = 这个人的登录凭证能不能用（系统事实）
+     课程状态 = 某一节课进行到哪一步（业务事实）
+     三者不允许互相推导：暂停合作不代表课程已取消，
+     账号被禁用也不代表合作已结束。
+     ============================================================ */
+  var COOP = {
+    PENDING: '待启用', READY: '可授课', PAUSED: '暂停合作', EXITED: '已退出'
+  };
+  var COOP_STATUS = [COOP.PENDING, COOP.READY, COOP.PAUSED, COOP.EXITED];
+  var COOP_TONE = { '待启用': 'amber', '可授课': 'green', '暂停合作': 'blue', '已退出': 'slate' };
+
+  var ACCOUNT = { NONE: '未开通', OK: '正常', DISABLED: '已禁用' };
+  var ACCOUNT_STATUS = [ACCOUNT.NONE, ACCOUNT.OK, ACCOUNT.DISABLED];
+  var ACCOUNT_TONE = { '未开通': 'slate', '正常': 'green', '已禁用': 'red' };
+
+  /* 师生关系状态 */
+  var REL = { ACTIVE: '当前有效', ENDED: '已结束' };
+
+  /* 合作流水动作：前五个是业务主流程，后三个是账号侧事件 */
+  var COOP_ACTION = {
+    CREATED: 'CREATED', ACTIVATED: 'ACTIVATED', PAUSED: 'PAUSED',
+    RESUMED: 'RESUMED', EXITED: 'EXITED', REJOINED: 'REJOINED',
+    ACCOUNT_OPENED: 'ACCOUNT_OPENED', ACCOUNT_ENABLED: 'ACCOUNT_ENABLED',
+    ACCOUNT_DISABLED: 'ACCOUNT_DISABLED'
+  };
+  var COOP_ACTION_LABEL = {
+    CREATED: '创建档案', ACTIVATED: '启用为可授课', PAUSED: '暂停合作',
+    RESUMED: '恢复合作', EXITED: '正式退出合作', REJOINED: '重新加入',
+    ACCOUNT_OPENED: '开通登录账号', ACCOUNT_ENABLED: '恢复登录账号',
+    ACCOUNT_DISABLED: '禁用登录账号'
+  };
+
+  var TEACHER_GRADES = ['一年级', '二年级', '三年级', '四年级', '五年级',
+    '六年级', '七年级', '八年级', '九年级'];
+  var TEACHER_TEXTBOOKS = ['人教版', '外研版', '译林版', '北师大版', '沪教牛津版', '其他'];
+  var TEACHING_TAGS = ['自然拼读', '词汇', '阅读', '语法', '听说', '写作', '中考冲刺', '低年级启蒙'];
+  var WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+  var PERIODS = ['上午', '下午', '晚上'];
+  var PERIOD_TIME = { '上午': '08:30-11:30', '下午': '13:30-17:30', '晚上': '18:30-21:00' };
+
+  /* 角色与权限：页面隐藏按钮只是体验层，真正拦截在 Store 的每个写操作入口 */
+  var PERMS = {
+    'teacher.view': ['admin', 'staff'],
+    'teacher.create': ['admin', 'staff'],
+    'teacher.edit': ['admin', 'staff'],
+    'teacher.account': ['admin', 'staff'],
+    'teacher.activate': ['admin', 'staff'],
+    'teacher.pause': ['admin', 'staff'],
+    'teacher.resume': ['admin', 'staff'],
+    'teacher.exit': ['admin', 'staff'],
+    'teacher.assign': ['admin', 'staff'],
+    'teacher.stats': ['admin', 'staff'],
+    'self.records': ['admin', 'staff', 'teacher']
+  };
+  var ROLE_LABEL = { admin: '老板', staff: '教务', teacher: '教师' };
+  var session = { role: 'admin', operatorName: '张敏', operatorId: '张敏' };
+
 
   /* ---------------- 存储适配（三级降级） ---------------- */
   var SS = (function () {
@@ -138,39 +221,139 @@
   /* ---------------- 初始数据 ---------------- */
   function buildSeed() {
     var B = W.DB || {};
-    var DBwords = B.words || [];
 
-    /* 1. 基础单词（词库资源层，与学员状态无关） */
-    var words = DBwords.map(function (w, i) {
-      return {
-        id: 'w' + pad(i + 1, 2),
-        en: w.en,
-        ph: w.ph,
-        mean: clone(w.mean),
-        pos: w.mean.map(function (m) { return m.pos; }).join('/'),
-        book: '人教版', grade: '七年级', unit: 'Unit 1',
-        audio: 'https://cdn.example.com/audio/' + w.en + '.mp3',
-        status: '启用'
-      };
-    });
-    var wordByEn = {};
-    words.forEach(function (w) { wordByEn[w.en] = w.id; });
-    function wid(en) { return wordByEn[en] || null; }
-
-    /* 2. 词库 + 词库单词关系（仅 WB001 内置真实词表，其余为占位说明） */
-    var wordbooks = (B.books || []).map(function (b) {
-      var has = b.id === 'WB001';
-      return {
-        id: b.id, name: b.name, book: b.book, grade: b.grade, term: b.term,
-        unit: b.unit, count: b.count, status: b.status,
-        hasWords: has,
-        wordIds: has ? words.map(function (w) { return w.id; }) : []
-      };
-    });
+    /* 1. 三段式词库模型：基础单词 words / 词库 wordbooks / 关联 wordbookWords
+       一个词库 = 一份来源 Excel。基础单词按英文唯一，同一单词出现在多个词库时
+       只建一条基础单词，多出来的只是关联记录（多对多）。 */
+    var words = [];
+    var wordbooks = [];
     var wordbookWords = [];
-    wordbooks.forEach(function (b) {
-      b.wordIds.forEach(function (id, i) {
-        wordbookWords.push({ bookId: b.id, wordId: id, seq: i + 1 });
+    var wordByEn = {};
+
+    function meanOf(w) {
+      if (w.mean && w.mean.length) return clone(w.mean);
+      var parts = String(w.cn || '').split(/[；;]/)
+        .map(function (x) { return x.trim(); })
+        .filter(function (x) { return !!x; });
+      if (!parts.length) parts = [''];
+      return parts.map(function (cn) { return { pos: w.pos || '', cn: cn }; });
+    }
+
+    (B.wordbookSeeds || []).forEach(function (b) {
+      var at = b.createdAt || '2026-08-20 10:00';
+      var wb = {
+        id: b.id, name: b.name, category: b.category || '其他',
+        bookVersion: b.bookVersion || '', schoolStage: b.schoolStage || '',
+        grade: b.grade || '', term: b.term || '', organization: b.organization || '',
+        description: b.description || '', sourceFile: b.sourceFile || '',
+        wordCount: 0, status: b.status || '启用',
+        createdAt: at, updatedAt: at
+      };
+      (b.words || []).forEach(function (w, i) {
+        var en = String(w.en || '').trim();
+        if (!en) return;
+        var enKey = en.toLowerCase();
+        var base = wordByEn[enKey];
+        if (!base) {
+          base = {
+            id: 'w' + pad(words.length + 1, 2),
+            en: en, ph: w.ph || '', mean: meanOf(w), pos: w.pos || '',
+            audio: w.audio || '', status: '启用',
+            createdAt: at, updatedAt: at
+          };
+          words.push(base);
+          wordByEn[enKey] = base;
+        }
+        wordbookWords.push({
+          id: 'WW' + pad(wordbookWords.length + 1, 4),
+          wordbookId: wb.id, wordId: base.id, seq: i + 1,
+          sourceFile: wb.sourceFile, sourceRow: i + 2, createdAt: at
+        });
+        wb.wordCount++;
+      });
+      wordbooks.push(wb);
+    });
+
+    function wid(en) {
+      var base = wordByEn[String(en).toLowerCase()];
+      return base ? base.id : null;
+    }
+    /* 学员的 21 天计划与单词档案只针对 WB001（其余词库尚未被使用） */
+    var wb1Ids = wordbookWords.filter(function (x) { return x.wordbookId === 'WB001'; })
+      .sort(function (a, b) { return a.seq - b.seq; })
+      .map(function (x) { return x.wordId; });
+    var wb1Words = wb1Ids.map(function (id) {
+      return words.filter(function (w) { return w.id === id; })[0];
+    }).filter(Boolean);
+
+    /* 2. 教师资源池：档案 / 登录账号 / 合作流水 / 师生关系
+       账号与档案分开建表：一个老师可能暂时没有账号（待启用），
+       也可能账号被禁用了但档案仍然「暂停合作」而不是「已退出」。 */
+    var teachers = [];
+    var users = [];
+    var teacherStudents = [];
+    var teacherCooperations = [];
+    var teacherChanges = [];
+
+    (B.teachers || []).forEach(function (t) {
+      var avail = (t.availability || []).map(function (a, i) {
+        return { id: 'TAV' + pad(i + 1, 3), weekday: a.weekday, period: a.period, note: a.note || '' };
+      });
+      var acc = t.account || null;
+      if (acc) {
+        users.push({
+          id: acc.id, loginName: acc.loginName || t.phone, phone: t.phone,
+          passwordHash: '', mustChangePassword: true,
+          status: acc.status || ACCOUNT.OK, roleId: acc.roleId || 'teacher',
+          teacherId: t.id,
+          openedAt: acc.openedAt || '', openedBy: acc.openedBy || '',
+          disabledAt: acc.disabledAt || '',
+          createdAt: acc.openedAt || t.createdAt, updatedAt: acc.disabledAt || acc.openedAt || t.createdAt
+        });
+      }
+      teachers.push({
+        id: t.id, code: t.code || t.id, name: t.name, phone: t.phone,
+        gender: t.gender || '', school: t.school || '', major: t.major || '',
+        education: t.education || '', introduction: t.introduction || '', remark: t.remark || '',
+        grades: (t.grades || []).slice(), textbooks: (t.textbooks || []).slice(),
+        teachingTags: (t.teachingTags || []).slice(),
+        teachingExperience: t.teachingExperience || '', teachingStyle: t.teachingStyle || '',
+        availability: avail,
+        cooperationStatus: t.cooperationStatus || COOP.PENDING,
+        accountId: acc ? acc.id : '',
+        firstCooperationAt: t.firstCooperationAt || '',
+        lastCooperationStartAt: t.lastCooperationStartAt || '',
+        cooperationEndAt: t.cooperationEndAt || '',
+        pauseInfo: t.pauseInfo ? clone(t.pauseInfo) : null,
+        rejoinCount: t.rejoinCount || 0,
+        createdBy: t.createdBy || '张敏',
+        createdAt: t.createdAt || '2026-01-01 09:00',
+        updatedAt: t.updatedAt || t.createdAt || '2026-01-01 09:00'
+      });
+    });
+
+    (B.teacherStudentSeeds || []).forEach(function (r, i) {
+      teacherStudents.push({
+        id: 'TS' + pad(i + 1, 3),
+        teacherId: r.teacherId, studentId: r.studentId,
+        startAt: r.startAt || TODAY, endAt: r.endAt || '',
+        status: r.endAt ? REL.ENDED : REL.ACTIVE,
+        assignReason: r.assignReason || '', endReason: r.endReason || '',
+        attention: '', createdBy: r.createdBy || '张敏',
+        createdAt: (r.startAt || TODAY) + ' 09:00'
+      });
+    });
+
+    var coopSeq = 0;
+    (B.teachers || []).forEach(function (t) {
+      (t.coop || []).forEach(function (c) {
+        coopSeq++;
+        teacherCooperations.push({
+          id: 'TCH' + pad(coopSeq, 3), teacherId: t.id, action: c.action,
+          reason: c.reason || '', effectiveAt: c.at || t.createdAt || TODAY,
+          operatorId: c.operator || '张敏', operatorName: c.operator || '张敏',
+          remark: c.remark || '', createdAt: c.at || t.createdAt || TODAY
+        });
       });
     });
 
@@ -271,7 +454,7 @@
 
     /* 6. 21 天计划（23 词，含 18 个与莱特纳重叠 + 5 个仅 21 天） */
     var planId = 'PN20261024001';
-    var planWordIds = words.map(function (w) { return w.id; });
+    var planWordIds = wb1Ids.slice();
     var nodeCounts = [23, 23, 18, 0, 16, 0, 14, 14, 0, 12, 0, 10, 0, 10, 0, 8, 0, 8, 0, 6, 6];
     var nodeDone = { 1: 23, 2: 23, 3: 18, 5: 16, 7: 11, 8: 14 };
     var plan21Tasks = [];
@@ -323,7 +506,7 @@
 
     /* 7. 学员单词档案（由莱特纳 + 21 天成员关系推导，保证口径一致） */
     var studentWordStates = [];
-    words.forEach(function (w, i) {
+    wb1Words.forEach(function (w, i) {
       var ls = leitnerStates.filter(function (s) { return s.wordId === w.id; })[0];
       var st = '未训练', at = null, note = '';
       if (ls) {
@@ -365,7 +548,15 @@
         archiveAfter: false,
         confirmed: false
       },
-      reviewDefaults: { joinLeitner: false, joinPlan21: false, joinGreen: false }
+      reviewDefaults: { joinLeitner: false, joinPlan21: false, joinGreen: false },
+      /* 机构策略：启用门槛、暂停时是否禁用登录、退出是否必须清空学员与未来课程 */
+      teacher: {
+        activationRequired: ['basic', 'account', 'grades'],
+        pauseDisableLogin: true,
+        exitRequireNoStudents: true,
+        exitRequireNoCourses: true,
+        maxStudentsPerTeacher: 6
+      }
     };
 
     /* 9. 文章训练：一条历史完成任务（与学员档案中"最近训练"口径一致） */
@@ -493,16 +684,28 @@
       meta: {
         seq: {
           TR: 0, LT: 0, P21: 0, LS: 20, PR: 0, TD: 0, LO: 0, SW: 40, P21R: 400,
-          AT: ATS, ATD: 0, FV: 0, FC: 0, CR: CRS, RP: RPS
+          AT: ATS, ATD: 0, FV: 0, FC: 0, CR: CRS, RP: RPS,
+          WB: wordbooks.length, WW: wordbookWords.length, IB: 0, IJ: 0,
+          TC: teachers.reduce(function (m, t) {
+            var x = /^T(\d+)$/.exec(t.code);
+            return x ? Math.max(m, Number(x[1])) : m;
+          }, 0),
+          UA: users.length, TS: teacherStudents.length, TCH: coopSeq, TCL: 0
         },
         builtAt: stamp()
       },
       students: clone(B.students || []),
-      teachers: clone(B.teachers || []),
+      teachers: teachers,
+      users: users,
+      teacherStudents: teacherStudents,
+      teacherCooperations: teacherCooperations,
+      teacherChanges: teacherChanges,
       parents: clone(B.parents || []),
       words: words,
       wordbooks: wordbooks,
       wordbookWords: wordbookWords,
+      importBatches: [],
+      importJobs: [],
       prescreens: [],
       trainTasks: [],
       trainDetails: [],
@@ -540,17 +743,270 @@
     d.courses = d.courses || [];
     d.courseRecords = d.courseRecords || [];
     d.reports = d.reports || [];
+    d.importBatches = d.importBatches || [];
+    d.importJobs = d.importJobs || [];
     d.meta = d.meta || { seq: {} };
     d.meta.seq = d.meta.seq || {};
+    d.config = d.config || {};
+    d.config.teacher = d.config.teacher || {
+      activationRequired: ['basic', 'account', 'grades'],
+      pauseDisableLogin: true,
+      exitRequireNoStudents: true,
+      exitRequireNoCourses: true,
+      maxStudentsPerTeacher: 6
+    };
 
     var stuByName = {}, teaByName = {};
     (d.students || []).forEach(function (s) { stuByName[s.name] = s.id; });
     (d.teachers || []).forEach(function (t) { teaByName[t.name] = t.id; });
 
+    /* 词库三段式模型（v4 → v5 收敛）
+       v4 把 wordIds / hasWords / book / unit 直接挂在词库上，
+       v5 拆成「基础单词 + 词库 + 关联」三张表：词库不再自带单词 ID 数组。 */
+    d.words = d.words || [];
+    d.wordbooks = d.wordbooks || [];
+    d.wordbookWords = d.wordbookWords || [];
+    var WBNOW = TODAY + ' 09:00';
+    d.words.forEach(function (w) {
+      if (!w.mean || !w.mean.length) {
+        w.mean = [{ pos: w.pos || '', cn: w.cn || '' }];
+      }
+      delete w.cn; delete w.book; delete w.grade; delete w.unit;
+      w.ph = w.ph || ''; w.pos = w.pos || ''; w.audio = w.audio || '';
+      w.status = w.status || '启用';
+      w.createdAt = w.createdAt || WBNOW;
+      w.updatedAt = w.updatedAt || w.createdAt;
+    });
+    d.wordbooks.forEach(function (b) {
+      if (b.bookVersion === undefined) b.bookVersion = b.book || '';
+      if (b.organization === undefined) b.organization = b.unit ? '按单元' : '';
+      if (b.category === undefined) b.category = b.bookVersion ? '教材' : '其他';
+      delete b.book; delete b.unit; delete b.hasWords; delete b.wordIds; delete b.count;
+      b.bookVersion = b.bookVersion || ''; b.schoolStage = b.schoolStage || '';
+      b.grade = b.grade || ''; b.term = b.term || '';
+      b.organization = b.organization || ''; b.description = b.description || '';
+      b.sourceFile = b.sourceFile || '';
+      b.status = b.status === '停用' ? '停用' : '启用';
+      b.createdAt = b.createdAt || WBNOW;
+      b.updatedAt = b.updatedAt || b.createdAt;
+      if (typeof b.wordCount !== 'number') b.wordCount = 0;
+    });
+    /* 关联表：旧字段 bookId → wordbookId；丢弃指向已不存在对象的孤儿关联；同库同词去重 */
+    var linkSeen = {};
+    d.wordbookWords = d.wordbookWords.filter(function (x) {
+      if (!x) return false;
+      if (x.wordbookId === undefined) x.wordbookId = x.bookId;
+      delete x.bookId;
+      var wb = d.wordbooks.filter(function (b) { return b.id === x.wordbookId; })[0];
+      var wd = d.words.filter(function (w) { return w.id === x.wordId; })[0];
+      if (!wb || !wd) return false;
+      var k = x.wordbookId + '|' + x.wordId;
+      if (linkSeen[k]) return false;
+      linkSeen[k] = 1;
+      if (typeof x.seq !== 'number') x.seq = 0;
+      x.id = x.id || ('WW' + (d.wordbookWords.length + 1));
+      x.sourceFile = x.sourceFile || '';
+      if (typeof x.sourceRow !== 'number') x.sourceRow = 0;
+      x.createdAt = x.createdAt || WBNOW;
+      return true;
+    });
+    /* 每个词库内 seq 连续，wordCount 以关联表为唯一口径 */
+    d.wordbooks.forEach(function (b) {
+      var links = d.wordbookWords.filter(function (x) { return x.wordbookId === b.id; })
+        .sort(function (a, c) { return a.seq - c.seq; });
+      links.forEach(function (x, i) { x.seq = i + 1; });
+      b.wordCount = links.length;
+    });
+    d.meta.seq.WB = Math.max(d.meta.seq.WB || 0, d.wordbooks.length);
+    d.meta.seq.WW = Math.max(d.meta.seq.WW || 0, d.wordbookWords.length);
+    d.meta.seq.IB = d.meta.seq.IB || 0;
+    d.meta.seq.IJ = d.meta.seq.IJ || 0;
+
+    /* 教师资源池（v5 → v6 收敛）
+       v5 的教师只有「在职 / 停用」两个状态，年级与教材是顿号字符串，
+       另有 students / monthCourses 等静态展示数字直接写在档案上。
+       v6 把它们拆开：
+         人事事实 → cooperationStatus（待启用 / 可授课 / 暂停合作 / 已退出）
+         系统事实 → users.status（未开通 / 正常 / 已禁用）
+         业务事实 → 由 courses + teacherStudents 实时计算，不再存静态数字
+       旧字段 books / join / status / students / monthCourses / monthHours 一律丢弃。 */
+    d.students = d.students || [];
+    d.teachers = d.teachers || [];
+    d.users = d.users || [];
+    d.teacherStudents = d.teacherStudents || [];
+    d.teacherCooperations = d.teacherCooperations || [];
+    d.teacherChanges = d.teacherChanges || [];
+
+    function splitList(v) {
+      if (Array.isArray(v)) {
+        return v.map(function (x) { return String(x || '').trim(); }).filter(Boolean);
+      }
+      return String(v == null ? '' : v).split(/[、,，\/]+/)
+        .map(function (x) { return x.trim(); }).filter(Boolean);
+    }
+
+    var codeMax = 0;
+    d.teachers.forEach(function (t) {
+      t.code = String(t.code || t.id || '').trim() || ('T' + pad(d.teachers.indexOf(t) + 1, 3));
+      t.name = String(t.name || '').trim();
+      t.phone = String(t.phone || '');
+      t.gender = t.gender || ''; t.school = t.school || ''; t.major = t.major || '';
+      t.education = t.education || ''; t.introduction = t.introduction || ''; t.remark = t.remark || '';
+      t.grades = splitList(t.grades);
+      t.textbooks = splitList(t.textbooks !== undefined ? t.textbooks : t.books);
+      t.teachingTags = splitList(t.teachingTags);
+      t.teachingExperience = t.teachingExperience || '';
+      t.teachingStyle = t.teachingStyle || '';
+      var legacyStatus = t.status;
+      delete t.books; delete t.join; delete t.status;
+      delete t.students; delete t.monthCourses; delete t.monthHours;
+
+      if (!Array.isArray(t.availability)) t.availability = [];
+      t.availability = t.availability.filter(function (a) {
+        return a && WEEKDAYS.indexOf(a.weekday) >= 0 && PERIODS.indexOf(a.period) >= 0;
+      });
+      t.availability.forEach(function (a, i) {
+        a.id = a.id || ('TAV' + pad(i + 1, 3));
+        a.note = a.note || '';
+      });
+
+      /* 合作状态归一：旧「停用」收敛为「暂停合作」（退出必须有人工原因与交接记录） */
+      if (COOP_STATUS.indexOf(t.cooperationStatus) < 0) {
+        t.cooperationStatus = legacyStatus === '停用' ? COOP.PAUSED : COOP.READY;
+      }
+      t.accountId = t.accountId || '';
+      t.firstCooperationAt = t.firstCooperationAt || '';
+      t.lastCooperationStartAt = t.lastCooperationStartAt || t.firstCooperationAt || '';
+      t.cooperationEndAt = t.cooperationEndAt || '';
+      if (t.cooperationStatus !== COOP.PAUSED) t.pauseInfo = null;
+      else if (!t.pauseInfo) {
+        t.pauseInfo = { reason: '', startAt: t.updatedAt || TODAY, expectResumeAt: '', remark: '', by: '' };
+      }
+      t.rejoinCount = t.rejoinCount || 0;
+      t.createdBy = t.createdBy || '';
+      t.createdAt = t.createdAt || (TODAY + ' 09:00');
+      t.updatedAt = t.updatedAt || t.createdAt;
+      var cm = /^T(\d+)$/.exec(t.code);
+      if (cm) codeMax = Math.max(codeMax, Number(cm[1]));
+    });
+
+    d.users.forEach(function (u) {
+      u.loginName = u.loginName || u.phone || '';
+      u.phone = u.phone || '';
+      u.passwordHash = u.passwordHash || '';
+      if (u.mustChangePassword === undefined) u.mustChangePassword = true;
+      u.status = ACCOUNT_STATUS.indexOf(u.status) >= 0 ? u.status : ACCOUNT.OK;
+      u.roleId = u.roleId || 'teacher';
+      u.teacherId = u.teacherId || '';
+      u.createdAt = u.createdAt || (TODAY + ' 09:00');
+      u.updatedAt = u.updatedAt || u.createdAt;
+    });
+
+    /* 每条教师档案最多一个有效账号；孤儿账号解绑而不是删除 */
+    var accOwner = {};
+    d.users.forEach(function (u) {
+      if (!u.teacherId) return;
+      if (accOwner[u.teacherId]) { u.teacherId = ''; return; }
+      accOwner[u.teacherId] = u.id;
+    });
+    d.teachers.forEach(function (t) {
+      if (t.accountId && !d.users.some(function (u) { return u.id === t.accountId; })) t.accountId = '';
+      if (!t.accountId && accOwner[t.id]) t.accountId = accOwner[t.id];
+    });
+
+    /* 师生关系归一：同一学员同一时间只允许一条有效关系 */
+    var activeBest = {};
+    d.teacherStudents.forEach(function (r) {
+      if (!r || r.endAt) return;
+      var cur = activeBest[r.studentId];
+      if (!cur || String(r.startAt || '') > String(cur.startAt || '')) activeBest[r.studentId] = r;
+    });
+    var tsSeq = 0;
+    d.teacherStudents = d.teacherStudents.filter(function (r) {
+      if (!r) return false;
+      var t = d.teachers.filter(function (x) { return x.id === r.teacherId; })[0];
+      if (!t) return false;                       // 教师不存在则丢弃（学生可缺，历史仍需保留）
+      r.startAt = r.startAt || TODAY;
+      r.endAt = r.endAt || '';
+      if (!r.endAt && activeBest[r.studentId] && activeBest[r.studentId] !== r) {
+        r.endAt = r.startAt;
+        r.endReason = r.endReason || '关系归一：同一学员存在多条有效关系，保留最近一条';
+      }
+      r.status = r.endAt ? REL.ENDED : REL.ACTIVE;
+      if (r.endAt && r.endAt < r.startAt) r.endAt = r.startAt;
+      r.assignReason = r.assignReason || '';
+      r.endReason = r.endReason || '';
+      r.attention = r.attention || '';
+      r.createdBy = r.createdBy || '';
+      r.createdAt = r.createdAt || (r.startAt + ' 09:00');
+      tsSeq++;
+      r.id = r.id || ('TS' + pad(tsSeq, 3));
+      return true;
+    });
+
+    /* students.teacher / teacherName 是派生缓存：以有效关系为唯一口径重算，
+       保证旧页面读到的「当前教师」与关系表永远一致 */
+    d.students.forEach(function (s) {
+      var act = null;
+      d.teacherStudents.forEach(function (r) {
+        if (r.studentId === s.id && r.status === REL.ACTIVE) act = r;
+      });
+      var tt = act ? d.teachers.filter(function (x) { return x.id === act.teacherId; })[0] : null;
+      s.teacher = tt ? tt.id : '';
+      s.teacherName = tt ? tt.name : '未分配';
+    });
+
+    var coopSeqN = 0;
+    d.teacherCooperations = d.teacherCooperations.filter(function (c) {
+      if (!c) return false;
+      if (!d.teachers.some(function (t) { return t.id === c.teacherId; })) return false;
+      c.action = COOP_ACTION[c.action] ? c.action : COOP_ACTION.CREATED;
+      c.reason = c.reason || '';
+      c.effectiveAt = c.effectiveAt || c.createdAt || (TODAY + ' 09:00');
+      c.operatorId = c.operatorId || '';
+      c.operatorName = c.operatorName || c.operatorId || '';
+      c.remark = c.remark || '';
+      c.createdAt = c.createdAt || c.effectiveAt;
+      coopSeqN++;
+      c.id = c.id || ('TCH' + pad(coopSeqN, 3));
+      return true;
+    });
+
+    var tclSeq = 0;
+    d.teacherChanges = d.teacherChanges.filter(function (c) {
+      if (!c) return false;
+      if (!d.teachers.some(function (t) { return t.id === c.teacherId; })) return false;
+      c.fieldName = c.fieldName || '';
+      c.oldValue = c.oldValue === undefined ? '' : c.oldValue;
+      c.newValue = c.newValue === undefined ? '' : c.newValue;
+      c.operatorId = c.operatorId || '';
+      c.createdAt = c.createdAt || (TODAY + ' 09:00');
+      tclSeq++;
+      c.id = c.id || ('TCL' + pad(tclSeq, 3));
+      return true;
+    });
+
+    d.meta.seq.TC = Math.max(d.meta.seq.TC || 0, codeMax);
+    d.meta.seq.TAV = Math.max(d.meta.seq.TAV || 0,
+      d.teachers.reduce(function (n, t) { return n + t.availability.length; }, 0));
+    d.meta.seq.UA = Math.max(d.meta.seq.UA || 0, d.users.length);
+    d.meta.seq.TS = Math.max(d.meta.seq.TS || 0, d.teacherStudents.length);
+    d.meta.seq.TCH = Math.max(d.meta.seq.TCH || 0, d.teacherCooperations.length);
+    d.meta.seq.TCL = Math.max(d.meta.seq.TCL || 0, d.teacherChanges.length);
+
     /* 课程 */
     d.courses.forEach(function (c) {
       c.studentId = c.studentId || stuByName[c.student] || '';
       c.teacherId = c.teacherId || teaByName[c.teacher] || '';
+      /* 课程必须自带教师快照：教师改名/换号后，历史课仍然显示当时的授课教师 */
+      if (!c.teacherName) c.teacherName = c.teacher || '';
+      if (c.teacherCode === undefined) {
+        var ct = d.teachers.filter(function (x) { return x.id === c.teacherId; })[0];
+        c.teacherCode = ct ? ct.code : '';
+      }
+      if (!Array.isArray(c.reassignLogs)) c.reassignLogs = [];
+      if (!Array.isArray(c.changeLogs)) c.changeLogs = [];
+      c.needsAdjust = !!c.needsAdjust;
       if (c.status === '待处理') {          // 旧语义：扣课异常，本质是「课上完了但课时没扣成」
         c.status = COURSE_STATUS.DONE;
         c.deductState = '扣课异常';
@@ -689,12 +1145,37 @@
   function wordbooks() { return db.wordbooks; }
   function wordbook(id) { return db.wordbooks.filter(function (b) { return b.id === id; })[0] || null; }
   function word(id) { return db.words.filter(function (w) { return w.id === id; })[0] || null; }
-  function wordByEn(en) { return db.words.filter(function (w) { return w.en === en; })[0] || null; }
+  function wordByEn(en) {
+    var k = String(en || '').trim().toLowerCase();
+    return db.words.filter(function (w) { return String(w.en).toLowerCase() === k; })[0] || null;
+  }
 
   function wordsOfBook(bookId) {
     var b = wordbook(bookId);
     if (!b) return [];
-    return b.wordIds.map(function (id) { return word(id); }).filter(Boolean);
+    return db.wordbookWords
+      .filter(function (x) { return x.wordbookId === bookId; })
+      .sort(function (a, c) { return a.seq - c.seq; })
+      .map(function (x) { return word(x.wordId); })
+      .filter(Boolean);
+  }
+
+  /** 词库内单词视图：基础单词 + 本词库内的排序 / 来源 / 关联 ID */
+  function bookWords(bookId) {
+    if (!wordbook(bookId)) return [];
+    return db.wordbookWords
+      .filter(function (x) { return x.wordbookId === bookId; })
+      .sort(function (a, c) { return a.seq - c.seq; })
+      .map(function (x) {
+        var w = word(x.wordId);
+        if (!w) return null;
+        return {
+          id: w.id, en: w.en, ph: w.ph, mean: w.mean, pos: w.pos, audio: w.audio,
+          status: w.status, createdAt: w.createdAt, updatedAt: w.updatedAt,
+          linkId: x.id, seq: x.seq, sourceFile: x.sourceFile, sourceRow: x.sourceRow
+        };
+      })
+      .filter(Boolean);
   }
 
   function groupsOf(ids, size) {
@@ -767,7 +1248,8 @@
   function startTrainTask(opt) {
     var bk = wordbook(opt.wordbookId);
     if (!bk) throw new Error('词库不存在');
-    if (!bk.hasWords) throw new Error('该词库在原型中未内置单词清单');
+    if (bk.status !== '启用') throw new Error('词库已停用，不能用于新建训练');
+    if (!bookLinkCount(bk.id)) throw new Error('该词库还没有单词，请先到资源中心导入词表');
 
     // 同一学员同一词库存在未完成任务时，直接复用，避免出现两个并行任务
     var ex = activeTask(opt.studentId, bk.id);
@@ -776,7 +1258,7 @@
       return ex;
     }
 
-    var ids = opt.rangeWordIds || bk.wordIds.slice();
+    var ids = opt.rangeWordIds || wordsOfBook(bk.id).map(function (w) { return w.id; });
     var t = {
       id: 'TR' + TODAY.replace(/-/g, '') + seq('TR', 2),
       studentId: opt.studentId,
@@ -2993,6 +3475,1822 @@
     };
   }
 
+  /* ============================================================
+     词库（资源域）与批量导入
+     ------------------------------------------------------------
+     模型：基础单词 words ↔ 关联 wordbookWords ↔ 词库 wordbooks
+     规则（与业务口径一一对应）：
+       1. 一份 Excel 默认对应一个词库，文件名为默认词库名。
+       2. 基础单词按英文唯一；跨词库同名单词只增加关联，不重复建基础单词。
+       3. 同一词库内不重复关联；词库内排序独立（seq），互不影响。
+       4. 从词库移除单词只删关联，不删基础单词；学员学习状态不随词库关系变化。
+       5. 导入以「文件」为原子单位：先算完整计划，再一次性写入；
+          写入过程中任何异常回滚到导入前快照，绝不留「半个词库」。
+     ============================================================ */
+
+  var WB_CATEGORIES = ['教材', '考纲', '课程体系', '拓展', '其他'];
+  var WB_STAGES = ['小学', '初中', '高中'];
+  var WB_STATUS = ['启用', '停用'];
+  var WB_ORG = ['全册', '按年级', '按单元', '按主题', '按词频', '其他'];
+
+  /* 表头同义词：只做「同义识别」，不做位置猜测。
+     认不出来的列一律留空，由用户手动映射。 */
+  var HEADER_SYNONYMS = {
+    en: ['英文', '单词', 'word', 'words', '词汇', '英文单词', '英语', 'english', '单词英文', '单词/短语'],
+    ph: ['音标', 'phonetic', 'phonetics', 'ipa', '发音', '国际音标', '音标(ipa)'],
+    pos: ['词性', 'pos', 'partofspeech', '词类', '词性标注'],
+    cn: ['中文', '释义', 'meaning', '翻译', '中文释义', '汉语', '词义', '意思', '解释', '中文意思', '中文翻译'],
+    audio: ['音频', 'audio', '音频文件', '发音文件', '语音', '音频名', '音频文件名']
+  };
+  var HEADER_KEYS = ['en', 'ph', 'pos', 'cn', 'audio'];
+  var FIELD_LABEL = { en: '英文单词', ph: '音标', pos: '词性', cn: '中文释义', audio: '音频' };
+
+  function normHeader(v) {
+    return String(v == null ? '' : v).trim().toLowerCase()
+      .replace(/[\s\u3000:：()（）\[\]【】*＊\/]/g, '');
+  }
+  function headerMatch(cell) {
+    var n = normHeader(cell);
+    if (!n) return null;
+    for (var i = 0; i < HEADER_KEYS.length; i++) {
+      var k = HEADER_KEYS[i], list = HEADER_SYNONYMS[k];
+      for (var j = 0; j < list.length; j++) {
+        if (n === normHeader(list[j])) return k;
+      }
+    }
+    return null;
+  }
+
+  /** 在前 12 行里找表头行：命中同义词最多的那一行，且必须认出英文列或释义列 */
+  function detectHeader(rows) {
+    rows = rows || [];
+    var limit = Math.min(rows.length, 12);
+    var best = { row: 0, mapping: {}, score: 0, mappingLabels: [] };
+    for (var r = 0; r < limit; r++) {
+      var cells = rows[r] || [];
+      var map = {}, score = 0;
+      for (var c = 0; c < cells.length; c++) {
+        var k = headerMatch(cells[c]);
+        if (k && map[k] === undefined) { map[k] = c; score++; }
+      }
+      if (map.en === undefined && map.cn === undefined) continue;
+      if (score > best.score) best = { row: r + 1, mapping: map, score: score, mappingLabels: cells.map(function (x) { return String(x == null ? '' : x).trim(); }) };
+    }
+    best.complete = (best.mapping.en !== undefined && best.mapping.cn !== undefined);
+    return best;
+  }
+
+  /** 「n. 名字；v. 命名」→ 多释义数组 */
+  function splitMean(cn, pos) {
+    var raw = String(cn == null ? '' : cn).replace(/\r/g, '\n');
+    var parts = raw.split(/[；;、\n]+/).map(function (x) { return x.trim(); })
+      .filter(function (x) { return !!x; });
+    var out = [];
+    parts.forEach(function (p) {
+      var m = p.match(/^([a-zA-Z]{1,5}\.)\s*(.+)$/);
+      if (m) out.push({ pos: m[1], cn: m[2].trim() });
+      else out.push({ pos: pos || '', cn: p });
+    });
+    return out;
+  }
+
+  function isEnglishWord(s) {
+    return /^[A-Za-z][A-Za-z'’\-.\s]*$/.test(String(s || '').trim());
+  }
+  function isPhonetic(s) {
+    var t = String(s || '').trim();
+    if (!t) return true;
+    return /^\/.+\/$/.test(t) || /^\[.+\]$/.test(t);
+  }
+  function cellText(v) {
+    return String(v == null ? '' : v).replace(/\u00a0/g, ' ').trim();
+  }
+
+  /**
+   * 解析结果分析（只读，不写库）
+   * input: { fileName, sheetName, headerRow, dataStartRow, mapping, rows, targetBookId }
+   * rows: 原始二维数组（含表头与说明行），下标 0 对应 Excel 第 1 行
+   */
+  function analyzeImport(input) {
+    input = input || {};
+    var rows = input.rows || [];
+    var mapping = input.mapping || {};
+    var headerRow = Number(input.headerRow || 0);
+    var dataStartRow = Number(input.dataStartRow || 0) || (headerRow + 1) || 1;
+
+    var target = input.targetBookId ? wordbook(input.targetBookId) : null;
+    var inBook = {};
+    if (target) {
+      db.wordbookWords.forEach(function (x) { if (x.wordbookId === target.id) inBook[x.wordId] = 1; });
+    }
+    var byEn = {};
+    db.words.forEach(function (w) { byEn[String(w.en).toLowerCase()] = w; });
+
+    var seenFile = {};
+    var stat = {
+      parsedRows: 0, emptyRows: 0, newWords: 0, existingWords: 0,
+      dupInFile: 0, inBook: 0, missingRequired: 0, badFormat: 0,
+      phoneticWarn: 0, validRows: 0,
+      /* 可选字段缺失：允许为空，但要让人看得见 */
+      missingPh: 0, missingPos: 0, missingAudio: 0
+    };
+    function countOptional() {
+      if (!ph) stat.missingPh++;
+      if (!pos) stat.missingPos++;
+      if (!audio) stat.missingAudio++;
+    }
+    var entries = [], rowResults = [], issues = [], failedRows = [], fillCandidates = [];
+
+    function pick(cells, k) {
+      var idx = mapping[k];
+      if (idx === undefined || idx === null || idx === '') return '';
+      return cellText(cells[idx]);
+    }
+    for (var r = dataStartRow; r <= rows.length; r++) {
+      var cells = rows[r - 1] || [];
+      var en = pick(cells, 'en'), ph = pick(cells, 'ph'), pos = pick(cells, 'pos'),
+          cn = pick(cells, 'cn'), audio = pick(cells, 'audio');
+
+      if (!en && !cn && !ph && !pos && !audio) { stat.emptyRows++; continue; }
+      stat.parsedRows++;
+
+      var line = {
+        sheetRow: r, en: en, ph: ph, pos: pos, cn: cn, audio: audio,
+        raw: cells.slice(0, 8).map(function (x) { return cellText(x); }).join(' | ')
+      };
+
+      if (!en || !cn) {
+        line.status = 'missing';
+        line.note = !en && !cn ? '英文单词与中文释义都为空'
+          : !en ? '缺少英文单词' : '缺少中文释义';
+        stat.missingRequired++;
+        issues.push({ row: r, level: 'error', type: 'missing', message: line.note, en: en, cn: cn });
+        failedRows.push({ row: r, en: en, cn: cn, reason: line.note, raw: line.raw });
+        rowResults.push(line);
+        continue;
+      }
+      if (!isEnglishWord(en)) {
+        line.status = 'bad';
+        line.note = '英文单词格式异常（含数字、汉字或非法字符）';
+        stat.badFormat++;
+        issues.push({ row: r, level: 'error', type: 'format', message: line.note, en: en, cn: cn });
+        failedRows.push({ row: r, en: en, cn: cn, reason: line.note, raw: line.raw });
+        rowResults.push(line);
+        continue;
+      }
+      if (!isPhonetic(ph)) {
+        line.phWarn = true;
+        stat.phoneticWarn++;
+        issues.push({ row: r, level: 'warn', type: 'phonetic', message: '音标格式异常（建议形如 /neɪm/）：' + ph, en: en, cn: cn });
+      }
+
+      var key = en.toLowerCase();
+      if (seenFile[key]) {
+        line.status = 'dup';
+        line.note = '文件内重复（首见第 ' + seenFile[key] + ' 行）';
+        stat.dupInFile++;
+        failedRows.push({ row: r, en: en, cn: cn, reason: line.note, raw: line.raw });
+        rowResults.push(line);
+        continue;
+      }
+      seenFile[key] = r;
+
+      var mean = splitMean(cn, pos);
+      var base = byEn[key];
+
+      /* B 类重复：目标词库里已经有这个词 → 跳过重复关联（不新增、也不计入可入库） */
+      if (base && inBook[base.id]) {
+        stat.existingWords++;
+        stat.inBook++;
+        line.status = 'inBook';
+        line.wordId = base.id;
+        line.note = '本词库已存在该单词，跳过重复关联';
+        countOptional();
+        rowResults.push(line);
+        continue;
+      }
+
+      stat.validRows++;
+      countOptional();
+      if (base) {
+        /* C 类重复：系统其他词库已有该基础单词 → 复用基础单词，只新增本词库关联 */
+        stat.existingWords++;
+        line.status = 'existing';
+        line.wordId = base.id;
+        line.note = '系统已有该基础单词，复用并新增词库关联';
+        entries.push({ status: 'existing', wordId: base.id, en: base.en, ph: ph, pos: pos, cn: cn, mean: mean, audio: audio, sheetRow: r });
+        var fills = {};
+        if (!base.ph && ph) fills.ph = ph;
+        if (!base.audio && audio) fills.audio = audio;
+        if ((!base.mean || !base.mean.length) && mean.length) fills.mean = mean;
+        if (Object.keys(fills).length) {
+          fillCandidates.push({
+            wordId: base.id, en: base.en, row: r,
+            missing: (!base.ph && ph ? ['音标'] : []).concat(!base.audio && audio ? ['音频'] : []).concat((!base.mean || !base.mean.length) && mean.length ? ['释义'] : []),
+            fills: fills
+          });
+        }
+      } else {
+        stat.newWords++;
+        line.status = 'new';
+        line.note = '新增基础单词';
+        entries.push({ status: 'new', wordId: null, en: en, ph: ph, pos: pos, cn: cn, mean: mean, audio: audio, sheetRow: r });
+        byEn[key] = { id: null, en: en };   // 同文件内后出现的同名行按重复处理
+      }
+      rowResults.push(line);
+    }
+
+    /* 同一文件内出现两次的新词：第一次已算 new，第二次会走到 dup 分支，无需额外处理 */
+    var level = (stat.missingRequired + stat.badFormat) > 0 ? 'warn' : 'ok';
+    return {
+      ok: entries.length > 0,
+      fileName: input.fileName || '',
+      sheetName: input.sheetName || '',
+      headerRow: headerRow, dataStartRow: dataStartRow, mapping: mapping,
+      targetBookId: target ? target.id : '',
+      level: level,
+      stats: stat,
+      entries: entries,
+      rows: rowResults,
+      issues: issues,
+      failedRows: failedRows,
+      fillCandidates: fillCandidates,
+      parsedRows: stat.parsedRows,
+      validRows: entries.length,
+      newWords: stat.newWords,
+      existingWords: stat.existingWords,
+      dupInFile: stat.dupInFile,
+      inBook: stat.inBook,
+      missingRequired: stat.missingRequired,
+      badFormat: stat.badFormat
+    };
+  }
+
+  /* ---------------- 词库读写 ---------------- */
+
+  function bookLinkCount(bookId) {
+    return db.wordbookWords.filter(function (x) { return x.wordbookId === bookId; }).length;
+  }
+
+  function wordbookStat(bookId) {
+    var list = bookWords(bookId);
+    var withPh = 0, withAudio = 0, multi = 0, noPh = 0, noAudio = 0;
+    var ids = {};
+    list.forEach(function (w) {
+      ids[w.id] = 1;
+      if (w.ph) withPh++; else noPh++;
+      if (w.audio) withAudio++; else noAudio++;
+      if (w.mean && w.mean.length > 1) multi++;
+    });
+    var users = {};
+    db.trainTasks.forEach(function (t) {
+      if (t.wordbookId === bookId && t.studentId) users[t.studentId] = 1;
+    });
+    /* 有单词档案的学员也算「使用中」：词库可能只被初筛过、还没建训练任务 */
+    db.studentWordStates.forEach(function (s) {
+      if (ids[s.wordId]) users[s.studentId] = 1;
+    });
+    return {
+      wordCount: list.length,
+      withPh: withPh, noPh: noPh,
+      withAudio: withAudio, noAudio: noAudio,
+      multiMean: multi,
+      students: Object.keys(users).length,
+      activeTasks: db.trainTasks.filter(function (t) { return t.wordbookId === bookId && isOpen(t.status); }).length
+    };
+  }
+
+  function searchWordbooks(f) {
+    f = f || {};
+    var kw = String(f.kw || '').trim().toLowerCase();
+    var list = db.wordbooks.filter(function (b) {
+      if (kw && String(b.name).toLowerCase().indexOf(kw) < 0
+        && String(b.sourceFile || '').toLowerCase().indexOf(kw) < 0) return false;
+      if (f.category && b.category !== f.category) return false;
+      if (f.schoolStage && b.schoolStage !== f.schoolStage) return false;
+      if (f.bookVersion && b.bookVersion !== f.bookVersion) return false;
+      if (f.grade && b.grade !== f.grade) return false;
+      if (f.status && b.status !== f.status) return false;
+      return true;
+    });
+    return list.sort(function (a, c) {
+      if (a.createdAt === c.createdAt) return a.id < c.id ? 1 : -1;
+      return a.createdAt < c.createdAt ? 1 : -1;
+    });
+  }
+
+  function wordbookFacets() {
+    function uniq(arr) {
+      var seen = {}, out = [];
+      arr.forEach(function (x) { if (x && !seen[x]) { seen[x] = 1; out.push(x); } });
+      return out.sort();
+    }
+    return {
+      categories: uniq(db.wordbooks.map(function (b) { return b.category; })),
+      schoolStages: uniq(db.wordbooks.map(function (b) { return b.schoolStage; })),
+      bookVersions: uniq(db.wordbooks.map(function (b) { return b.bookVersion; })),
+      grades: uniq(db.wordbooks.map(function (b) { return b.grade; }))
+    };
+  }
+
+  function createWordbook(meta) {
+    meta = meta || {};
+    var name = String(meta.name || '').trim();
+    if (!name) fail('词库名称不能为空');
+    if (db.wordbooks.some(function (b) { return b.name === name; })) fail('已存在同名词库：' + name);
+    var at = stamp();
+    var b = {
+      id: 'WB' + seq('WB', 3), name: name,
+      category: meta.category || '其他',
+      bookVersion: meta.bookVersion || '', schoolStage: meta.schoolStage || '',
+      grade: meta.grade || '', term: meta.term || '', organization: meta.organization || '',
+      description: meta.description || '', sourceFile: meta.sourceFile || '',
+      wordCount: 0, status: '启用', createdAt: at, updatedAt: at
+    };
+    db.wordbooks.push(b);
+    save();
+    return b;
+  }
+
+  var WB_EDITABLE = ['name', 'category', 'bookVersion', 'schoolStage', 'grade', 'term',
+    'organization', 'description', 'status'];
+
+  function updateWordbook(id, patch) {
+    var b = wordbook(id);
+    if (!b) fail('词库不存在');
+    patch = patch || {};
+    if (patch.name !== undefined) {
+      var name = String(patch.name).trim();
+      if (!name) fail('词库名称不能为空');
+      if (db.wordbooks.some(function (x) { return x.id !== id && x.name === name; })) fail('已存在同名词库：' + name);
+      b.name = name;
+    }
+    WB_EDITABLE.forEach(function (k) {
+      if (k === 'name' || k === 'status') return;
+      if (patch[k] !== undefined) b[k] = String(patch[k] || '').trim();
+    });
+    if (patch.status !== undefined) {
+      if (WB_STATUS.indexOf(patch.status) < 0) fail('词库状态不合法');
+      b.status = patch.status;
+    }
+    b.updatedAt = stamp();
+    save();
+    return b;
+  }
+
+  function setWordbookStatus(id, status) {
+    return updateWordbook(id, { status: status });
+  }
+
+  function updateWord(wordId, patch) {
+    var w = word(wordId);
+    if (!w) fail('单词不存在');
+    patch = patch || {};
+    if (patch.en !== undefined) {
+      var en = String(patch.en).trim();
+      if (!en) fail('英文单词不能为空');
+      if (!isEnglishWord(en)) fail('英文单词格式异常：' + en);
+      var dup = db.words.filter(function (x) {
+        return x.id !== wordId && String(x.en).toLowerCase() === en.toLowerCase();
+      })[0];
+      if (dup) fail('已存在同一基础单词：' + dup.en + '（' + dup.id + '）');
+      w.en = en;
+    }
+    if (patch.ph !== undefined) w.ph = String(patch.ph || '').trim();
+    if (patch.pos !== undefined) w.pos = String(patch.pos || '').trim();
+    if (patch.audio !== undefined) w.audio = String(patch.audio || '').trim();
+    if (patch.status !== undefined) w.status = patch.status === '停用' ? '停用' : '启用';
+    if (patch.mean !== undefined) {
+      var mean = patch.mean;
+      if (typeof mean === 'string') mean = splitMean(mean, patch.pos || w.pos);
+      if (!mean || !mean.length || !String(mean[0].cn || '').trim()) fail('中文释义不能为空');
+      w.mean = mean;
+    }
+    w.updatedAt = stamp();
+    save();
+    return w;
+  }
+
+  /** 从词库移除某个单词：只删关联；基础单词与其他词库的关联保持不动 */
+  function removeWordFromBook(bookId, wordId) {
+    var b = wordbook(bookId);
+    if (!b) fail('词库不存在');
+    var idx = -1;
+    db.wordbookWords.forEach(function (x, i) {
+      if (x.wordbookId === bookId && x.wordId === wordId) idx = i;
+    });
+    if (idx < 0) fail('该单词不在本词库中');
+    db.wordbookWords.splice(idx, 1);
+    renumberBook(bookId);
+    b.wordCount = bookLinkCount(bookId);
+    b.updatedAt = stamp();
+    /* 基础单词保留：可能被其他词库或历史任务引用 */
+    var usedTimes = db.wordbookWords.filter(function (x) { return x.wordId === wordId; }).length;
+    save();
+    return { wordbookId: bookId, wordId: wordId, remainingLinks: usedTimes, wordKept: true };
+  }
+
+  /** 写操作后重排 seq，保证 1..n 连续 */
+  function renumberBook(bookId) {
+    db.wordbookWords.filter(function (x) { return x.wordbookId === bookId; })
+      .sort(function (a, c) { return a.seq - c.seq; })
+      .forEach(function (x, i) { x.seq = i + 1; });
+  }
+
+  function moveWordInBook(bookId, wordId, delta) {
+    var b = wordbook(bookId);
+    if (!b) fail('词库不存在');
+    var links = db.wordbookWords.filter(function (x) { return x.wordbookId === bookId; })
+      .sort(function (a, c) { return a.seq - c.seq; });
+    var i = -1;
+    links.forEach(function (x, k) { if (x.wordId === wordId) i = k; });
+    if (i < 0) fail('该单词不在本词库中');
+    var j = i + delta;
+    if (j < 0 || j >= links.length) return { ok: false, reason: '已到边界' };
+    var a = links[i], c = links[j];
+    var t = a.seq; a.seq = c.seq; c.seq = t;
+    renumberBook(bookId);
+    b.updatedAt = stamp();
+    save();
+    return { ok: true, seq: bookWords(bookId).filter(function (w) { return w.id === wordId; })[0].seq };
+  }
+
+  function addWordToBook(bookId, data) {
+    var b = wordbook(bookId);
+    if (!b) fail('词库不存在');
+    data = data || {};
+    var en = String(data.en || '').trim();
+    if (!en) fail('英文单词不能为空');
+    if (!isEnglishWord(en)) fail('英文单词格式异常：' + en);
+    var mean = data.mean !== undefined ? data.mean : splitMean(data.cn, data.pos);
+    if (!mean || !mean.length || !String(mean[0].cn || '').trim()) fail('中文释义不能为空');
+    var key = en.toLowerCase();
+    var base = db.words.filter(function (w) { return String(w.en).toLowerCase() === key; })[0];
+    var at = stamp();
+    var created = false;
+    if (!base) {
+      created = true;
+      base = {
+        id: 'w' + pad(db.words.length + 1, 2), en: en, ph: String(data.ph || '').trim(),
+        mean: mean, pos: String(data.pos || '').trim(), audio: String(data.audio || '').trim(),
+        status: '启用', createdAt: at, updatedAt: at
+      };
+      db.words.push(base);
+    }
+    var exists = db.wordbookWords.filter(function (x) {
+      return x.wordbookId === bookId && x.wordId === base.id;
+    })[0];
+    if (exists) fail('该单词已在本词库中');
+    db.wordbookWords.push({
+      id: 'WW' + seq('WW', 4), wordbookId: bookId, wordId: base.id,
+      seq: bookLinkCount(bookId) + 1, sourceFile: '人工添加', sourceRow: 0, createdAt: at
+    });
+    b.wordCount = bookLinkCount(bookId);
+    b.updatedAt = at;
+    save();
+    return { wordbookId: bookId, wordId: base.id, created: created };
+  }
+
+  function wordbooksOfWord(wordId) {
+    var ids = db.wordbookWords.filter(function (x) { return x.wordId === wordId; })
+      .map(function (x) { return x.wordbookId; });
+    return db.wordbooks.filter(function (b) { return ids.indexOf(b.id) >= 0; });
+  }
+
+  /* ---------------- 导入批次与任务 ---------------- */
+
+  function importBatches() {
+    return db.importBatches.slice().sort(function (a, c) {
+      return a.createdAt < c.createdAt ? 1 : -1;
+    });
+  }
+  function importBatch(id) {
+    return db.importBatches.filter(function (b) { return b.id === id; })[0] || null;
+  }
+  function importJobs() {
+    return db.importJobs.slice().sort(function (a, c) {
+      return a.createdAt < c.createdAt ? 1 : -1;
+    });
+  }
+  function importJob(id) {
+    return db.importJobs.filter(function (j) { return j.id === id; })[0] || null;
+  }
+  function importJobsOf(bookId) {
+    return importJobs().filter(function (j) { return j.wordbookId === bookId; });
+  }
+
+  function startImportBatch(opt) {
+    opt = opt || {};
+    var at = stamp();
+    var b = {
+      id: 'IB' + seq('IB', 4),
+      operatorId: opt.operatorId || 'A001',
+      operatorName: opt.operatorName || '张敏',
+      createdAt: at, finishedAt: null,
+      status: '进行中',
+      fileCount: opt.fileCount || 0,
+      okCount: 0, failCount: 0,
+      parsedRows: 0, newWords: 0, newLinks: 0, skipped: 0, failed: 0,
+      note: opt.note || ''
+    };
+    db.importBatches.push(b);
+    save();
+    return b;
+  }
+
+  /** 用已入库的任务重算批次汇总，避免页面自己累加出错 */
+  function finishImportBatch(batchId) {
+    var b = importBatch(batchId);
+    if (!b) fail('导入批次不存在');
+    var jobs = db.importJobs.filter(function (j) { return j.batchId === batchId; });
+    b.okCount = jobs.filter(function (j) { return j.status === '已入库'; }).length;
+    b.failCount = jobs.filter(function (j) { return j.status === '失败'; }).length;
+    b.parsedRows = jobs.reduce(function (n, j) { return n + (j.stats.parsedRows || 0); }, 0);
+    b.newWords = jobs.reduce(function (n, j) { return n + (j.stats.newWords || 0); }, 0);
+    b.newLinks = jobs.reduce(function (n, j) { return n + (j.stats.newLinks || 0); }, 0);
+    b.skipped = jobs.reduce(function (n, j) { return n + (j.stats.skipped || 0); }, 0);
+    b.failed = jobs.reduce(function (n, j) { return n + (j.stats.failed || 0); }, 0);
+    b.finishedAt = stamp();
+    b.status = b.failCount === 0 ? '已完成' : (b.okCount === 0 ? '全部失败' : '部分失败');
+    save();
+    return b;
+  }
+
+  /**
+   * 入库：以「一个文件」为原子单位
+   * input  同 analyzeImport
+   * meta   { batchId, wordbookId（继续导入时传）, name, category, bookVersion,
+   *          schoolStage, grade, term, organization, description, operatorId, operatorName }
+   * opts   { fillMissing: true }  是否用新导入的数据补齐已有基础单词缺失的音标/音频/释义
+   * 返回   { ok, reason?, wordbookId, jobId, stats, analysis }
+   */
+  function commitImport(input, meta, opts) {
+    meta = meta || {}; opts = opts || {};
+    var an = analyzeImport(input);
+    if (an.mapping.en === undefined || an.mapping.en === null || an.mapping.en === '') {
+      return { ok: false, reason: '未识别出英文单词列，无法入库', analysis: an };
+    }
+    if (an.mapping.cn === undefined || an.mapping.cn === null || an.mapping.cn === '') {
+      return { ok: false, reason: '未识别出中文释义列，无法入库', analysis: an };
+    }
+    if (!an.entries.length) {
+      return { ok: false, reason: '没有可入库的有效单词（缺必填 ' + an.missingRequired + ' 行，重复 ' + an.dupInFile + ' 行）', analysis: an };
+    }
+    var target = meta.wordbookId ? wordbook(meta.wordbookId) : null;
+    if (meta.wordbookId && !target) return { ok: false, reason: '目标词库不存在', analysis: an };
+
+    var name = String(meta.name || '').trim()
+      || String(input.fileName || '').replace(/\.(xlsx|xls|csv)$/i, '').trim();
+    if (!name && !target) return { ok: false, reason: '词库名称不能为空', analysis: an };
+
+    var snap = JSON.stringify(db);
+    var createdWords = 0, createdLinks = 0, filled = 0;
+    try {
+      var at = stamp();
+      var wb = target;
+      if (!wb) {
+        wb = {
+          id: 'WB' + seq('WB', 3), name: name,
+          category: meta.category || '其他',
+          bookVersion: meta.bookVersion || '', schoolStage: meta.schoolStage || '',
+          grade: meta.grade || '', term: meta.term || '', organization: meta.organization || '',
+          description: meta.description || '', sourceFile: input.fileName || '',
+          wordCount: 0, status: '启用', createdAt: at, updatedAt: at
+        };
+        db.wordbooks.push(wb);
+      } else {
+        if (meta.name && String(meta.name).trim() !== wb.name) wb.name = String(meta.name).trim();
+        ['category', 'bookVersion', 'schoolStage', 'grade', 'term', 'organization', 'description'].forEach(function (k) {
+          if (meta[k] !== undefined && meta[k] !== '') wb[k] = String(meta[k]).trim();
+        });
+        if (!wb.sourceFile) wb.sourceFile = input.fileName || '';
+      }
+
+      var nextSeq = bookLinkCount(wb.id);
+      an.entries.forEach(function (e) {
+        var base;
+        if (e.status === 'existing') {
+          base = word(e.wordId);
+          if (!base) throw new Error('基础单词不存在：' + e.en);
+          if (opts.fillMissing !== false) {
+            var changed = false;
+            if (!base.ph && e.ph) { base.ph = e.ph; changed = true; }
+            if (!base.audio && e.audio) { base.audio = e.audio; changed = true; }
+            if ((!base.mean || !base.mean.length) && e.mean.length) { base.mean = e.mean; changed = true; }
+            if (changed) { base.updatedAt = at; filled++; }
+          }
+        } else {
+          base = {
+            id: 'w' + pad(db.words.length + 1, 2),
+            en: e.en, ph: e.ph || '', mean: e.mean, pos: e.pos || '',
+            audio: e.audio || '', status: '启用', createdAt: at, updatedAt: at
+          };
+          db.words.push(base);
+          createdWords++;
+        }
+        nextSeq++;
+        db.wordbookWords.push({
+          id: 'WW' + seq('WW', 4), wordbookId: wb.id, wordId: base.id, seq: nextSeq,
+          sourceFile: input.fileName || '', sourceRow: e.sheetRow || 0, createdAt: at
+        });
+        createdLinks++;
+      });
+
+      wb.wordCount = bookLinkCount(wb.id);
+      wb.updatedAt = at;
+
+      var stats = {
+        parsedRows: an.parsedRows,
+        validRows: an.validRows,
+        newWords: createdWords,
+        newLinks: createdLinks,
+        existingWords: an.existingWords,
+        dupInFile: an.dupInFile,
+        inBook: an.inBook,
+        missingRequired: an.missingRequired,
+        badFormat: an.badFormat,
+        skipped: an.dupInFile + an.inBook,
+        failed: an.missingRequired + an.badFormat,
+        filled: filled
+      };
+      var job = {
+        id: 'IJ' + seq('IJ', 4),
+        batchId: meta.batchId || '',
+        wordbookId: wb.id,
+        wordbookName: wb.name,
+        fileName: input.fileName || '',
+        fileSize: input.fileSize || 0,
+        sheetName: input.sheetName || '',
+        headerRow: input.headerRow || 0,
+        dataStartRow: an.dataStartRow,
+        mapping: an.mapping,
+        operatorId: meta.operatorId || 'A001',
+        operatorName: meta.operatorName || '张敏',
+        createdAt: at,
+        status: '已入库',
+        stats: stats,
+        failedRows: an.failedRows,
+        issues: an.issues.slice(0, 50)
+      };
+      db.importJobs.push(job);
+      save();
+      return { ok: true, wordbookId: wb.id, jobId: job.id, stats: stats, analysis: an };
+    } catch (e) {
+      db = JSON.parse(snap);       // 回滚：不留半个词库
+      return { ok: false, reason: '写入失败，已回滚：' + e.message, analysis: an };
+    }
+  }
+
+  /** 记录一次失败的文件（解析阶段就挂了，没有产生任何写入） */
+  function recordImportFailure(input, reason, meta) {
+    meta = meta || {};
+    var at = stamp();
+    var job = {
+      id: 'IJ' + seq('IJ', 4),
+      batchId: meta.batchId || '',
+      wordbookId: '', wordbookName: '',
+      fileName: (input && input.fileName) || '',
+      fileSize: (input && input.fileSize) || 0,
+      sheetName: (input && input.sheetName) || '',
+      headerRow: 0, dataStartRow: 0, mapping: {},
+      operatorId: meta.operatorId || 'A001',
+      operatorName: meta.operatorName || '张敏',
+      createdAt: at, status: '失败',
+      stats: {
+        parsedRows: 0, validRows: 0, newWords: 0, newLinks: 0, existingWords: 0,
+        dupInFile: 0, inBook: 0, missingRequired: 0, badFormat: 0,
+        skipped: 0, failed: 0, filled: 0
+      },
+      failedRows: (input && input.failedRows) || [],
+      issues: [],
+      error: reason || '未知错误'
+    };
+    db.importJobs.push(job);
+    save();
+    return job;
+  }
+
+  /** 失败行 CSV（带 BOM，Excel 直接打开不乱码） */
+  function failedRowsCsv(jobId) {
+    var job = importJob(jobId);
+    if (!job) fail('导入记录不存在');
+    var head = ['行号', '英文', '中文释义', '失败原因', '原始行'];
+    var lines = [head.join(',')];
+    function esc(v) {
+      var s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }
+    (job.failedRows || []).forEach(function (r) {
+      lines.push([r.row, r.en, r.cn, r.reason, r.raw].map(esc).join(','));
+    });
+    if (!job.failedRows || !job.failedRows.length) {
+      lines.push(['', '', '', job.error || '无失败行', ''].map(esc).join(','));
+    }
+    return '\ufeff' + lines.join('\r\n');
+  }
+
+  /* ============================================================
+     教师资源池：兼职教师全生命周期
+     ------------------------------------------------------------
+     新教师录入 → 资料完善 → 开通账号 → 启用（可授课）→ 分配学员 → 排课授课
+                → 暂停合作 ⇄ 恢复合作
+                → 正式退出合作（学员与课程交接）→ 重新加入（复用原档案）
+     关键约束（与验收场景一一对应）：
+       · 教师编号全局唯一；同机构手机号唯一；档案永不物理删除。
+       · 同一学员同一时间最多一条「当前有效」负责关系。
+       · 历史课程永不被教师资料变更或改派覆盖。
+       · 有学员关系或有未来有效课程时，退出流程必须先把它们处理掉。
+       · 每个写操作都在 Store 内部校验角色，页面隐藏按钮只是体验层。
+     ============================================================ */
+
+  var MONTH = TODAY.slice(0, 7);
+  var EDITABLE_FIELDS = ['name', 'phone', 'gender', 'school', 'major', 'education',
+    'introduction', 'remark', 'grades', 'textbooks', 'teachingTags',
+    'teachingExperience', 'teachingStyle', 'availability'];
+
+  /* ---------- 会话与权限 ---------- */
+  function setSession(s) {
+    s = s || {};
+    if (s.role) session.role = s.role;
+    if (s.operatorName) { session.operatorName = s.operatorName; session.operatorId = s.operatorName; }
+    if (s.operatorId) session.operatorId = s.operatorId;
+    return clone(session);
+  }
+  function currentSession() { return clone(session); }
+  function can(action) { return (PERMS[action] || []).indexOf(session.role) >= 0; }
+  function assertCan(action) {
+    if (!can(action)) {
+      var e = new Error('当前角色（' + (ROLE_LABEL[session.role] || session.role) +
+        '）无权执行该操作：' + action);
+      e.code = 'FORBIDDEN';
+      e.action = action;
+      throw e;
+    }
+  }
+  function bizError(code, msg, data) {
+    var e = new Error(msg);
+    e.code = code;
+    e.data = data || null;
+    return e;
+  }
+
+  /* ---------- 小工具 ---------- */
+  function toList(v) {
+    if (Array.isArray(v)) {
+      return v.map(function (x) { return String(x == null ? '' : x).trim(); }).filter(Boolean);
+    }
+    return String(v == null ? '' : v).split(/[、,，\/]+/)
+      .map(function (x) { return x.trim(); }).filter(Boolean);
+  }
+  function minutesOf(c) {
+    var a = String(c.start || '0:0').split(':'), b = String(c.end || '0:0').split(':');
+    var m = (Number(b[0]) * 60 + Number(b[1])) - (Number(a[0]) * 60 + Number(a[1]));
+    return m > 0 ? m : 0;
+  }
+  function courseHours(c) { return Math.round(minutesOf(c) / 60 * 10) / 10; }
+  function isCourseDone(c) { return c.status === COURSE_STATUS.DONE; }
+  function round1(n) { return Math.round(n * 10) / 10; }
+
+  /* ---------- 查询 ---------- */
+  function teachers() { return db.teachers; }
+  function teacherByPhone(phone) {
+    var p = String(phone || '').trim();
+    if (!p) return null;
+    return db.teachers.filter(function (t) { return t.phone === p; })[0] || null;
+  }
+  function teacherByCode(code) {
+    var c = String(code || '').trim();
+    return db.teachers.filter(function (t) { return t.code === c; })[0] || null;
+  }
+  function accountOf(teacherId) {
+    var t = teacher(teacherId);
+    if (t && t.accountId) {
+      var u = db.users.filter(function (x) { return x.id === t.accountId; })[0];
+      if (u) return u;
+    }
+    return db.users.filter(function (u) { return u.teacherId === teacherId; })[0] || null;
+  }
+  function accountStatusOf(teacherId) {
+    var u = accountOf(teacherId);
+    return u ? u.status : ACCOUNT.NONE;
+  }
+  function userById(id) { return db.users.filter(function (u) { return u.id === id; })[0] || null; }
+
+  function teacherFacets() {
+    var g = {}, b = {}, sc = {};
+    db.teachers.forEach(function (t) {
+      t.grades.forEach(function (x) { g[x] = (g[x] || 0) + 1; });
+      t.textbooks.forEach(function (x) { b[x] = (b[x] || 0) + 1; });
+      if (t.school) sc[t.school] = (sc[t.school] || 0) + 1;
+    });
+    return {
+      grades: TEACHER_GRADES.filter(function (x) { return g[x]; }),
+      textbooks: TEACHER_TEXTBOOKS.filter(function (x) { return b[x]; }),
+      schools: Object.keys(sc).sort()
+    };
+  }
+
+  function teacherStat(id) {
+    var t = teacher(id);
+    if (!t) return null;
+    var courses = db.courses.filter(function (c) { return c.teacherId === id; });
+    var done = courses.filter(isCourseDone);
+    var monthDone = done.filter(function (c) { return String(c.date).slice(0, 7) === MONTH; });
+    var cancelled = courses.filter(function (c) { return c.status === COURSE_STATUS.CANCELLED; }).length;
+    var missed = courses.filter(function (c) { return c.status === COURSE_STATUS.MISSED; }).length;
+    var rels = db.teacherStudents.filter(function (r) { return r.teacherId === id; });
+    var act = rels.filter(function (r) { return r.status === REL.ACTIVE; });
+    var stuSet = {};
+    rels.forEach(function (r) { stuSet[r.studentId] = 1; });
+    var sorted = done.slice().sort(function (a, b) {
+      return (a.date + a.start) < (b.date + b.start) ? 1 : -1;
+    });
+    var months = {};
+    done.forEach(function (c) {
+      var k = String(c.date).slice(0, 7);
+      months[k] = months[k] || { count: 0, hours: 0 };
+      months[k].count++;
+      months[k].hours = round1(months[k].hours + courseHours(c));
+    });
+    var settled = done.length + cancelled + missed;
+    var reports = db.reports.filter(function (r) { return r.teacherId === id; });
+    return {
+      id: id, code: t.code, name: t.name,
+      cooperationStatus: t.cooperationStatus, accountStatus: accountStatusOf(id),
+      currentStudents: act.length,
+      totalStudents: Object.keys(stuSet).length,
+      courses: courses.length,
+      doneCourses: done.length,
+      doneHours: round1(done.reduce(function (n, c) { return n + courseHours(c); }, 0)),
+      monthCourses: monthDone.length,
+      monthHours: round1(monthDone.reduce(function (n, c) { return n + courseHours(c); }, 0)),
+      cancelledCourses: cancelled,
+      missedCourses: missed,
+      completionRate: settled ? Math.round(done.length / settled * 100) : 0,
+      lastCourseAt: sorted.length ? sorted[0].date : '',
+      futureCourses: futureCoursesOf(id).length,
+      monthsBy: months,
+      reportCount: reports.length,
+      draftReports: reports.filter(function (r) { return r.status === REPORT_STATUS.DRAFT; }).length
+    };
+  }
+
+  function teacherOverview() {
+    var o = { total: db.teachers.length, ready: 0, pending: 0, paused: 0, exited: 0,
+      teachingThisMonth: 0, activeAccounts: 0, draftReports: 0 };
+    db.teachers.forEach(function (t) {
+      if (t.cooperationStatus === COOP.READY) o.ready++;
+      else if (t.cooperationStatus === COOP.PENDING) o.pending++;
+      else if (t.cooperationStatus === COOP.PAUSED) o.paused++;
+      else if (t.cooperationStatus === COOP.EXITED) o.exited++;
+    });
+    var set = {};
+    db.courses.forEach(function (c) {
+      if (isCourseDone(c) && String(c.date).slice(0, 7) === MONTH && c.teacherId) set[c.teacherId] = 1;
+    });
+    o.teachingThisMonth = Object.keys(set).length;
+    o.activeAccounts = db.users.filter(function (u) { return u.status === ACCOUNT.OK; }).length;
+    o.draftReports = db.reports.filter(function (r) { return r.status === REPORT_STATUS.DRAFT; }).length;
+    return o;
+  }
+
+  var COOP_ORDER = {};
+  COOP_STATUS.forEach(function (s, i) { COOP_ORDER[s] = i; });
+
+  /** 教师列表查询：所有筛选条件都作用在真实数据上，不写死任何统计 */
+  function searchTeachers(q) {
+    q = q || {};
+    var kw = String(q.kw || '').trim().toLowerCase();
+    var list = db.teachers.filter(function (t) {
+      var stat = teacherStat(t.id);
+      if (kw && !(t.name.toLowerCase().indexOf(kw) >= 0 ||
+        t.phone.indexOf(kw) >= 0 || String(t.code).toLowerCase().indexOf(kw) >= 0)) return false;
+      if (q.grade && t.grades.indexOf(q.grade) < 0) return false;
+      if (q.textbook && t.textbooks.indexOf(q.textbook) < 0) return false;
+      if (q.coop && t.cooperationStatus !== q.coop) return false;
+      if (q.account && stat.accountStatus !== q.account) return false;
+      if (q.school && t.school !== q.school) return false;
+      if (q.students === 'zero' && stat.currentStudents !== 0) return false;
+      if (q.students === 'low' && !(stat.currentStudents >= 1 && stat.currentStudents <= 2)) return false;
+      if (q.students === 'high' && stat.currentStudents < 3) return false;
+      if (q.recent === 'month' && !(stat.lastCourseAt && stat.lastCourseAt.slice(0, 7) === MONTH)) return false;
+      if (q.recent === 'd30' && !(stat.lastCourseAt && stat.lastCourseAt >= addDays(TODAY, -30))) return false;
+      if (q.recent === 'never' && stat.lastCourseAt) return false;
+      if (q.joinFrom && (!t.lastCooperationStartAt || t.lastCooperationStartAt < q.joinFrom)) return false;
+      if (q.joinTo && (!t.lastCooperationStartAt || t.lastCooperationStartAt > q.joinTo)) return false;
+      return true;
+    });
+    list.sort(function (a, b) {
+      var d = (COOP_ORDER[a.cooperationStatus] || 0) - (COOP_ORDER[b.cooperationStatus] || 0);
+      return d !== 0 ? d : (a.code < b.code ? -1 : 1);
+    });
+    return list.map(function (t) {
+      var out = clone(t);
+      out.stat = teacherStat(t.id);
+      return out;
+    });
+  }
+
+  /**
+   * 可授课教师池：排课 / 分配学员的唯一候选来源。
+   * 硬约束只有一条——暂停合作与已退出教师永远不出现（不能作为普通可选项）。
+   * 年级 / 教材 / 可授课时间属于「优先条件」：匹配的排在前面并给出命中标记，
+   * 不匹配的仍然保留在后面，由人工判断（避免小学员因年级字段微差而无候选可用）。
+   * opt.strict = true 时退化为「只看匹配项」，用于纯推荐场景。
+   */
+  function teacherPool(opt) {
+    opt = opt || {};
+    var wantTime = !!(opt.weekday && opt.period);
+    var list = db.teachers.filter(function (t) {
+      return t.cooperationStatus === COOP.READY;
+    }).map(function (t) {
+      var gHit = !opt.grade || t.grades.indexOf(opt.grade) >= 0;
+      var bHit = !opt.textbook || t.textbooks.indexOf(opt.textbook) >= 0;
+      var tHit = !wantTime || t.availability.some(function (a) {
+        return a.weekday === opt.weekday && a.period === opt.period;
+      });
+      var score = (opt.grade && gHit ? 3 : 0) +
+        (opt.textbook && bHit ? 2 : 0) +
+        (wantTime && tHit ? 2 : 0);
+      var miss = [];
+      if (opt.grade && !gHit) miss.push('年级不符');
+      if (opt.textbook && !bHit) miss.push('教材不符');
+      if (wantTime && !tHit) miss.push('时间不符');
+      return {
+        teacher: t, stat: teacherStat(t.id), score: score,
+        match: { grade: gHit, textbook: bHit, time: tHit },
+        miss: miss, full: miss.length === 0
+      };
+    });
+    if (opt.strict) list = list.filter(function (x) { return x.full; });
+    return list.sort(function (a, b) {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.stat.currentStudents - b.stat.currentStudents;
+    });
+  }
+
+  function teacherRanking(opt) {
+    opt = opt || {};
+    return db.teachers.filter(function (t) {
+      return opt.includeExited ? true : t.cooperationStatus !== COOP.EXITED;
+    }).map(function (t) { return teacherStat(t.id); })
+      .sort(function (a, b) { return b.monthCourses - a.monthCourses || b.doneCourses - a.doneCourses; })
+      .slice(0, opt.limit || 5);
+  }
+
+  function availabilityText(t) {
+    if (typeof t === 'string') t = teacher(t);
+    if (!t || !t.availability || !t.availability.length) return '未设置';
+    var map = {};
+    t.availability.forEach(function (a) {
+      map[a.weekday] = map[a.weekday] || [];
+      if (map[a.weekday].indexOf(a.period) < 0) map[a.weekday].push(a.period);
+    });
+    return WEEKDAYS.filter(function (d) { return map[d]; }).map(function (d) {
+      return d + ' ' + PERIODS.filter(function (p) { return map[d].indexOf(p) >= 0; }).join('/');
+    }).join('；');
+  }
+
+  function normalizeAvailability(list) {
+    var out = [], seen = {};
+    (list || []).forEach(function (a) {
+      if (!a) return;
+      var w, p, note = '';
+      if (typeof a === 'string') {
+        var parts = a.split('|');
+        w = parts[0]; p = parts[1];
+      } else { w = a.weekday; p = a.period; note = a.note || ''; }
+      if (WEEKDAYS.indexOf(w) < 0 || PERIODS.indexOf(p) < 0) return;
+      var k = w + '|' + p;
+      if (seen[k]) return;
+      seen[k] = 1;
+      out.push({ id: 'TAV' + seq('TAV', 3), weekday: w, period: p, note: note });
+    });
+    return out;
+  }
+
+  /* ---------- 师生关系 ---------- */
+  function relationsOfTeacher(id, status) {
+    return db.teacherStudents.filter(function (r) {
+      return r.teacherId === id && (!status || r.status === status);
+    }).sort(function (a, b) { return a.startAt < b.startAt ? 1 : -1; });
+  }
+  function currentRelationsOf(id) { return relationsOfTeacher(id, REL.ACTIVE); }
+  function historyRelationsOf(id) { return relationsOfTeacher(id, REL.ENDED); }
+  function activeRelationOfStudent(studentId) {
+    return db.teacherStudents.filter(function (r) {
+      return r.studentId === studentId && r.status === REL.ACTIVE;
+    })[0] || null;
+  }
+  function relationsOfStudent(studentId) {
+    return db.teacherStudents.filter(function (r) { return r.studentId === studentId; })
+      .sort(function (a, b) { return a.startAt < b.startAt ? 1 : -1; });
+  }
+  function currentStudentsOf(id) {
+    return currentRelationsOf(id).map(function (r) {
+      var s = student(r.studentId);
+      if (!s) return null;
+      var last = db.courses.filter(function (c) {
+        return c.studentId === s.id && isCourseDone(c);
+      }).sort(function (a, b) { return a.date < b.date ? 1 : -1; })[0];
+      return {
+        student: s, relation: r, remain: s.remain,
+        lastCourseAt: last ? last.date : '',
+        futureCourses: db.courses.filter(function (c) {
+          return c.studentId === s.id && c.date >= TODAY &&
+            (c.status === COURSE_STATUS.PENDING || c.status === COURSE_STATUS.ONGOING);
+        }).length
+      };
+    }).filter(Boolean);
+  }
+  function historyStudentsOf(id) {
+    return historyRelationsOf(id).map(function (r) {
+      var s = student(r.studentId);
+      var done = db.courses.filter(function (c) {
+        return c.studentId === r.studentId && c.teacherId === id && isCourseDone(c) &&
+          c.date >= r.startAt && (!r.endAt || c.date <= r.endAt);
+      }).length;
+      return {
+        student: s || { id: r.studentId, name: r.studentId, grade: '—', remain: 0, status: '—' },
+        relation: r, doneCourses: done
+      };
+    });
+  }
+  function syncStudentCache(studentId) {
+    var s = student(studentId);
+    if (!s) return;
+    var act = activeRelationOfStudent(studentId);
+    var t = act ? teacher(act.teacherId) : null;
+    s.teacher = t ? t.id : '';
+    s.teacherName = t ? t.name : '未分配';
+  }
+
+  function futureCoursesOf(id) {
+    return db.courses.filter(function (c) {
+      return c.teacherId === id && c.date >= TODAY &&
+        (c.status === COURSE_STATUS.PENDING || c.status === COURSE_STATUS.ONGOING);
+    }).sort(function (a, b) { return (a.date + a.start) < (b.date + b.start) ? -1 : 1; });
+  }
+  function pendingRecordsOf(id) {
+    return db.courseRecords.filter(function (r) {
+      return r.teacherId === id && isOpen(r.status);
+    });
+  }
+  function teacherAlerts(id) {
+    var act = currentRelationsOf(id);
+    return {
+      future: futureCoursesOf(id).length,
+      students: act.length,
+      attention: act.filter(function (r) { return !!r.attention; }).length,
+      drafts: db.reports.filter(function (r) {
+        return r.teacherId === id && r.status === REPORT_STATUS.DRAFT;
+      }).length,
+      needsAdjust: db.courses.filter(function (c) { return c.teacherId === id && c.needsAdjust; }).length
+    };
+  }
+
+  /* ---------- 启用 / 退出前置检查 ---------- */
+  function activationCheck(id) {
+    var t = teacher(id);
+    if (!t) return null;
+    var acc = accountOf(id);
+    var items = [
+      { key: 'basic', label: '姓名与手机号已填写', ok: !!t.name && /^1[3-9]\d{9}$/.test(t.phone) },
+      /* 账号「存在」即算准备就绪；被禁用的账号会在启用时自动恢复登录 */
+      { key: 'account', label: '登录账号已开通', ok: !!acc,
+        hint: acc ? ('账号状态：' + acc.status) : '需先开通登录账号' },
+      { key: 'grades', label: '已填写擅长年级', ok: t.grades.length > 0 },
+      { key: 'textbooks', label: '已填写擅长教材', ok: t.textbooks.length > 0 },
+      { key: 'availability', label: '已填写可授课时间', ok: t.availability.length > 0 },
+      { key: 'capability', label: '教学经验或教学特点已填写', ok: !!(t.teachingExperience || t.teachingStyle) }
+    ];
+    var required = (db.config.teacher && db.config.teacher.activationRequired) ||
+      ['basic', 'account', 'grades'];
+    var missing = items.filter(function (x) { return required.indexOf(x.key) >= 0 && !x.ok; });
+    return {
+      teacher: t, items: items, required: required,
+      ready: missing.length === 0,
+      missing: missing.map(function (x) { return x.label; }),
+      accountStatus: acc ? acc.status : ACCOUNT.NONE,
+      status: t.cooperationStatus
+    };
+  }
+
+  function exitCheck(id) {
+    var t = teacher(id);
+    if (!t) return null;
+    var students = currentStudentsOf(id);
+    var future = futureCoursesOf(id);
+    var todayPending = db.courses.filter(function (c) {
+      return c.teacherId === id && c.date === TODAY &&
+        (c.status === COURSE_STATUS.PENDING || c.status === COURSE_STATUS.ONGOING);
+    });
+    var drafts = db.reports.filter(function (r) {
+      return r.teacherId === id &&
+        (r.status === REPORT_STATUS.DRAFT || r.status === REPORT_STATUS.SUBMITTED);
+    });
+    var anomalies = db.courses.filter(function (c) {
+      return c.teacherId === id && isCourseDone(c) && c.deductState === '扣课异常';
+    });
+    var blocks = [];
+    if (students.length) {
+      blocks.push({ key: 'students', count: students.length,
+        label: '当前还有 ' + students.length + ' 名学员由该教师负责，需先转交或解除关系' });
+    }
+    if (future.length) {
+      blocks.push({ key: 'courses', count: future.length,
+        label: '还有 ' + future.length + ' 节未来有效课程未处理，需先改派、取消或标记待调整' });
+    }
+    return {
+      teacher: t, students: students, futureCourses: future, todayPending: todayPending,
+      pendingRecords: pendingRecordsOf(id), draftReports: drafts, anomalies: anomalies,
+      accountStatus: accountStatusOf(id),
+      blocks: blocks, ready: blocks.length === 0
+    };
+  }
+
+  /* ---------- 写操作：留痕工具 ---------- */
+  function logCoop(teacherId, action, opt) {
+    opt = opt || {};
+    var c = {
+      id: 'TCH' + seq('TCH', 3), teacherId: teacherId,
+      action: COOP_ACTION[action] ? action : COOP_ACTION.CREATED,
+      reason: opt.reason || '',
+      effectiveAt: opt.effectiveAt || (TODAY + ' ' + clock()),
+      operatorId: session.operatorId, operatorName: session.operatorName,
+      remark: opt.remark || '', createdAt: stamp()
+    };
+    db.teacherCooperations.push(c);
+    return c;
+  }
+  function logChange(teacherId, field, oldV, newV, opt) {
+    function s(v) {
+      if (v == null) return '';
+      if (Array.isArray(v)) {
+        return v.map(function (x) {
+          return (x && typeof x === 'object')
+            ? String(x.weekday || '') + String(x.period || '') + (x.note ? '（' + x.note + '）' : '')
+            : String(x);
+        }).filter(Boolean).join('、');
+      }
+      return String(v);
+    }
+    var o = s(oldV), n = s(newV);
+    if (o === n) return null;
+    var c = {
+      id: 'TCL' + seq('TCL', 3), teacherId: teacherId, fieldName: field,
+      oldValue: o, newValue: n, operatorId: session.operatorName,
+      createdAt: stamp(), remark: (opt && opt.remark) || ''
+    };
+    db.teacherChanges.push(c);
+    return c;
+  }
+
+  function enableAccount(teacherId, reason) {
+    var u = accountOf(teacherId);
+    if (!u) return null;
+    try {
+      u.status = ACCOUNT.OK;
+      u.disabledAt = '';
+      u.updatedAt = stamp();
+    } catch (e) {
+      throw bizError('ACCOUNT_ENABLE_FAILED', '教师账号启用失败，操作已中止：' + e.message);
+    }
+    logCoop(teacherId, COOP_ACTION.ACCOUNT_ENABLED, { reason: reason || '恢复登录账号', remark: '登录名 ' + u.loginName });
+    return u;
+  }
+  function disableAccount(teacherId, reason) {
+    var u = accountOf(teacherId);
+    if (!u) return null;
+    if (u.status === ACCOUNT.DISABLED) return u;
+    try {
+      u.status = ACCOUNT.DISABLED;
+      u.disabledAt = stamp();
+      u.updatedAt = stamp();
+    } catch (e) {
+      /* 账号没能真正禁用时绝不允许把教师标记成已退出/已暂停 */
+      throw bizError('ACCOUNT_DISABLE_FAILED', '教师账号禁用失败，操作已中止：' + e.message);
+    }
+    logCoop(teacherId, COOP_ACTION.ACCOUNT_DISABLED, { reason: reason || '禁用登录账号' });
+    return u;
+  }
+
+  /* ---------- 新增 / 编辑 ---------- */
+  function createTeacher(input, opt) {
+    assertCan('teacher.create');
+    input = input || {};
+    opt = opt || {};
+    var name = String(input.name || '').trim();
+    var phone = String(input.phone || '').trim();
+    if (!name) throw bizError('NAME_REQUIRED', '请填写教师姓名');
+    if (name.length > 20) throw bizError('NAME_INVALID', '教师姓名不能超过 20 个字');
+    if (!/^1[3-9]\d{9}$/.test(phone)) throw bizError('PHONE_INVALID', '手机号格式不正确（应以 1 开头的 11 位号码）');
+
+    var exist = teacherByPhone(phone);
+    if (exist) {
+      if (exist.cooperationStatus === COOP.EXITED) {
+        throw bizError('PHONE_EXITED',
+          '手机号 ' + phone + ' 属于已退出合作的教师「' + exist.name + '」（' + exist.code +
+          '）。同一自然人不能重复建档，请查看原档案并选择「重新加入」。',
+          { teacher: exist });
+      }
+      throw bizError('PHONE_DUPLICATE',
+        '手机号 ' + phone + ' 已被教师「' + exist.name + '」（' + exist.code + '）使用',
+        { teacher: exist });
+    }
+
+    var n = Number(db.meta.seq.TC || 0) + 1;
+    while (db.teachers.some(function (t) { return t.code === 'T' + pad(n, 3); })) n++;
+    db.meta.seq.TC = n;
+    var code = 'T' + pad(n, 3);
+    var now = stamp();
+    var t = {
+      id: code, code: code, name: name, phone: phone,
+      gender: input.gender || '', school: String(input.school || '').trim(),
+      major: String(input.major || '').trim(), education: input.education || '',
+      introduction: String(input.introduction || '').trim(),
+      remark: String(input.remark || '').trim(),
+      grades: toList(input.grades), textbooks: toList(input.textbooks),
+      teachingTags: toList(input.teachingTags),
+      teachingExperience: String(input.teachingExperience || '').trim(),
+      teachingStyle: String(input.teachingStyle || '').trim(),
+      availability: normalizeAvailability(input.availability),
+      cooperationStatus: COOP.PENDING, accountId: '',
+      firstCooperationAt: '', lastCooperationStartAt: '', cooperationEndAt: '',
+      pauseInfo: null, rejoinCount: 0,
+      createdBy: session.operatorName, createdAt: now, updatedAt: now
+    };
+    db.teachers.push(t);
+    logCoop(t.id, COOP_ACTION.CREATED, {
+      reason: opt.reason || '新教师录入（待启用）',
+      effectiveAt: now, remark: opt.remark || ''
+    });
+    save();
+    return t;
+  }
+
+  function updateTeacher(id, patch, opt) {
+    assertCan('teacher.edit');
+    var t = teacher(id);
+    if (!t) throw bizError('NOT_FOUND', '教师不存在');
+    patch = patch || {};
+    opt = opt || {};
+    var changes = 0;
+
+    if (patch.name !== undefined) {
+      var nm = String(patch.name || '').trim();
+      if (!nm) throw bizError('NAME_REQUIRED', '教师姓名不能为空');
+      if (nm.length > 20) throw bizError('NAME_INVALID', '教师姓名不能超过 20 个字');
+      if (nm !== t.name) {
+        logChange(id, 'name', t.name, nm, opt);
+        t.name = nm;
+        /* 姓名是展示缓存：课程与学员上冗余的姓名同步刷新，
+           但历史课程的 teacherId / 授课事实不变 */
+        db.courses.forEach(function (c) { if (c.teacherId === id) c.teacher = nm; });
+        db.students.forEach(function (s) { if (s.teacher === id) s.teacherName = nm; });
+        changes++;
+      }
+    }
+    if (patch.phone !== undefined) {
+      var ph = String(patch.phone || '').trim();
+      if (!/^1[3-9]\d{9}$/.test(ph)) throw bizError('PHONE_INVALID', '手机号格式不正确');
+      var ex = teacherByPhone(ph);
+      if (ex && ex.id !== id) {
+        throw bizError(ex.cooperationStatus === COOP.EXITED ? 'PHONE_EXITED' : 'PHONE_DUPLICATE',
+          '手机号 ' + ph + ' 已被教师「' + ex.name + '」（' + ex.code + '）使用', { teacher: ex });
+      }
+      if (ph !== t.phone) {
+        logChange(id, 'phone', t.phone, ph, opt);
+        t.phone = ph;
+        var acc = accountOf(id);
+        if (acc) { acc.phone = ph; acc.loginName = ph; acc.updatedAt = stamp(); }
+        changes++;
+      }
+    }
+    ['gender', 'school', 'major', 'education', 'introduction', 'remark',
+      'teachingExperience', 'teachingStyle'].forEach(function (f) {
+      if (patch[f] === undefined) return;
+      var v = String(patch[f] || '');
+      if (v !== (t[f] || '')) { logChange(id, f, t[f], v, opt); t[f] = v; changes++; }
+    });
+    ['grades', 'textbooks', 'teachingTags'].forEach(function (f) {
+      if (patch[f] === undefined) return;
+      var v = toList(patch[f]);
+      if (v.join('、') !== (t[f] || []).join('、')) {
+        logChange(id, f, t[f], v, opt); t[f] = v; changes++;
+      }
+    });
+    if (patch.availability !== undefined) {
+      var av = normalizeAvailability(patch.availability);
+      var key = function (list) {
+        return list.map(function (x) { return x.weekday + '|' + x.period; }).sort().join(',');
+      };
+      if (key(av) !== key(t.availability)) {
+        logChange(id, 'availability', t.availability, av, opt);
+        t.availability = av;
+        changes++;
+      }
+    }
+    t.updatedAt = stamp();
+    save();
+    return { teacher: t, changes: changes };
+  }
+
+  function setAvailability(id, slots, opt) {
+    return updateTeacher(id, { availability: slots }, opt);
+  }
+
+  /* ---------- 账号 ---------- */
+  function openTeacherAccount(id, opt) {
+    assertCan('teacher.account');
+    opt = opt || {};
+    var t = teacher(id);
+    if (!t) throw bizError('NOT_FOUND', '教师不存在');
+    if (t.cooperationStatus === COOP.EXITED) {
+      throw bizError('TEACHER_EXITED', '该教师已退出合作，请先「重新加入」再开通账号');
+    }
+    var exist = accountOf(id);
+    if (exist) {
+      throw bizError('ACCOUNT_EXISTS',
+        '该教师已开通账号（登录名 ' + exist.loginName + '），无需重复开通', { account: exist });
+    }
+    if (!t.phone) throw bizError('PHONE_REQUIRED', '请先填写手机号，手机号即登录名');
+    if (db.users.some(function (u) { return u.loginName === t.phone; })) {
+      throw bizError('LOGIN_DUPLICATE', '登录名（手机号）已被其他账号占用');
+    }
+    var now = stamp();
+    var u = {
+      id: 'UA' + seq('UA', 3), loginName: t.phone, phone: t.phone,
+      /* 原型不保存明文口令，也不伪造哈希：真实系统在此写入加密凭据 */
+      passwordHash: '', mustChangePassword: true,
+      status: ACCOUNT.OK, roleId: 'teacher', teacherId: t.id,
+      openedAt: now, openedBy: session.operatorName, disabledAt: '',
+      inviteChannel: opt.inviteChannel || '短信邀请',
+      createdAt: now, updatedAt: now
+    };
+    db.users.push(u);
+    t.accountId = u.id;
+    t.updatedAt = now;
+    logCoop(t.id, COOP_ACTION.ACCOUNT_OPENED, {
+      reason: '为教师开通登录账号',
+      effectiveAt: now, remark: '登录名 ' + u.loginName + '，角色 teacher'
+    });
+    logChange(t.id, 'accountId', '', u.id);
+    save();
+    return u;
+  }
+
+  /* ---------- 账号状态（单独入口，便于权限与留痕统一校验） ---------- */
+  function setAccountStatus(teacherId, status, opt) {
+    assertCan('teacher.account');
+    opt = opt || {};
+    var u = accountOf(teacherId);
+    if (!u) throw bizError('NO_ACCOUNT', '该教师还没有登录账号');
+    if (status !== ACCOUNT.OK && status !== ACCOUNT.DISABLED) {
+      throw bizError('BAD_STATUS', '账号状态只能设置为「正常」或「已禁用」');
+    }
+    if (u.status === status) return u;
+    if (status === ACCOUNT.OK) enableAccount(teacherId, opt.reason || '手动启用账号');
+    else disableAccount(teacherId, opt.reason || '手动禁用账号');
+    save();
+    return u;
+  }
+
+  /* ---------- 启用 / 暂停 / 恢复 ---------- */
+  function activateTeacher(id, opt) {
+    assertCan('teacher.activate');
+    opt = opt || {};
+    var t = teacher(id);
+    if (!t) throw bizError('NOT_FOUND', '教师不存在');
+    if (t.cooperationStatus === COOP.READY) throw bizError('ALREADY_READY', '该教师已是「可授课」状态');
+    if (t.cooperationStatus === COOP.PAUSED) throw bizError('IS_PAUSED', '该教师处于暂停合作，请使用「恢复合作」');
+    if (t.cooperationStatus === COOP.EXITED) throw bizError('IS_EXITED', '该教师已退出合作，请先「重新加入」再启用');
+
+    var chk = activationCheck(id);
+    if (!chk.ready) {
+      throw bizError('NOT_READY', '还不能启用：' + chk.missing.join('；'), { check: chk });
+    }
+    var eff = opt.effectiveAt || TODAY;
+    t.cooperationStatus = COOP.READY;
+    t.lastCooperationStartAt = eff;
+    if (!t.firstCooperationAt) t.firstCooperationAt = eff;
+    t.cooperationEndAt = '';
+    t.pauseInfo = null;
+    t.updatedAt = stamp();
+    var u = accountOf(id);
+    if (u && u.status !== ACCOUNT.OK) enableAccount(id, '随教师启用恢复账号登录');
+    logCoop(id, COOP_ACTION.ACTIVATED, {
+      reason: opt.reason || '资料与账号就绪，进入可授课资源池',
+      effectiveAt: eff + ' ' + clock(), remark: opt.remark || ''
+    });
+    save();
+    return { teacher: t, check: chk };
+  }
+
+  function pauseTeacher(id, opt) {
+    assertCan('teacher.pause');
+    opt = opt || {};
+    var t = teacher(id);
+    if (!t) throw bizError('NOT_FOUND', '教师不存在');
+    if (t.cooperationStatus === COOP.PAUSED) throw bizError('ALREADY_PAUSED', '该教师已处于暂停合作');
+    if (t.cooperationStatus !== COOP.READY) throw bizError('NOT_READY_STATE', '只有「可授课」的教师才能暂停合作');
+    var reason = String(opt.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '请填写暂停原因');
+
+    var future = futureCoursesOf(id);
+    var plan = opt.courses || {};
+    var unhandled = future.filter(function (c) { return !plan[c.id]; });
+    if (unhandled.length) {
+      throw bizError('COURSES_UNHANDLED',
+        '还有 ' + unhandled.length + ' 节未来有效课程未处理，请先逐节决定「保留 / 改派 / 取消」',
+        { courses: future });
+    }
+    future.forEach(function (c) {
+      var p = plan[c.id];
+      if (p.action === 'reassign') {
+        var nt = teacher(p.toTeacherId);
+        if (!nt) throw bizError('TARGET_NOT_FOUND', '课程 ' + c.id + ' 指定的接替教师不存在');
+        if (nt.id === id) throw bizError('TARGET_SELF', '课程 ' + c.id + ' 不能改派给本人');
+        if (nt.cooperationStatus !== COOP.READY) {
+          throw bizError('TARGET_NOT_READY', '接替教师「' + nt.name + '」当前不是可授课状态');
+        }
+      } else if (p.action !== 'cancel' && p.action !== 'keep') {
+        throw bizError('BAD_ACTION', '课程 ' + c.id + ' 的处理方式无效：' + p.action);
+      }
+    });
+
+    var snap = JSON.stringify(db);
+    try {
+      future.forEach(function (c) {
+        var p = plan[c.id];
+        if (p.action === 'reassign') {
+          reassignCourse(c.id, p.toTeacherId, { reason: p.reason || '教师暂停合作，课程改派' });
+        } else if (p.action === 'cancel') {
+          cancelCourse(c.id, '教师暂停合作，课程取消');
+        } else {
+          c.needsAdjust = true;
+          c.note = (c.note ? c.note + '；' : '') + '教师暂停合作，本课待教务确认';
+        }
+      });
+      t.cooperationStatus = COOP.PAUSED;
+      t.pauseInfo = {
+        reason: reason, startAt: opt.startAt || TODAY,
+        expectResumeAt: opt.expectResumeAt || '', remark: opt.remark || '',
+        by: session.operatorName, at: stamp()
+      };
+      t.updatedAt = stamp();
+      if (!db.config.teacher || db.config.teacher.pauseDisableLogin !== false) {
+        disableAccount(id, '教师暂停合作，按机构策略禁用登录');
+      }
+      /* 当前学员关系保留，只打关注标记：暂停不等于解除归属 */
+      db.teacherStudents.forEach(function (r) {
+        if (r.teacherId === id && r.status === REL.ACTIVE) {
+          r.attention = '教师暂停合作，需教务关注' +
+            (opt.expectResumeAt ? '（预计 ' + opt.expectResumeAt + ' 恢复）' : '');
+        }
+      });
+      logCoop(id, COOP_ACTION.PAUSED, {
+        reason: reason, effectiveAt: (opt.startAt || TODAY) + ' ' + clock(),
+        remark: (opt.remark || '') + (opt.expectResumeAt ? '；预计恢复 ' + opt.expectResumeAt : '')
+      });
+      save();
+      return { teacher: t, future: future, students: currentStudentsOf(id) };
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'PAUSE_FAILED', '暂停合作未完成，已回滚：' + e.message, e.data);
+    }
+  }
+
+  function resumeTeacher(id, opt) {
+    assertCan('teacher.resume');
+    opt = opt || {};
+    var t = teacher(id);
+    if (!t) throw bizError('NOT_FOUND', '教师不存在');
+    if (t.cooperationStatus !== COOP.PAUSED) throw bizError('NOT_PAUSED', '只有「暂停合作」的教师才能恢复合作');
+    var useSameAccount = opt.useSameAccount !== false;
+    var eff = opt.effectiveAt || TODAY;
+    var snap = JSON.stringify(db);
+    try {
+      t.cooperationStatus = COOP.READY;
+      t.pauseInfo = null;
+      t.cooperationEndAt = '';
+      t.lastCooperationStartAt = eff;
+      t.updatedAt = stamp();
+      if (useSameAccount) enableAccount(id, '教师恢复合作，重新启用账号登录');
+      /* 暂停期间被教务解除的关系不会自动恢复；仍然有效的关系清掉关注标记 */
+      db.teacherStudents.forEach(function (r) {
+        if (r.teacherId === id && r.status === REL.ACTIVE) r.attention = '';
+      });
+      logCoop(id, COOP_ACTION.RESUMED, {
+        reason: opt.reason || '暂停结束，恢复合作',
+        effectiveAt: eff + ' ' + clock(),
+        remark: (opt.remark || '') + (useSameAccount ? '' : '；未沿用原账号，需重新开通')
+      });
+      save();
+      return { teacher: t, students: currentStudentsOf(id) };
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'RESUME_FAILED', '恢复合作未完成，已回滚：' + e.message, e.data);
+    }
+  }
+
+  /* ---------- 正式退出 / 重新加入 ---------- */
+  function exitTeacher(id, plan, opt) {
+    assertCan('teacher.exit');
+    plan = plan || {};
+    opt = opt || {};
+    var t = teacher(id);
+    if (!t) throw bizError('NOT_FOUND', '教师不存在');
+    if (t.cooperationStatus === COOP.EXITED) throw bizError('ALREADY_EXITED', '该教师已退出合作');
+
+    var chk = exitCheck(id);
+    var byStudent = {}, byCourse = {};
+    (plan.students || []).forEach(function (p) { byStudent[p.studentId] = p; });
+    (plan.courses || []).forEach(function (p) { byCourse[p.courseId] = p; });
+
+    var stuSkip = chk.students.filter(function (x) {
+      var p = byStudent[x.student.id];
+      return !p || !p.action || p.action === 'skip';
+    });
+    if (stuSkip.length) {
+      throw bizError('REMAIN_STUDENTS',
+        '还有 ' + stuSkip.length + ' 名学员的负责关系未处理，不能完成退出',
+        { students: chk.students, skip: stuSkip });
+    }
+    var ctSkip = chk.futureCourses.filter(function (c) { return !byCourse[c.id]; });
+    if (ctSkip.length) {
+      throw bizError('REMAIN_COURSES',
+        '还有 ' + ctSkip.length + ' 节未来课程未处理，不能完成退出',
+        { courses: chk.futureCourses });
+    }
+
+    function checkTarget(nt, name) {
+      if (!nt) throw bizError('TARGET_NOT_FOUND', (name || '') + '指定的接替教师不存在');
+      if (nt.id === id) throw bizError('TARGET_SELF', (name || '') + '不能把学员或课程转交给本人');
+      if (nt.cooperationStatus !== COOP.READY) {
+        throw bizError('TARGET_NOT_READY', (name || '') + '接替教师「' + nt.name + '」当前不是可授课状态');
+      }
+    }
+    chk.students.forEach(function (x) {
+      var p = byStudent[x.student.id];
+      if (p.action === 'reassign') {
+        if (!String(p.reason || '').trim()) {
+          throw bizError('REASON_REQUIRED', '学员「' + x.student.name + '」的调整原因必填');
+        }
+        checkTarget(teacher(p.toTeacherId), '学员「' + x.student.name + '」的');
+      } else if (p.action !== 'release') {
+        throw bizError('BAD_ACTION', '学员「' + x.student.name + '」的处理方式无效：' + p.action);
+      }
+    });
+    chk.futureCourses.forEach(function (c) {
+      var p = byCourse[c.id];
+      if (p.action === 'reassign') checkTarget(teacher(p.toTeacherId), '课程 ' + c.id + ' 的');
+      else if (p.action !== 'cancel' && p.action !== 'keep') {
+        throw bizError('BAD_ACTION', '课程 ' + c.id + ' 的处理方式无效：' + p.action);
+      }
+    });
+
+    var snap = JSON.stringify(db);
+    var exitAt = opt.exitAt || TODAY;
+    var stats = { transferred: 0, released: 0, coursesReassigned: 0, coursesCancelled: 0, coursesPending: 0 };
+    /* 退出前记下所有已完成课程的授课教师：退出流程只允许动未来课程 */
+    var historyBefore = {};
+    db.courses.forEach(function (c) { if (isCourseDone(c)) historyBefore[c.id] = c.teacherId; });
+    try {
+      chk.students.forEach(function (x) {
+        var p = byStudent[x.student.id];
+        if (p.action === 'reassign') {
+          transferStudent(x.student.id, p.toTeacherId, {
+            reason: p.reason, endReason: '原教师退出合作，转交新教师', effectiveAt: exitAt
+          });
+          stats.transferred++;
+        } else {
+          releaseStudent(x.student.id, {
+            reason: p.reason || '原教师退出合作，学员进入待分配', effectiveAt: exitAt
+          });
+          stats.released++;
+        }
+      });
+      chk.futureCourses.forEach(function (c) {
+        var p = byCourse[c.id];
+        if (p.action === 'reassign') {
+          reassignCourse(c.id, p.toTeacherId, { reason: p.reason || '原教师退出合作，课程改派' });
+          stats.coursesReassigned++;
+        } else if (p.action === 'cancel') {
+          cancelCourse(c.id, '原教师退出合作，课程取消');
+          stats.coursesCancelled++;
+        } else {
+          c.needsAdjust = true;
+          c.note = (c.note ? c.note + '；' : '') + '原教师退出合作，本课待教务调整';
+          stats.coursesPending++;
+        }
+      });
+      /* 已完成课程只做保护性断言，绝不在这里改写任何历史授课教师 */
+      Object.keys(historyBefore).forEach(function (cid) {
+        var cc = course(cid);
+        if (!cc || cc.teacherId !== historyBefore[cid]) {
+          throw bizError('HISTORY_BROKEN', '历史课程 ' + cid + ' 的授课教师被意外修改，操作已回滚');
+        }
+      });
+      t.cooperationStatus = COOP.EXITED;
+      t.cooperationEndAt = exitAt;
+      t.pauseInfo = null;
+      t.updatedAt = stamp();
+      disableAccount(id, '教师退出合作，禁用登录');
+      logCoop(id, COOP_ACTION.EXITED, {
+        reason: String(opt.reason || '').trim() || '正式结束合作',
+        effectiveAt: exitAt + ' ' + clock(),
+        remark: (opt.remark || '') + '；学员转交 ' + stats.transferred + ' 人，解除 ' + stats.released +
+          ' 人；课程改派 ' + stats.coursesReassigned + ' 节，取消 ' + stats.coursesCancelled +
+          ' 节，待调整 ' + stats.coursesPending + ' 节'
+      });
+      save();
+      return { ok: true, teacher: t, stats: stats, check: chk };
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'EXIT_FAILED', '退出合作未完成，已回滚到退出前状态：' + e.message, e.data);
+    }
+  }
+
+  function rejoinTeacher(id, opt) {
+    assertCan('teacher.exit');
+    opt = opt || {};
+    var t = teacher(id);
+    if (!t) throw bizError('NOT_FOUND', '教师不存在');
+    if (t.cooperationStatus !== COOP.EXITED) throw bizError('NOT_EXITED', '只有「已退出」的教师可以重新加入');
+    t.cooperationStatus = COOP.PENDING;
+    t.rejoinCount = (t.rejoinCount || 0) + 1;
+    t.lastCooperationStartAt = '';
+    t.cooperationEndAt = '';
+    t.updatedAt = stamp();
+    logCoop(id, COOP_ACTION.REJOINED, {
+      reason: opt.reason || '已退出教师重新加入，复用原档案（第 ' + (t.rejoinCount + 1) + ' 次合作）',
+      effectiveAt: (opt.effectiveAt || TODAY) + ' ' + clock(), remark: opt.remark || ''
+    });
+    save();
+    return t;
+  }
+
+  /* ---------- 学员分配 / 更换 / 解除 ---------- */
+  function assignStudent(teacherId, studentId, opt) {
+    assertCan('teacher.assign');
+    opt = opt || {};
+    var t = teacher(teacherId);
+    if (!t) throw bizError('NOT_FOUND', '教师不存在');
+    if (t.cooperationStatus !== COOP.READY) {
+      throw bizError('TEACHER_NOT_READY', '教师「' + t.name + '」当前不是可授课状态，不能分配学员');
+    }
+    var s = student(studentId);
+    if (!s) throw bizError('STUDENT_NOT_FOUND', '学员不存在');
+    var cur = activeRelationOfStudent(studentId);
+    if (cur) {
+      if (cur.teacherId === teacherId) {
+        throw bizError('DUPLICATE', '学员「' + s.name + '」已由该教师负责，无需重复分配', { relation: cur });
+      }
+      var ot = teacher(cur.teacherId);
+      throw bizError('STUDENT_HAS_TEACHER',
+        '学员「' + s.name + '」当前由「' + (ot ? ot.name : cur.teacherId) +
+        '」负责，请先解除原关系或使用「更换教师」', { teacher: ot, relation: cur });
+    }
+    var reason = String(opt.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '请填写分配原因');
+    var r = {
+      id: 'TS' + seq('TS', 3), teacherId: teacherId, studentId: studentId,
+      startAt: opt.startAt || TODAY, endAt: '', status: REL.ACTIVE,
+      assignReason: reason, endReason: '', attention: '',
+      createdBy: session.operatorName, createdAt: stamp()
+    };
+    db.teacherStudents.push(r);
+    syncStudentCache(studentId);
+    t.updatedAt = stamp();
+    save();
+    return r;
+  }
+
+  function transferStudent(studentId, toTeacherId, opt) {
+    assertCan('teacher.assign');
+    opt = opt || {};
+    var s = student(studentId);
+    if (!s) throw bizError('STUDENT_NOT_FOUND', '学员不存在');
+    var nt = teacher(toTeacherId);
+    if (!nt) throw bizError('NOT_FOUND', '接替教师不存在');
+    if (nt.cooperationStatus !== COOP.READY) {
+      throw bizError('TEACHER_NOT_READY', '接替教师「' + nt.name + '」当前不是可授课状态');
+    }
+    var cur = activeRelationOfStudent(studentId);
+    if (cur && cur.teacherId === toTeacherId) {
+      throw bizError('DUPLICATE', '学员「' + s.name + '」已由「' + nt.name + '」负责，无需重复调整');
+    }
+    var reason = String(opt.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '请填写调整原因');
+    var from = null;
+    if (cur) {
+      cur.endAt = opt.effectiveAt || TODAY;
+      cur.status = REL.ENDED;
+      cur.endReason = opt.endReason || reason;
+      cur.attention = '';
+      from = cur;
+    }
+    var r = {
+      id: 'TS' + seq('TS', 3), teacherId: toTeacherId, studentId: studentId,
+      startAt: opt.effectiveAt || TODAY, endAt: '', status: REL.ACTIVE,
+      assignReason: reason, endReason: '', attention: '',
+      createdBy: session.operatorName, createdAt: stamp()
+    };
+    db.teacherStudents.push(r);
+    syncStudentCache(studentId);
+    nt.updatedAt = stamp();
+    save();
+    return { from: from, to: r };
+  }
+
+  function releaseStudent(studentId, opt) {
+    assertCan('teacher.assign');
+    opt = opt || {};
+    var s = student(studentId);
+    if (!s) throw bizError('STUDENT_NOT_FOUND', '学员不存在');
+    var cur = activeRelationOfStudent(studentId);
+    if (!cur) throw bizError('NO_RELATION', '学员「' + s.name + '」当前没有负责教师');
+    var reason = String(opt.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '请填写解除关系的原因');
+    cur.endAt = opt.effectiveAt || TODAY;
+    cur.status = REL.ENDED;
+    cur.endReason = reason;
+    cur.attention = '';
+    syncStudentCache(studentId);
+    save();
+    return cur;
+  }
+
+  /* ---------- 课程改派 / 取消 ---------- */
+  function reassignCourse(courseId, toTeacherId, opt) {
+    assertCan('teacher.assign');
+    opt = opt || {};
+    var c = course(courseId);
+    if (!c) throw bizError('NOT_FOUND', '课程不存在');
+    /* 历史保护：已完成、已取消、已标记未上课的课程一律不允许改授课教师 */
+    if (c.status === COURSE_STATUS.DONE) {
+      throw bizError('COURSE_DONE', '课程 ' + c.id + ' 已完成，不能修改原授课教师');
+    }
+    if (c.status === COURSE_STATUS.CANCELLED) {
+      throw bizError('COURSE_CANCELLED', '课程 ' + c.id + ' 已取消，不能改派');
+    }
+    if (c.status === COURSE_STATUS.MISSED) {
+      throw bizError('COURSE_MISSED', '课程 ' + c.id + ' 已标记未上课，请先处理课程状态');
+    }
+    var nt = teacher(toTeacherId);
+    if (!nt) throw bizError('NOT_FOUND', '接替教师不存在');
+    if (nt.cooperationStatus !== COOP.READY) {
+      throw bizError('TARGET_NOT_READY', '接替教师「' + nt.name + '」当前不是可授课状态');
+    }
+    if (c.teacherId === nt.id) throw bizError('SAME_TEACHER', '课程已由「' + nt.name + '」授课');
+    var from = teacher(c.teacherId);
+    c.reassignLogs.push({
+      fromTeacherId: c.teacherId, fromName: from ? from.name : c.teacherName,
+      toTeacherId: nt.id, toName: nt.name,
+      reason: opt.reason || '', by: session.operatorName, at: stamp()
+    });
+    c.teacherId = nt.id;
+    c.teacher = nt.name;
+    c.teacherName = nt.name;
+    c.teacherCode = nt.code;
+    c.needsAdjust = false;
+    save();
+    return c;
+  }
+
+  function cancelCourse(courseId, reason, opt) {
+    assertCan('teacher.assign');
+    opt = opt || {};
+    var c = course(courseId);
+    if (!c) throw bizError('NOT_FOUND', '课程不存在');
+    if (c.status === COURSE_STATUS.DONE) throw bizError('COURSE_DONE', '已完成课程不能取消');
+    if (c.status === COURSE_STATUS.CANCELLED) return c;
+    c.status = COURSE_STATUS.CANCELLED;
+    c.cancelReason = reason || '';
+    c.cancelledAt = stamp();
+    c.cancelledBy = session.operatorName;
+    c.deductState = '未扣课';
+    c.deduct = '未扣课';
+    c.needsAdjust = false;
+    save();
+    return c;
+  }
+
+  /* ---------- 历史查询 ---------- */
+  function cooperationsOf(id) {
+    return db.teacherCooperations.filter(function (c) { return c.teacherId === id; })
+      .sort(function (a, b) { return a.effectiveAt < b.effectiveAt ? -1 : 1; });
+  }
+  function changeLogsOf(id) {
+    return db.teacherChanges.filter(function (c) { return c.teacherId === id; })
+      .sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+  }
+  function users() { return db.users; }
+  function usersOfRole(roleId) {
+    return db.users.filter(function (u) { return u.roleId === roleId; });
+  }
+
   /* ---------------- 对外 ---------------- */
   var Store = {
     TODAY: TODAY,
@@ -3003,7 +5301,52 @@
     reset: reset,
     /* 基础 */
     students: students, student: student, teacher: teacher,
-    wordbooks: wordbooks, wordbook: wordbook, word: word, wordByEn: wordByEn, wordsOfBook: wordsOfBook,
+    /* 教师资源池：查询 */
+    teachers: teachers, teacherByPhone: teacherByPhone, teacherByCode: teacherByCode,
+    teacherStat: teacherStat, teacherOverview: teacherOverview, teacherFacets: teacherFacets,
+    searchTeachers: searchTeachers, teacherPool: teacherPool, teacherRanking: teacherRanking,
+    teacherAlerts: teacherAlerts, availabilityText: availabilityText,
+    accountOf: accountOf, accountStatusOf: accountStatusOf, userById: userById,
+    users: users, usersOfRole: usersOfRole,
+    /* 教师资源池：生命周期 */
+    createTeacher: createTeacher, updateTeacher: updateTeacher, setAvailability: setAvailability,
+    openTeacherAccount: openTeacherAccount, setAccountStatus: setAccountStatus,
+    activateTeacher: activateTeacher,
+    pauseTeacher: pauseTeacher, resumeTeacher: resumeTeacher,
+    exitTeacher: exitTeacher, rejoinTeacher: rejoinTeacher,
+    activationCheck: activationCheck, exitCheck: exitCheck,
+    /* 教师资源池：师生关系与课程交接 */
+    relationsOfTeacher: relationsOfTeacher, currentRelationsOf: currentRelationsOf,
+    historyRelationsOf: historyRelationsOf, activeRelationOfStudent: activeRelationOfStudent,
+    relationsOfStudent: relationsOfStudent, currentStudentsOf: currentStudentsOf,
+    historyStudentsOf: historyStudentsOf, futureCoursesOf: futureCoursesOf,
+    assignStudent: assignStudent, transferStudent: transferStudent, releaseStudent: releaseStudent,
+    reassignCourse: reassignCourse, cancelCourse: cancelCourse,
+    cooperationsOf: cooperationsOf, changeLogsOf: changeLogsOf, pendingRecordsOf: pendingRecordsOf,
+    /* 教师资源池：权限 */
+    setSession: setSession, currentSession: currentSession, can: can, assertCan: assertCan,
+    PERMS: PERMS, ROLE_LABEL: ROLE_LABEL,
+    COOP: COOP, COOP_STATUS: COOP_STATUS, COOP_TONE: COOP_TONE, COOP_ACTION: COOP_ACTION,
+    COOP_ACTION_LABEL: COOP_ACTION_LABEL, ACCOUNT: ACCOUNT, ACCOUNT_STATUS: ACCOUNT_STATUS,
+    ACCOUNT_TONE: ACCOUNT_TONE, REL: REL, TEACHER_GRADES: TEACHER_GRADES,
+    TEACHER_TEXTBOOKS: TEACHER_TEXTBOOKS, TEACHING_TAGS: TEACHING_TAGS,
+    WEEKDAYS: WEEKDAYS, PERIODS: PERIODS, PERIOD_TIME: PERIOD_TIME,
+    courseHours: courseHours,
+    wordbooks: wordbooks, wordbook: wordbook, word: word, wordByEn: wordByEn,
+    wordsOfBook: wordsOfBook, bookWords: bookWords, bookLinkCount: bookLinkCount,
+    wordbookStat: wordbookStat, searchWordbooks: searchWordbooks, wordbookFacets: wordbookFacets,
+    createWordbook: createWordbook, updateWordbook: updateWordbook,
+    setWordbookStatus: setWordbookStatus, updateWord: updateWord,
+    removeWordFromBook: removeWordFromBook, moveWordInBook: moveWordInBook,
+    addWordToBook: addWordToBook, wordbooksOfWord: wordbooksOfWord,
+    WB_CATEGORIES: WB_CATEGORIES, WB_STAGES: WB_STAGES, WB_STATUS: WB_STATUS, WB_ORG: WB_ORG,
+    /* 批量导入 */
+    detectHeader: detectHeader, analyzeImport: analyzeImport, commitImport: commitImport,
+    recordImportFailure: recordImportFailure, startImportBatch: startImportBatch,
+    finishImportBatch: finishImportBatch, importBatches: importBatches, importBatch: importBatch,
+    importJobs: importJobs, importJob: importJob, importJobsOf: importJobsOf,
+    failedRowsCsv: failedRowsCsv, splitMean: splitMean, isEnglishWord: isEnglishWord,
+    headerMatch: headerMatch,
     /* 档案 */
     wordState: wordState, wordStates: wordStates, setWordState: setWordState, ensureWordState: ensureWordState,
     /* 训练 */

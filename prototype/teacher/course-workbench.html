@@ -287,7 +287,7 @@ function renderEntries() {
   const task = Store.activeTask(sid);
   const arts = Store.articleTasksOf(sid).filter(t => Store.isOpen(t.status));
   const tStat = task ? Store.trainTaskStat(task.id) : null;
-  const hasWords = Store.db.wordbooks.filter(b => b.hasWords).length > 0;
+  const hasWords = Store.wordbooks().filter(b => b.wordCount > 0 && b.status === '启用').length > 0;
 
   const cards = [];
 

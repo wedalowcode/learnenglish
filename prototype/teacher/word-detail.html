@@ -243,9 +243,12 @@ function initSelect() {
 }
 
 function wordSeq(w) {
-  const bk = Store.wordbook('WB001');
-  if (!bk) return '—';
-  return '第 ' + (bk.wordIds.indexOf(w.id) + 1) + ' / ' + bk.wordIds.length + ' 个';
+  const books = Store.wordbooksOfWord(w.id);
+  if (!books.length) return '未加入任何词库';
+  const bk = books[0];
+  const list = Store.bookWords(bk.id);
+  const i = list.findIndex(x => x.id === w.id);
+  return bk.name + ' 第 ' + (i + 1) + ' / ' + list.length + ' 个';
 }
 
 function playW(btn) {

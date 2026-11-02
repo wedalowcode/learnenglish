@@ -166,6 +166,7 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'admin', active: 'dashboard', title: '经营概览' });
 
@@ -225,7 +226,7 @@ document.getElementById('todos').innerHTML = DB.todos.map(t => `
 
 /* ---------------- 近期课程 ---------------- */
 const ST = { '已完成': 'tag-green', '待上课': 'tag-blue', '待处理': 'tag-amber', '未上课': 'tag-slate', '已取消': 'tag-slate', '已开始': 'tag-cyan' };
-Proto.renderRows('recentCourses', DB.courses.slice(0, 6), c => `
+Proto.renderRows('recentCourses', Store.courses().slice(0, 6), c => `
   <tr>
     <td class="nowrap">${c.date.slice(5)} ${c.start}</td>
     <td class="strong">${c.student}</td>
@@ -235,20 +236,23 @@ Proto.renderRows('recentCourses', DB.courses.slice(0, 6), c => `
   </tr>`, 5);
 
 /* ---------------- 排行 ---------------- */
-const tRank = DB.teachers.filter(t => t.status === '在职').sort((a, b) => b.monthCourses - a.monthCourses);
+/* 教师排行：合作状态与授课量都来自 Store，暂停/退出教师不参与 */
+Store.setSession({ role: 'admin', operatorName: '张敏' });
+const tRank = Store.teacherRanking({ limit: 5 });
+const maxMonth = Math.max(1, ...tRank.map(x => x.monthCourses));
 Proto.renderRows('teacherRank', tRank, (t, i) => `
   <tr>
     <td><span class="tag ${i === 0 ? 'tag-amber' : 'tag-slate'} nodot">${i + 1}</span></td>
-    <td class="strong">${t.name}</td>
+    <td class="strong"><a href="teacher-detail.html?id=${t.id}">${t.name}</a></td>
     <td class="mono">${t.monthCourses} 节</td>
-    <td class="mono">${t.students} 人</td>
+    <td class="mono">${t.currentStudents} 人</td>
     <td>
       <div class="bar-row">
-        <div class="bar"><i style="width:${Math.round(t.monthCourses / 28 * 100)}%"></i></div>
-        <span class="val">${Math.round(t.monthCourses / 28 * 100)}%</span>
+        <div class="bar"><i style="width:${Math.round(t.monthCourses / maxMonth * 100)}%"></i></div>
+        <span class="val">${t.cooperationStatus}</span>
       </div>
     </td>
-  </tr>`, 5);
+  </tr>`, 5, '暂无教师数据');
 
 const aRank = DB.agents.filter(a => a.orders > 0).sort((a, b) => b.amount - a.amount);
 Proto.renderRows('agentRank', aRank, (a, i) => `

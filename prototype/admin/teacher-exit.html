@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>退出合作处理</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .step-card { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px; background: #fff; }
+  .step-card .sc-head {
+    display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+    border-bottom: 1px solid var(--border); font-size: 13px;
+  }
+  .step-card .sc-no {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; flex: 0 0 auto;
+  }
+  .step-card.done .sc-no { background: var(--success); }
+  .step-card.warn .sc-no { background: var(--warning); }
+  .sc-body { padding: 0; }
+  .sc-pad { padding: 12px 14px; }
+  .plan-cell { min-width: 120px; }
+  .sticky-bar {
+    position: sticky; bottom: 12px; z-index: 20; background: #fff;
+    border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, .10);
+    padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    margin-top: 16px;
+  }
+  main.content { padding-bottom: 110px; }
+  .check-line { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 4px 0; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content" id="page"></main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'teacher-list' });
+Store.setSession({ role: 'admin', operatorName: '张敏' });
+const S = Store;
+const TID = new URLSearchParams(location.search).get('id') || '';
+let T = S.teacher(TID);
+
+/* 本地交接方案：页面只负责收集选择，校验与写入全部由 Store 完成 */
+let plan = { students: {}, courses: {}, reason: '', remark: '' };
+
+if (!T) {
+  document.getElementById('page').innerHTML = `
+    <div class="card mt24"><div class="empty"><div class="e-ico">▤</div>
+      <p>教师 ${TID} 不存在</p>
+      <div class="mt16"><a class="btn btn-primary" href="teacher-list.html">返回列表</a></div></div></div>`;
+} else if (T.cooperationStatus === S.COOP.EXITED) {
+  document.getElementById('page').innerHTML = `
+    <div class="page-head"><div><div class="crumb">教学管理<span class="sep">/</span>
+      <a href="teacher-list.html">教师资源池</a><span class="sep">/</span>退出合作</div>
+      <h1 class="page-title">${esc(T.name)} 已退出合作</h1></div>
+      <div class="page-actions"><a class="btn" href="teacher-detail.html?id=${TID}">返回详情</a></div></div>
+    <div class="alert alert-info"><span class="ico">i</span>
+      <div>该教师已于 ${T.cooperationEndAt || '—'} 正式退出合作，历史课程、教学记录与报告全部保留。
+        如需再次合作，请在教师详情页使用「重新加入」复用原档案。</div></div>`;
+} else {
+  render();
+}
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function render() {
+  T = S.teacher(TID);
+  const chk = S.exitCheck(TID);
+  const pool = S.teacherPool();
+
+  const stuHandled = chk.students.filter(x => plan.students[x.student.id]).length;
+  const ctHandled = chk.futureCourses.filter(c => plan.courses[c.id]).length;
+  const allStuDone = stuHandled === chk.students.length;
+  const allCtDone = ctHandled === chk.futureCourses.length;
+  const canExit = allStuDone && allCtDone && !!plan.reason.trim();
+  /* 提示条按「本次交接方案」的完成度给出，而不是按库里尚未提交的旧状态，
+     否则会出现「卡片显示已全部处理、上方却仍说不能退出」的自相矛盾 */
+  const leftStu = chk.students.filter(x => !plan.students[x.student.id]);
+  const leftCt = chk.futureCourses.filter(c => !plan.courses[c.id]);
+
+  document.getElementById('page').innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="crumb">教学管理<span class="sep">/</span>
+          <a href="teacher-list.html">教师资源池</a><span class="sep">/</span>
+          <a href="teacher-detail.html?id=${TID}">${esc(T.name)}</a><span class="sep">/</span>退出合作</div>
+        <h1 class="page-title">退出合作处理</h1>
+        <div class="page-sub">
+          ${T.code} · ${esc(T.name)} · 当前学员 ${chk.students.length} 人 ·
+          未来有效课程 ${chk.futureCourses.length} 节 · 账号 ${S.accountStatusOf(TID)}
+        </div>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="teacher-detail.html?id=${TID}">返回详情</a>
+      </div>
+    </div>
+
+    <div class="alert alert-danger mb16"><span class="ico">!</span>
+      <div><b>退出是正式结束合作，不是暂停。</b>退出后合作状态变为「已退出」、登录账号禁用、不能再分配学员或排课；
+        但<b>档案永不删除</b>，历史课程、教学记录、学习报告与统计全部保留。
+        必须先处理完当前学员与未来课程才能确认退出。</div></div>
+
+    ${(leftStu.length || leftCt.length) ? `
+    <div class="alert alert-warn mb16"><span class="ico">!</span>
+      <div><b>还不能确认退出，以下 ${leftStu.length + leftCt.length} 项还没有确定处理方式：</b>
+        <ul style="margin:6px 0 0 18px;padding:0">
+          ${leftStu.map(x => `<li>学员「${esc(x.student.name)}」：转交给其他教师，或解除关系进入待分配</li>`).join('')}
+          ${leftCt.map(c => `<li>课程 ${c.id}（${c.date} ${c.start} ${esc(c.student)}）：改派、取消，或保留待调整</li>`).join('')}
+        </ul>
+        <div class="small" style="margin-top:6px">逐项选择处理方式后，「确认退出合作」才会变为可点击。</div></div></div>` : `
+    <div class="alert alert-info mb16"><span class="ico">✓</span>
+      <div>学员与课程都已确定处理方式${plan.reason.trim() ? '，可以确认退出合作。' : '，填写退出原因后即可确认退出。'}</div></div>`}
+
+    <!-- 第一步：学员 -->
+    <div class="step-card ${chk.students.length === 0 ? 'done' : allStuDone ? 'done' : 'warn'}">
+      <div class="sc-head">
+        <div class="sc-no">${allStuDone ? '✓' : 1}</div>
+        <div class="grow"><b>检查并处理当前学员</b>
+          <span class="small muted">（${stuHandled} / ${chk.students.length} 已处理）</span></div>
+        <span class="tag ${chk.students.length === 0 ? 'tag-green' : allStuDone ? 'tag-green' : 'tag-amber'} nodot">
+          ${chk.students.length === 0 ? '无在负责学员' : allStuDone ? '已全部处理' : '有待处理'}</span>
+      </div>
+      <div class="sc-body">
+        ${chk.students.length ? `
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>学员</th><th>年级</th><th class="right">剩余课时</th><th>最近授课</th>
+              <th>学习状态</th><th class="right">未来课</th><th style="width:150px">处理方式</th>
+              <th style="width:190px">接替教师 / 原因</th></tr></thead>
+            <tbody>
+              ${chk.students.map(x => {
+                const p = plan.students[x.student.id] || {};
+                return `<tr>
+                  <td class="strong">${esc(x.student.name)}</td>
+                  <td>${esc(x.student.grade)}</td>
+                  <td class="right mono">${x.remain}</td>
+                  <td class="small muted">${x.lastCourseAt || '—'}</td>
+                  <td><span class="tag ${x.student.status === '在读' ? 'tag-green' : 'tag-amber'} nodot">${x.student.status}</span></td>
+                  <td class="right mono">${x.futureCourses}</td>
+                  <td>
+                    <select class="select" onchange="setStu('${x.student.id}','action',this.value)">
+                      <option value="" ${!p.action ? 'selected' : ''}>请选择</option>
+                      <option value="reassign" ${p.action === 'reassign' ? 'selected' : ''}>转交给其他教师</option>
+                      <option value="release" ${p.action === 'release' ? 'selected' : ''}>解除关系（待分配）</option>
+                    </select>
+                  </td>
+                  <td>
+                    ${p.action === 'reassign' ? `
+                      <select class="select mb8" onchange="setStu('${x.student.id}','toTeacherId',this.value)">
+                        <option value="">选择接替教师</option>
+                        ${pool.map(tt => `<option value="${tt.teacher.id}" ${p.toTeacherId === tt.teacher.id ? 'selected' : ''}>
+                          ${esc(tt.teacher.name)}（${tt.stat.currentStudents} 人）</option>`).join('')}
+                      </select>` : ''}
+                    ${p.action ? `
+                      <input class="input" placeholder="调整原因（必填）" value="${esc(p.reason || '')}"
+                        onchange="setStu('${x.student.id}','reason',this.value)">` : ''}
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>` : `<div class="sc-pad small muted">该教师当前没有负责的学员，可以继续下一步。</div>`}
+      </div>
+    </div>
+
+    <!-- 第二步：课程 -->
+    <div class="step-card ${chk.futureCourses.length === 0 ? 'done' : allCtDone ? 'done' : 'warn'}">
+      <div class="sc-head">
+        <div class="sc-no">${allCtDone ? '✓' : 2}</div>
+        <div class="grow"><b>检查并处理未来有效课程</b>
+          <span class="small muted">（${ctHandled} / ${chk.futureCourses.length} 已处理）</span></div>
+        <span class="tag ${chk.futureCourses.length === 0 ? 'tag-green' : allCtDone ? 'tag-green' : 'tag-amber'} nodot">
+          ${chk.futureCourses.length === 0 ? '无未来课程' : allCtDone ? '已全部处理' : '有待处理'}</span>
+      </div>
+      <div class="sc-body">
+        ${chk.futureCourses.length ? `
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>课程编号</th><th>日期</th><th>时间</th><th>学员</th><th>状态</th>
+              <th style="width:160px">处理方式</th><th style="width:180px">接替教师</th></tr></thead>
+            <tbody>
+              ${chk.futureCourses.map(c => {
+                const p = plan.courses[c.id] || {};
+                return `<tr>
+                  <td class="mono small">${c.id}</td>
+                  <td class="nowrap">${c.date}</td>
+                  <td class="mono">${c.start}-${c.end}</td>
+                  <td class="strong">${esc(c.student)}</td>
+                  <td><span class="tag tag-blue">${c.status}</span></td>
+                  <td>
+                    <select class="select" onchange="setCt('${c.id}','action',this.value)">
+                      <option value="" ${!p.action ? 'selected' : ''}>请选择</option>
+                      <option value="reassign" ${p.action === 'reassign' ? 'selected' : ''}>改派教师</option>
+                      <option value="cancel" ${p.action === 'cancel' ? 'selected' : ''}>取消课程</option>
+                      <option value="keep" ${p.action === 'keep' ? 'selected' : ''}>保留待调整</option>
+                    </select>
+                  </td>
+                  <td>
+                    ${p.action === 'reassign' ? `
+                      <select class="select" onchange="setCt('${c.id}','toTeacherId',this.value)">
+                        <option value="">选择接替教师</option>
+                        ${pool.map(tt => `<option value="${tt.teacher.id}" ${p.toTeacherId === tt.teacher.id ? 'selected' : ''}>
+                          ${esc(tt.teacher.name)}（${tt.stat.currentStudents} 人）</option>`).join('')}
+                      </select>` : '<span class="muted small">—</span>'}
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="sc-pad alert alert-info" style="margin:12px 14px">
+          <span class="ico">i</span>
+          <div>「保留待调整」会把课程标记为待教务处理：不自动完成、不自动扣课时，也不会产生正常扣课流水。</div>
+        </div>` : `<div class="sc-pad small muted">没有未来有效课程（含今日未完成课程）。</div>`}
+      </div>
+    </div>
+
+    <!-- 第三步：记录 -->
+    <div class="step-card ${(chk.pendingRecords.length || chk.draftReports.length) ? 'warn' : 'done'}">
+      <div class="sc-head">
+        <div class="sc-no">3</div>
+        <div class="grow"><b>检查未完成的业务事项</b>
+          <span class="small muted">（不阻塞退出，但需要知悉并安排接手）</span></div>
+        <span class="tag ${(chk.pendingRecords.length || chk.draftReports.length) ? 'tag-amber' : 'tag-green'} nodot">
+          ${(chk.pendingRecords.length + chk.draftReports.length) || 0} 项</span>
+      </div>
+      <div class="sc-body">
+        <div class="sc-pad">
+          <div class="check-line">
+            <span style="color:${chk.pendingRecords.length ? 'var(--warning)' : 'var(--success)'}">
+              ${chk.pendingRecords.length ? '!' : '✓'}</span>
+            <span>待提交的课程教学记录：<b>${chk.pendingRecords.length}</b> 条</span>
+          </div>
+          <div class="check-line">
+            <span style="color:${chk.draftReports.length ? 'var(--warning)' : 'var(--success)'}">
+              ${chk.draftReports.length ? '!' : '✓'}</span>
+            <span>尚未发布给家长的学习报告：<b>${chk.draftReports.length}</b> 份</span>
+          </div>
+          <div class="check-line">
+            <span style="color:${chk.anomalies.length ? 'var(--danger)' : 'var(--success)'}">
+              ${chk.anomalies.length ? '!' : '✓'}</span>
+            <span>已完成但扣课异常的课程：<b>${chk.anomalies.length}</b> 节</span>
+          </div>
+          <div class="check-line">
+            <span style="color:var(--success)">✓</span>
+            <span>历史课程（已完成 ${S.teacherStat(TID).doneCourses} 节）不受退出影响，授课教师永久保留</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 第四步：确认 -->
+    <div class="step-card">
+      <div class="sc-head">
+        <div class="sc-no">4</div>
+        <div class="grow"><b>退出前检查清单</b></div>
+        <span class="tag ${canExit ? 'tag-green' : 'tag-amber'} nodot">${canExit ? '可以退出' : '待完成'}</span>
+      </div>
+      <div class="sc-body">
+        <div class="sc-pad">
+          <div class="grid g2" style="gap:20px">
+            <div>
+              <div class="check-line"><span style="color:${allStuDone ? 'var(--success)' : 'var(--danger)'}">${allStuDone ? '✓' : '✗'}</span>
+                <span>当前学员是否全部处理（${stuHandled}/${chk.students.length}）</span></div>
+              <div class="check-line"><span style="color:${allCtDone ? 'var(--success)' : 'var(--danger)'}">${allCtDone ? '✓' : '✗'}</span>
+                <span>未来有效课程是否全部处理（${ctHandled}/${chk.futureCourses.length}）</span></div>
+              <div class="check-line"><span style="color:${plan.reason.trim() ? 'var(--success)' : 'var(--danger)'}">${plan.reason.trim() ? '✓' : '✗'}</span>
+                <span>是否已填写退出原因</span></div>
+            </div>
+            <div>
+              <div class="field mb12"><label>退出原因 <span class="req">*</span></label>
+                <input class="input" id="e_reason" value="${esc(plan.reason)}"
+                  placeholder="如：教师毕业离校 / 主动结束合作 / 机构决定不再安排"
+                  oninput="plan.reason=this.value; refreshBar()"></div>
+              <div class="field"><label>备注</label>
+                <textarea class="textarea" id="e_remark" placeholder="交接说明，将写入合作记录"
+                  oninput="plan.remark=this.value">${esc(plan.remark)}</textarea></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sticky-bar">
+      <div class="small muted">
+        退出后：合作状态 → 已退出 · 登录账号 → 已禁用 · 学员关系 → 转交或解除 · 历史数据 → 全部保留
+      </div>
+      <div class="flex gap8">
+        <a class="btn" href="teacher-detail.html?id=${TID}">取消</a>
+        <button class="btn btn-danger" id="exitBtn" onclick="submitExit()" ${canExit ? '' : 'disabled'}>
+          确认退出合作
+        </button>
+      </div>
+    </div>
+
+    <div id="exitErr"></div>`;
+}
+
+function setStu(sid, key, val) {
+  plan.students[sid] = plan.students[sid] || {};
+  plan.students[sid][key] = val;
+  if (key === 'action' && val !== 'reassign') delete plan.students[sid].toTeacherId;
+  render();
+  document.getElementById('e_reason') && (document.getElementById('e_reason').value = plan.reason);
+}
+
+function setCt(cid, key, val) {
+  plan.courses[cid] = plan.courses[cid] || {};
+  plan.courses[cid][key] = val;
+  if (key === 'action' && val !== 'reassign') delete plan.courses[cid].toTeacherId;
+  render();
+  document.getElementById('e_reason') && (document.getElementById('e_reason').value = plan.reason);
+}
+
+function refreshBar() {
+  const btn = document.getElementById('exitBtn');
+  const chk = S.exitCheck(TID);
+  const allStu = chk.students.every(x => plan.students[x.student.id]);
+  const allCt = chk.futureCourses.every(c => plan.courses[c.id]);
+  btn.disabled = !(allStu && allCt && plan.reason.trim());
+}
+
+function submitExit() {
+  const chk = S.exitCheck(TID);
+  const students = chk.students.map(x => {
+    const p = plan.students[x.student.id] || {};
+    return { studentId: x.student.id, action: p.action, toTeacherId: p.toTeacherId || '', reason: p.reason || '' };
+  });
+  const courses = chk.futureCourses.map(c => {
+    const p = plan.courses[c.id] || {};
+    return { courseId: c.id, action: p.action, toTeacherId: p.toTeacherId || '', reason: p.reason || '' };
+  });
+  const btn = document.getElementById('exitBtn');
+  btn.disabled = true;
+  btn.textContent = '处理中…';
+  try {
+    const r = S.exitTeacher(TID, { students: students, courses: courses },
+      { reason: plan.reason, remark: plan.remark });
+    Proto.toast(`已退出合作：转交学员 ${r.stats.transferred} 人、解除 ${r.stats.released} 人，` +
+      `改派课程 ${r.stats.coursesReassigned} 节、取消 ${r.stats.coursesCancelled} 节`, 'ok');
+    setTimeout(() => location.href = 'teacher-detail.html?id=' + TID, 900);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '确认退出合作';
+    document.getElementById('exitErr').innerHTML =
+      `<div class="alert alert-danger mt16"><span class="ico">!</span>
+        <div><b>退出未完成，已回滚到退出前状态。</b><br>${esc(e.message)}</div></div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+</script>
+</body>
+</html>

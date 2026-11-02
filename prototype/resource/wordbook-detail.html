@@ -5,6 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>词库详情</title>
 <link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .w-en { font-size: 14px; font-weight: 600; }
+  .mean-line { font-size: 12.5px; line-height: 1.65; }
+  .mean-line .pos { color: var(--info); font-size: 11.5px; margin-right: 2px; }
+  .src { font-size: 11px; color: var(--text-3); font-family: var(--mono, ui-monospace, monospace); }
+  .seq { font-variant-numeric: tabular-nums; color: var(--text-3); }
+  .miss { color: var(--danger); font-size: 11.5px; }
+  .noaudio { color: var(--text-3); font-size: 11.5px; }
+  .audio-btn.mini { max-width: 100px; display: inline-block; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+  .desc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 24px; }
+  .desc-item { display: flex; flex-direction: column; gap: 3px; padding: 8px 0; border-bottom: 1px dashed var(--border); }
+  .desc-item .k { font-size: 11.5px; color: var(--text-3); }
+  .desc-item .v { font-size: 13px; }
+  .kbd { font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+</style>
 </head>
 <body>
 <div class="layout">
@@ -16,145 +33,527 @@
       <div class="page-head">
         <div>
           <div class="crumb">资源中心<span class="sep">/</span><a href="wordbook-list.html">词库管理</a><span class="sep">/</span>词库详情</div>
-          <h1 class="page-title">人教版 七年级上 Unit 1 词汇</h1>
-          <div class="page-sub">WB001 · 人教版 / 七年级 / 上学期 / Unit 1 · 23 个单词 · 启用</div>
+          <h1 class="page-title" id="bkName">词库详情</h1>
+          <div class="page-sub" id="bkSub">—</div>
         </div>
         <div class="page-actions">
           <a class="btn" href="wordbook-list.html">返回</a>
-          <a class="btn" href="import.html">批量导入</a>
-          <button class="btn btn-primary" onclick="Proto.toast('打开新增单词（示意）')">+ 新增单词</button>
+          <a class="btn" id="bkImport" href="import.html">继续导入</a>
+          <button class="btn btn-primary" onclick="openAdd()">+ 新增单词</button>
         </div>
       </div>
 
-      <div class="grid g4 mb16">
-        <div class="card stat"><div class="stat-label">单词数量</div><div class="stat-value">23<small>个</small></div></div>
-        <div class="card stat"><div class="stat-label">音频就绪</div><div class="stat-value" style="color:var(--success)">23<small>/ 23</small></div>
-          <div class="stat-foot">完整率 100%</div></div>
-        <div class="card stat"><div class="stat-label">多释义单词</div><div class="stat-value">5<small>个</small></div>
-          <div class="stat-foot">如 name、question、answer</div></div>
-        <div class="card stat"><div class="stat-label">被使用中</div><div class="stat-value">8<small>名学员</small></div>
-          <div class="stat-foot">其中 2 人训练进行中</div></div>
+      <div id="notFound" class="card hidden">
+        <div class="empty">
+          <div class="e-ico">□</div>
+          <p>没有找到这个词库，可能已在其他批次中被删除。</p>
+          <a class="btn btn-primary btn-sm" href="wordbook-list.html">返回词库列表</a>
+        </div>
       </div>
 
-      <div class="card">
-        <div class="tabs" id="wtabs">
-          <button class="tab active" data-pane="wp1">单词列表<span class="count">23</span></button>
-          <button class="tab" data-pane="wp2">词库基础信息</button>
-          <button class="tab" data-pane="wp3">导入记录</button>
+      <div id="main" class="hidden">
+        <div class="grid g4 mb16">
+          <div class="card stat"><div class="stat-label">单词数量</div>
+            <div class="stat-value" id="sCount">0<small>个</small></div>
+            <div class="stat-foot" id="sCountFoot"></div></div>
+          <div class="card stat"><div class="stat-label">音标覆盖</div>
+            <div class="stat-value" id="sPh">0<small>/ 0</small></div>
+            <div class="stat-foot" id="sPhFoot"></div></div>
+          <div class="card stat"><div class="stat-label">音频关联</div>
+            <div class="stat-value" id="sAudio">0<small>/ 0</small></div>
+            <div class="stat-foot" id="sAudioFoot"></div></div>
+          <div class="card stat"><div class="stat-label">使用中</div>
+            <div class="stat-value" id="sUser">0<small>名学员</small></div>
+            <div class="stat-foot" id="sUserFoot"></div></div>
         </div>
 
-        <div class="tab-pane active" id="wp1">
-          <div class="alert alert-info mb16"><span class="ico">i</span>
-            <div>一个单词可以有<b>多个中文释义</b>，此处按多行展示；词库与单词为多对多关系，词库内单独保存排序，不影响同一单词在其他词库中的顺序。</div>
+        <div class="card">
+          <div class="tabs" id="tabs">
+            <button class="tab active" data-pane="p1">单词列表<span class="count" id="tabCount">0</span></button>
+            <button class="tab" data-pane="p2">词库信息</button>
+            <button class="tab" data-pane="p3">导入记录</button>
           </div>
-          <div class="flex jcb aic mb12">
-            <div class="flex gap8 aic">
-              <input class="input" placeholder="搜索单词或释义" style="width:200px" oninput="filterWords(this.value)">
-              <select class="select" style="width:130px"><option>全部状态</option><option>启用</option><option>停用</option></select>
+
+          <div class="tab-pane active" id="p1">
+            <div class="flex jcb aic mb12 wrap gap8">
+              <div class="flex gap8 aic">
+                <input class="input" id="kw" placeholder="搜索单词或释义" style="width:190px" oninput="pager=1;renderWords()">
+                <select class="select" id="flt" style="width:130px" onchange="pager=1;renderWords()">
+                  <option value="">全部单词</option>
+                  <option value="noph">缺音标</option>
+                  <option value="noaudio">缺音频</option>
+                  <option value="multi">多释义</option>
+                </select>
+                <span class="small muted" id="fltTip"></span>
+              </div>
+              <span class="small muted">排序只影响本词库，不改变同一单词在其他词库中的序号</span>
             </div>
-            <div class="small muted">词库内排序可调整，不影响其他词库中的同一单词</div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead><tr>
+                  <th style="width:56px">排序</th>
+                  <th style="width:120px">单词</th>
+                  <th style="width:120px">音标</th>
+                  <th style="width:64px">词性</th>
+                  <th>中文释义</th>
+                  <th style="width:76px">音频</th>
+                  <th style="width:150px">来源</th>
+                  <th style="width:150px">操作</th>
+                </tr></thead>
+                <tbody id="wordRows"></tbody>
+              </table>
+            </div>
+            <div class="pager">
+              <span id="pageTip">共 0 条</span>
+              <div class="pages" id="pages"></div>
+            </div>
           </div>
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th style="width:56px">排序</th><th style="width:130px">单词</th><th style="width:130px">音标</th>
-                <th>中文释义</th><th>示例句</th><th style="width:80px">音频</th><th style="width:80px">状态</th><th style="width:140px">操作</th></tr></thead>
-              <tbody id="words"></tbody>
-            </table>
-          </div>
-          <div class="pager"><span>共 23 条 · 每页 20 条</span>
-            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg">2</button><button class="pg">›</button></div>
-          </div>
-        </div>
 
-        <div class="tab-pane" id="wp2">
-          <div class="desc g3">
-            <div class="desc-item"><span class="k">词库编号</span><span class="v mono">WB001</span></div>
-            <div class="desc-item"><span class="k">教材版本</span><span class="v">人教版</span></div>
-            <div class="desc-item"><span class="k">年级</span><span class="v">七年级</span></div>
-            <div class="desc-item"><span class="k">学期</span><span class="v">上学期</span></div>
-            <div class="desc-item"><span class="k">单元</span><span class="v">Unit 1</span></div>
-            <div class="desc-item"><span class="k">单词数量</span><span class="v mono">23</span></div>
-            <div class="desc-item"><span class="k">创建时间</span><span class="v">2026-08-20 11:02</span></div>
-            <div class="desc-item"><span class="k">创建人</span><span class="v">张敏</span></div>
-            <div class="desc-item"><span class="k">状态</span><span class="v"><span class="tag tag-green">启用</span></span></div>
+          <div class="tab-pane" id="p2">
+            <div class="desc-grid" id="infoGrid"></div>
+            <div class="divider"></div>
+            <div class="section-title">词库说明</div>
+            <div id="bkDesc" style="background:var(--bg);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--text-2);line-height:1.8"></div>
+            <div class="flex gap8 mt16">
+              <button class="btn btn-sm" onclick="openEditBook()">编辑词库信息</button>
+              <button class="btn btn-sm" id="btnToggle" onclick="toggleBook()">停用</button>
+            </div>
           </div>
-          <div class="divider"></div>
-          <div class="section-title">词库说明</div>
-          <div style="background:var(--bg);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--text-2);line-height:1.8">
-            人教版七年级上册 Unit 1 核心词汇，共 23 词，按教材出现顺序排列。<br>
-            单词训练时按本顺序生成待训练队列；超过 45 个待训练单词时按此顺序取前 45 个。
-          </div>
-        </div>
 
-        <div class="tab-pane" id="wp3">
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>导入时间</th><th>文件名</th><th>操作人</th><th class="right">成功</th><th class="right">失败</th><th>结果</th><th>操作</th></tr></thead>
-              <tbody>
-                <tr><td>2026-08-20 11:02</td><td class="small">人教版七上U1词汇.xlsx</td><td>张敏</td>
-                  <td class="right mono" style="color:var(--success)">23</td><td class="right mono">0</td>
-                  <td><span class="tag tag-green">全部成功</span></td>
-                  <td><button class="btn-link" onclick="Proto.toast('查看导入明细（示意）')">查看</button></td></tr>
-                <tr><td>2026-08-20 10:48</td><td class="small">人教版七上U1词汇_初版.xlsx</td><td>张敏</td>
-                  <td class="right mono">21</td><td class="right mono" style="color:var(--danger)">2</td>
-                  <td><span class="tag tag-amber">部分失败</span></td>
-                  <td><button class="btn-link" onclick="Proto.toast('下载失败行（示意）','ok')">下载失败行</button></td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="alert alert-warn mt16"><span class="ico">!</span>
-            <div>导入失败的行<b>不会破坏已有资源</b>：整批导入采用事务处理，失败行可下载修正后重新导入，已成功部分不重复写入。</div>
+          <div class="tab-pane" id="p3">
+            <div id="jobBox"></div>
           </div>
         </div>
       </div>
+
     </main>
+  </div>
+</div>
+
+<!-- 编辑基础单词 -->
+<div class="mask" id="wordModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="wmTitle">编辑单词</div>
+      <button class="modal-close" onclick="Proto.closeModal('wordModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field"><label>英文单词 <span class="req">*</span></label>
+          <input class="input" id="wEn"></div>
+        <div class="field"><label>音标</label>
+          <input class="input" id="wPh" placeholder="/neɪm/"></div>
+        <div class="field"><label>词性</label>
+          <input class="input" id="wPos" placeholder="n./v."></div>
+        <div class="field"><label>音频文件名</label>
+          <input class="input" id="wAudio" placeholder="name.mp3"></div>
+        <div class="field full"><label>中文释义 <span class="req">*</span></label>
+          <textarea class="textarea" id="wMean" rows="4"></textarea>
+          <span class="tip">每行一个释义，格式「词性|释义」，如 <span class="kbd">n.|名字</span>；不写词性也可以</span></div>
+      </div>
+      <div class="alert alert-info mt16" id="wShared"><span class="ico">i</span><div></div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('wordModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveWord()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新增单词 -->
+<div class="mask" id="addModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">新增单词到本词库</div>
+      <button class="modal-close" onclick="Proto.closeModal('addModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field"><label>英文单词 <span class="req">*</span></label>
+          <input class="input" id="aEn" placeholder="apple"></div>
+        <div class="field"><label>音标</label>
+          <input class="input" id="aPh" placeholder="/ˈæpl/"></div>
+        <div class="field"><label>词性</label>
+          <input class="input" id="aPos" placeholder="n."></div>
+        <div class="field"><label>音频文件名</label>
+          <input class="input" id="aAudio" placeholder="apple.mp3"></div>
+        <div class="field full"><label>中文释义 <span class="req">*</span></label>
+          <textarea class="textarea" id="aMean" rows="3" placeholder="n.|苹果"></textarea></div>
+      </div>
+      <div class="alert alert-info mt16"><span class="ico">i</span>
+        <div>如果系统里已有同一个英文单词，会<b>复用那条基础单词</b>，只新增本词库的关联。</div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('addModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveAdd()">添加</button>
+    </div>
+  </div>
+</div>
+
+<!-- 编辑词库信息 -->
+<div class="mask" id="bookModal">
+  <div class="modal wide">
+    <div class="modal-head">
+      <div class="modal-title">编辑词库信息</div>
+      <button class="modal-close" onclick="Proto.closeModal('bookModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid g3">
+        <div class="field full"><label>词库名称 <span class="req">*</span></label>
+          <input class="input" id="bName"></div>
+        <div class="field"><label>分类</label><select class="select" id="bCat"></select></div>
+        <div class="field"><label>适用学段</label>
+          <select class="select" id="bStage"><option value="">未指定</option></select></div>
+        <div class="field"><label>教材版本</label><input class="input" id="bVersion"></div>
+        <div class="field"><label>年级</label><input class="input" id="bGrade"></div>
+        <div class="field"><label>学期</label>
+          <select class="select" id="bTerm"><option value="">未指定</option>
+            <option>上学期</option><option>下学期</option></select></div>
+        <div class="field"><label>组织方式</label>
+          <select class="select" id="bOrg"><option value="">未指定</option></select></div>
+        <div class="field full"><label>说明</label><textarea class="textarea" id="bDesc"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('bookModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveBook()">保存</button>
+    </div>
   </div>
 </div>
 
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'admin', active: 'wordbook-list' });
 
-function renderWords(kw = '') {
-  const list = DB.words.filter(w =>
-    !kw || w.en.toLowerCase().includes(kw.toLowerCase()) || w.mean.some(m => m.cn.includes(kw)));
+const BOOK_ID = new URLSearchParams(location.search).get('id') || '';
+let book = BOOK_ID ? Store.wordbook(BOOK_ID) : null;
+let pager = 1;
+const PAGE_SIZE = 20;
+let editingWordId = '';
 
-  Proto.renderRows('words', list, (w, i) => `
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function meanHtml(w) {
+  return (w.mean || []).map(m =>
+    `<div class="mean-line"><span class="pos">${esc(m.pos)}</span>${esc(m.cn)}</div>`).join('');
+}
+
+function boot() {
+  if (!book) {
+    document.getElementById('notFound').classList.remove('hidden');
+    document.getElementById('main').classList.add('hidden');
+    return;
+  }
+  document.getElementById('notFound').classList.add('hidden');
+  document.getElementById('main').classList.remove('hidden');
+
+  const applied = [book.schoolStage, book.grade, book.term].filter(Boolean).join(' / ');
+  document.getElementById('bkName').textContent = book.name;
+  document.getElementById('bkSub').innerHTML =
+    `${book.id} · ${esc(book.category)}${book.bookVersion ? ' / ' + esc(book.bookVersion) : ''}
+     ${applied ? ' / ' + esc(applied) : ''} · <b>${book.wordCount}</b> 个单词 · ${book.status}`;
+  document.getElementById('bkImport').href = 'import.html?book=' + book.id;
+  document.getElementById('btnToggle').textContent = book.status === '启用' ? '停用' : '启用';
+  document.getElementById('btnToggle').className = 'btn btn-sm ' + (book.status === '启用' ? 'btn-danger' : 'btn-success');
+
+  const st = Store.wordbookStat(book.id);
+  document.getElementById('sCount').innerHTML = st.wordCount + '<small>个</small>';
+  document.getElementById('sCountFoot').textContent = st.multiMean + ' 个多释义单词';
+  document.getElementById('sPh').innerHTML = st.withPh + '<small>/ ' + st.wordCount + '</small>';
+  document.getElementById('sPhFoot').textContent = st.noPh ? st.noPh + ' 个缺音标' : '全部已填写';
+  document.getElementById('sAudio').innerHTML = st.withAudio + '<small>/ ' + st.wordCount + '</small>';
+  document.getElementById('sAudioFoot').textContent = st.noAudio ? st.noAudio + ' 个未关联音频' : '全部已关联';
+  document.getElementById('sUser').innerHTML = st.students + '<small>名学员</small>';
+  document.getElementById('sUserFoot').textContent = st.activeTasks ? st.activeTasks + ' 个训练任务进行中' : '暂无进行中的训练';
+
+  renderInfo();
+  renderWords();
+  renderJobs();
+}
+
+function renderInfo() {
+  document.getElementById('tabCount').textContent = book.wordCount;
+  const rows = [
+    ['词库编号', `<span class="mono">${book.id}</span>`],
+    ['分类', esc(book.category)],
+    ['教材版本', esc(book.bookVersion) || '<span class="muted">未指定</span>'],
+    ['适用学段', esc(book.schoolStage) || '<span class="muted">未指定</span>'],
+    ['年级', esc(book.grade) || '<span class="muted">未指定</span>'],
+    ['学期', esc(book.term) || '<span class="muted">未指定</span>'],
+    ['组织方式', esc(book.organization) || '<span class="muted">未指定</span>'],
+    ['单词数量', `<b>${book.wordCount}</b>`],
+    ['来源文件', esc(book.sourceFile) || '<span class="muted">人工创建</span>'],
+    ['导入时间', esc((book.createdAt || '').slice(0, 16))],
+    ['最近更新', esc((book.updatedAt || '').slice(0, 16))],
+    ['状态', book.status === '启用' ? '<span class="tag tag-green nodot">启用</span>' : '<span class="tag tag-slate nodot">停用</span>']
+  ];
+  document.getElementById('infoGrid').innerHTML = rows.map(r =>
+    `<div class="desc-item"><span class="k">${r[0]}</span><span class="v">${r[1]}</span></div>`).join('');
+  document.getElementById('bkDesc').innerHTML = book.description
+    ? esc(book.description).replace(/\n/g, '<br>')
+    : '<span class="muted">未填写说明</span>';
+}
+
+function wordList() {
+  const kw = document.getElementById('kw').value.trim().toLowerCase();
+  const flt = document.getElementById('flt').value;
+  return Store.bookWords(book.id).filter(w => {
+    if (kw && w.en.toLowerCase().indexOf(kw) < 0
+      && !(w.mean || []).some(m => m.cn.toLowerCase().indexOf(kw) >= 0)) return false;
+    if (flt === 'noph' && w.ph) return false;
+    if (flt === 'noaudio' && w.audio) return false;
+    if (flt === 'multi' && !(w.mean && w.mean.length > 1)) return false;
+    return true;
+  });
+}
+
+function renderWords() {
+  const list = wordList();
+  const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  if (pager > totalPages) pager = totalPages;
+  const page = list.slice((pager - 1) * PAGE_SIZE, pager * PAGE_SIZE);
+
+  document.getElementById('fltTip').textContent = list.length + ' / ' + book.wordCount;
+  document.getElementById('pageTip').textContent =
+    `共 ${list.length} 条 · 每页 ${PAGE_SIZE} 条 · 第 ${pager} / ${totalPages} 页`;
+  document.getElementById('pages').innerHTML =
+    `<button class="pg" ${pager <= 1 ? 'disabled' : ''} onclick="go(${pager - 1})">‹</button>`
+    + Array.from({ length: totalPages }, (_, i) => i + 1).map(n =>
+      `<button class="pg ${n === pager ? 'on' : ''}" onclick="go(${n})">${n}</button>`).join('')
+    + `<button class="pg" ${pager >= totalPages ? 'disabled' : ''} onclick="go(${pager + 1})">›</button>`;
+
+  document.getElementById('wordRows').innerHTML = page.length ? page.map(w => `
     <tr>
-      <td class="mono muted">${i + 1}</td>
-      <td class="strong" style="font-size:14px">${w.en}</td>
-      <td class="mono small muted">${w.ph}</td>
-      <td>
-        ${w.mean.map(m => `<div><span class="small" style="color:var(--info)">${m.pos}</span> ${m.cn}</div>`).join('')}
-        ${w.mean.length > 1 ? '<span class="tag tag-purple nodot" style="font-size:10px">多释义</span>' : ''}
-      </td>
-      <td class="small muted">${w.en === 'name' ? 'My name is Gina.' : w.en === 'question' ? 'Can I ask a question?' : '—'}</td>
-      <td>
-        <button class="audio-btn mini" data-label="▶ 音频"
-          onclick="Proto.playAudio(this,'${w.en}')">▶ 音频</button>
-      </td>
-      <td><span class="tag tag-green">启用</span></td>
+      <td class="seq">${w.seq}</td>
+      <td class="w-en">${esc(w.en)}</td>
+      <td class="mono small ${w.ph ? 'muted' : 'miss'}">${esc(w.ph) || '缺音标'}</td>
+      <td class="small">${esc(w.pos) || '<span class="muted">—</span>'}</td>
+      <td>${meanHtml(w)}${(w.mean || []).length > 1
+        ? '<span class="tag tag-purple nodot" style="font-size:10px;margin-top:2px;display:inline-block">多释义</span>' : ''}</td>
+      <td>${w.audio
+        ? `<button class="audio-btn mini" onclick="Proto.playAudio(this,'${esc(w.en)}')">▶ ${esc(w.audio)}</button>`
+        : '<span class="noaudio">未关联</span>'}</td>
+      <td class="src" title="${esc(w.sourceFile)} 第 ${w.sourceRow} 行">${esc((w.sourceFile || '—').slice(0, 18))}<br>第 ${w.sourceRow || '—'} 行</td>
       <td class="ops">
-        <button class="btn-link" onclick="Proto.toast('编辑单词（示意）')">编辑</button>
-        <button class="btn-link mute" onclick="move(${i},-1)">↑</button>
-        <button class="btn-link mute" onclick="move(${i},1)">↓</button>
+        <button class="btn-link" onclick="openWord('${w.id}')">编辑</button>
+        <button class="btn-link mute" onclick="move('${w.id}',-1)">↑</button>
+        <button class="btn-link mute" onclick="move('${w.id}',1)">↓</button>
+        <button class="btn-link danger" onclick="removeWord('${w.id}')">移除</button>
       </td>
-    </tr>`, 8, '没有匹配的单词');
+    </tr>`).join('')
+    : `<tr><td colspan="8"><div class="empty"><p>${book.wordCount
+      ? '没有匹配的单词' : '这个词库还没有单词'}</p>
+      <a class="btn btn-sm" href="import.html?book=${book.id}">用 Excel 导入</a>
+      <button class="btn btn-sm" onclick="openAdd()">手动新增</button></div></td></tr>`;
 }
 
-function filterWords(kw) { renderWords(kw.trim()); }
+function go(n) { pager = n; renderWords(); }
 
-function move(i, d) {
-  const j = i + d;
-  if (j < 0 || j >= DB.words.length) return;
-  [DB.words[i], DB.words[j]] = [DB.words[j], DB.words[i]];
-  renderWords(document.querySelector('#wp1 input').value.trim());
-  Proto.toast('排序已调整（仅影响本词库）', 'ok');
+function refresh() {
+  book = Store.wordbook(BOOK_ID);
+  boot();
 }
 
-renderWords();
+/* ---------------- 单词编辑 ---------------- */
+function openWord(id) {
+  const w = Store.bookWords(book.id).filter(x => x.id === id)[0];
+  if (!w) return;
+  editingWordId = id;
+  document.getElementById('wmTitle').textContent = '编辑单词 · ' + w.en;
+  document.getElementById('wEn').value = w.en;
+  document.getElementById('wPh').value = w.ph || '';
+  document.getElementById('wPos').value = w.pos || '';
+  document.getElementById('wAudio').value = w.audio || '';
+  document.getElementById('wMean').value = (w.mean || []).map(m => (m.pos ? m.pos + '|' : '') + m.cn).join('\n');
+
+  const others = Store.wordbooksOfWord(id).filter(b => b.id !== book.id);
+  const box = document.getElementById('wShared');
+  box.className = 'alert ' + (others.length ? 'alert-warn' : 'alert-info') + ' mt16';
+  box.querySelector('div').innerHTML = others.length
+    ? `这条基础单词同时被 <b>${others.map(b => esc(b.name)).join('、')}</b> 使用。
+       <b>修改会同步影响这些词库</b>：基础单词只有一份（音标 / 释义 / 音频共用），
+       各词库只保留自己的排序和来源行号。`
+    : '这条基础单词目前只被本词库引用，修改不会影响其他词库。';
+  Proto.openModal('wordModal');
+}
+
+function parseMean(text) {
+  return String(text || '').split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const i = l.indexOf('|');
+    if (i > 0 && i <= 6) return { pos: l.slice(0, i).trim(), cn: l.slice(i + 1).trim() };
+    return { pos: '', cn: l };
+  });
+}
+
+function saveWord() {
+  try {
+    Store.updateWord(editingWordId, {
+      en: document.getElementById('wEn').value,
+      ph: document.getElementById('wPh').value,
+      pos: document.getElementById('wPos').value,
+      audio: document.getElementById('wAudio').value,
+      mean: parseMean(document.getElementById('wMean').value)
+    });
+    Proto.closeModal('wordModal');
+    Proto.toast('单词已更新', 'ok');
+    refresh();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+function openAdd() {
+  ['aEn', 'aPh', 'aPos', 'aAudio', 'aMean'].forEach(id => document.getElementById(id).value = '');
+  Proto.openModal('addModal');
+}
+
+function saveAdd() {
+  try {
+    const r = Store.addWordToBook(book.id, {
+      en: document.getElementById('aEn').value,
+      ph: document.getElementById('aPh').value,
+      pos: document.getElementById('aPos').value,
+      audio: document.getElementById('aAudio').value,
+      mean: parseMean(document.getElementById('aMean').value)
+    });
+    Proto.closeModal('addModal');
+    Proto.toast(r.created ? '已新增基础单词并加入本词库' : '系统已有该单词，已复用并加入本词库', 'ok');
+    refresh();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+function move(id, d) {
+  const r = Store.moveWordInBook(book.id, id, d);
+  if (!r.ok) { Proto.toast('已经到边界了', 'warn'); return; }
+  renderWords();
+}
+
+function removeWord(id) {
+  const w = Store.bookWords(book.id).filter(x => x.id === id)[0];
+  if (!w) return;
+  const others = Store.wordbooksOfWord(id).filter(b => b.id !== book.id);
+  Proto.confirmBox('从本词库移除', `将 <b>${esc(w.en)}</b> 从「${esc(book.name)}」中移除。<br><br>
+    · 只删除本词库的关联，<b>不会删除基础单词</b><br>
+    · ${others.length ? '它还在 <b>' + others.map(b => esc(b.name)).join('、') + '</b> 中使用，不受影响' : '其他词库没有引用这个词'}<br>
+    · 学员的学习状态和复习任务<b>不受影响</b>`, '确认移除', () => {
+    try {
+      Store.removeWordFromBook(book.id, id);
+      Proto.toast('已从本词库移除', 'ok');
+      refresh();
+    } catch (e) { Proto.toast(e.message, 'err'); }
+  });
+}
+
+/* ---------------- 词库信息 ---------------- */
+function openEditBook() {
+  document.getElementById('bName').value = book.name;
+  document.getElementById('bCat').innerHTML = Store.WB_CATEGORIES.map(c =>
+    `<option${c === book.category ? ' selected' : ''}>${c}</option>`).join('');
+  document.getElementById('bStage').innerHTML = '<option value="">未指定</option>'
+    + Store.WB_STAGES.map(c => `<option${c === book.schoolStage ? ' selected' : ''}>${c}</option>`).join('');
+  document.getElementById('bOrg').innerHTML = '<option value="">未指定</option>'
+    + Store.WB_ORG.map(c => `<option${c === book.organization ? ' selected' : ''}>${c}</option>`).join('');
+  document.getElementById('bVersion').value = book.bookVersion || '';
+  document.getElementById('bGrade').value = book.grade || '';
+  document.getElementById('bTerm').value = book.term || '';
+  document.getElementById('bDesc').value = book.description || '';
+  Proto.openModal('bookModal');
+}
+
+function saveBook() {
+  try {
+    Store.updateWordbook(book.id, {
+      name: document.getElementById('bName').value,
+      category: document.getElementById('bCat').value,
+      schoolStage: document.getElementById('bStage').value,
+      organization: document.getElementById('bOrg').value,
+      bookVersion: document.getElementById('bVersion').value,
+      grade: document.getElementById('bGrade').value,
+      term: document.getElementById('bTerm').value,
+      description: document.getElementById('bDesc').value
+    });
+    Proto.closeModal('bookModal');
+    Proto.toast('词库信息已更新', 'ok');
+    refresh();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+function toggleBook() {
+  const next = book.status === '启用' ? '停用' : '启用';
+  if (next === '停用') {
+    Proto.confirmBox('停用词库', `停用后新建训练时不能再选择「${esc(book.name)}」。<br><br>
+      已有训练记录和学员学习状态<b>不受影响</b>。`, '确认停用', () => {
+      Store.setWordbookStatus(book.id, '停用');
+      refresh();
+      Proto.toast('词库已停用', 'ok');
+    });
+  } else {
+    Store.setWordbookStatus(book.id, '启用');
+    refresh();
+    Proto.toast('词库已启用', 'ok');
+  }
+}
+
+/* ---------------- 导入记录 ---------------- */
+function renderJobs() {
+  const jobs = Store.importJobsOf(book.id);
+  const box = document.getElementById('jobBox');
+  if (!jobs.length) {
+    box.innerHTML = `<div class="empty"><p>这个词库还没有导入记录（可能是人工创建后逐个添加的单词）。</p>
+      <a class="btn btn-sm" href="import.html?book=${book.id}">继续导入</a></div>`;
+    return;
+  }
+  box.innerHTML = `
+    <div class="table-wrap"><table class="table compact">
+      <thead><tr><th>导入时间</th><th>文件名</th><th>工作表</th><th>操作人</th>
+        <th class="right">解析</th><th class="right">新增单词</th><th class="right">新增关联</th>
+        <th class="right">跳过</th><th class="right">失败</th><th>结果</th><th>操作</th></tr></thead>
+      <tbody>${jobs.map(j => `<tr>
+        <td class="small muted">${esc(j.createdAt)}</td>
+        <td class="small">${esc(j.fileName)}</td>
+        <td class="small muted">${esc(j.sheetName) || '—'}</td>
+        <td class="small">${esc(j.operatorName || j.operatorId)}</td>
+        <td class="right mono">${j.stats.parsedRows}</td>
+        <td class="right mono" style="color:var(--success)">${j.stats.newWords}</td>
+        <td class="right mono">${j.stats.newLinks}</td>
+        <td class="right mono">${j.stats.skipped}</td>
+        <td class="right mono" style="color:${j.stats.failed ? 'var(--danger)' : 'inherit'}">${j.stats.failed}</td>
+        <td>${j.status === '已入库'
+          ? '<span class="tag tag-green nodot">已入库</span>'
+          : '<span class="tag tag-red nodot">失败</span>'}</td>
+        <td class="ops">
+          ${j.failedRows && j.failedRows.length
+            ? `<button class="btn-link" onclick="downloadFailed('${j.id}')">下载失败行</button>` : '—'}
+        </td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <div class="alert alert-info mt16"><span class="ico">i</span>
+      <div>每个文件的导入是一次独立事务：失败文件的单词<b>一条也没有写入</b>；
+        成功文件只追加关联，不会覆盖已有单词，也不会改动学员学习状态。</div></div>`;
+}
+
+function downloadFailed(jobId) {
+  const text = Store.failedRowsCsv(jobId);
+  const job = Store.importJob(jobId);
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '导入失败行_' + (job ? job.fileName.replace(/\.\w+$/, '') : jobId) + '.csv';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  Proto.toast('失败行已下载，修正后可重新导入', 'ok');
+}
+
+/* 标签页 */
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+  document.querySelectorAll('.tab-pane').forEach(p =>
+    p.classList.toggle('active', p.id === t.dataset.pane));
+}));
+
+boot();
 </script>
 </body>
 </html>

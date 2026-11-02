@@ -179,11 +179,45 @@
   </div>
 </div>
 
+<!-- 改派教师 -->
+<div class="mask" id="reassignModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">改派授课教师</div>
+      <button class="modal-close" onclick="Proto.closeModal('reassignModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div>只有<b>未完成</b>的课程可以改派；改派会记录原教师、新教师、原因与操作人。</div></div>
+      <div class="desc g2 mb16" id="r_info"></div>
+      <div class="field mb12"><label>新授课教师 <span class="req">*</span></label>
+        <select class="select" id="r_teacher"></select></div>
+      <div class="field"><label>改派原因</label>
+        <textarea class="textarea" id="r_reason" placeholder="如：原教师临时请假"></textarea></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('reassignModal')">取消</button>
+      <button class="btn btn-primary" onclick="doReassign()">确认改派</button>
+    </div>
+  </div>
+</div>
+
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'admin', active: 'schedule-calendar' });
+Store.setSession({ role: 'admin', operatorName: '张敏' });
+const S = Store;
+
+/* 教师候选只来自 Store 的可授课资源池：暂停合作与已退出教师不会出现 */
+(function initTeacherPool() {
+  const all = S.teachers();
+  document.getElementById('f_teacher').innerHTML = '<option value="">全部教师</option>' +
+    all.map(t => `<option>${t.name}</option>`).join('');
+  const pool = S.teacherPool();
+  document.getElementById('n_teacher').innerHTML = '<option value="">请选择教师</option>' +
+    pool.map(p => `<option>${p.teacher.name}</option>`).join('');
+})();
 
 const DAYS = ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08'];
 const WEEKS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -197,7 +231,7 @@ const sCls = s => ({ '已完成': 's-done', '待上课': 's-todo', '已开始': 
 function filtered() {
   const t = document.getElementById('f_teacher').value;
   const s = document.getElementById('f_status').value;
-  return DB.courses.filter(c => {
+  return S.courses().filter(c => {
     if (t && c.teacher !== t) return false;
     if (s && c.status !== s) return false;
     return true;
@@ -281,11 +315,21 @@ function checkConflict(student, teacher, date, start, end) {
     return errs;
   }
   if (teacher.startsWith('徐峰')) {
-    errs.push({ type: 'danger', text: '教师「徐峰」处于<b>停用</b>状态，不可排课。请选择在职教师。' });
+    errs.push({ type: 'danger', text: '教师「徐峰」处于<b>暂停合作</b>状态，不可排课。请选择可授课教师。' });
+    return errs;
+  }
+  /* 教师候选池只给可授课教师；这里再兜一层，防止直接改 DOM 绕过 */
+  const tObj = S.teachers().filter(t => t.name === teacher)[0];
+  if (!tObj) {
+    errs.push({ type: 'danger', text: `教师「${teacher}」不存在或已离职。` });
+    return errs;
+  }
+  if (tObj.cooperationStatus !== S.COOP.READY) {
+    errs.push({ type: 'danger', text: `教师「${teacher}」当前为<b>${tObj.cooperationStatus}</b>状态，不可创建有效排课。` });
     return errs;
   }
   const s1 = toMin(start), e1 = toMin(end);
-  DB.courses.forEach(c => {
+  S.courses().forEach(c => {
     if (c.date !== date || c.status === '已取消') return;
     const s2 = toMin(c.start), e2 = toMin(c.end);
     const overlap = s1 < e2 && s2 < e1;
@@ -355,7 +399,7 @@ function openEv(c) {
     ${c.note ? `<div class="alert alert-info"><span class="ico">i</span><div>${c.note}</div></div>` : ''}
     <div class="mt16 flex gap8">
       <button class="btn btn-sm" onclick="Proto.toast('打开调整时间（示意）')">调整时间</button>
-      <button class="btn btn-sm" onclick="Proto.toast('打开调整教师（示意）')">调整教师</button>
+      <button class="btn btn-sm" onclick="openReassign()">调整教师</button>
       <button class="btn btn-sm" onclick="Proto.toast('已复制会议链接','ok')">复制会议链接</button>
     </div>`;
   Proto.openModal('evModal');
@@ -368,7 +412,40 @@ function cancelCourse() {
      · 取消课程<b>不扣课时</b><br>
      · 已扣课的需通过「扣课冲正」流水修复，原流水保留<br>
      · 家长端与教师端将同步更新`, '确认取消',
-    () => Proto.toast('课程已取消，未扣课', 'ok'));
+    () => {
+      try {
+        S.cancelCourse(currentEv.id, '教务在排课页手动取消');
+        Proto.toast('课程已取消，未扣课', 'ok');
+        drawCal();
+      } catch (e) { Proto.toast(e.message, 'err'); }
+    });
+}
+
+function openReassign() {
+  const c = currentEv;
+  if (!c) return;
+  document.getElementById('r_info').innerHTML = `
+    <div class="desc-item"><span class="k">课程</span><span class="v mono">${c.id}</span></div>
+    <div class="desc-item"><span class="k">时间</span><span class="v">${c.date} ${c.start}-${c.end}</span></div>
+    <div class="desc-item"><span class="k">学员</span><span class="v">${c.student}</span></div>
+    <div class="desc-item"><span class="k">当前教师</span><span class="v">${c.teacher}</span></div>`;
+  const pool = S.teacherPool();
+  document.getElementById('r_teacher').innerHTML = '<option value="">请选择教师</option>' +
+    pool.filter(p => p.teacher.id !== c.teacherId)
+      .map(p => `<option value="${p.teacher.id}">${p.teacher.name}（当前 ${p.stat.currentStudents} 人）</option>`).join('');
+  document.getElementById('r_reason').value = '';
+  Proto.openModal('reassignModal');
+}
+
+function doReassign() {
+  const tid = document.getElementById('r_teacher').value;
+  if (!tid) { Proto.toast('请选择接替教师', 'err'); return; }
+  try {
+    S.reassignCourse(currentEv.id, tid, { reason: document.getElementById('r_reason').value.trim() });
+    Proto.closeModal('reassignModal');
+    Proto.toast('课程已改派，操作已留痕', 'ok');
+    drawCal();
+  } catch (e) { Proto.toast(e.message, 'err'); }
 }
 
 drawCal();

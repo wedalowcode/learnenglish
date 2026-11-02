@@ -6,22 +6,203 @@
 const DB = {
   today: '2026-11-02',
 
+  /* ============================================================
+     教师（兼职教学资源池）
+     ------------------------------------------------------------
+     机构教师全部为兼职（大学生 / 在校研究生 / 其他兼职人员），
+     人员流动频繁，因此档案必须能表达「反复进出」而不是一次性员工记录。
+     字段口径：
+       id / code      内部主键 / 对外教师编号（都唯一，编号由系统生成）
+       cooperationStatus  待启用 / 可授课 / 暂停合作 / 已退出
+       account        登录账号（未开通为 null），与教师档案分离
+       availability   可授课时间块（星期 + 时段），是排课参考，不是预约
+       coop           合作事件流水，历史只追加不覆盖
+     ============================================================ */
   teachers: [
-    { id: 'T001', name: '李婉', phone: '13801234567', gender: '女', school: '华东师范大学', major: '英语教育',
-      grades: '七年级、八年级', books: '人教版', students: 2, monthCourses: 26, monthHours: 26, status: '在职',
-      join: '2024-03-01', intro: '6 年一对一英语教学经验，擅长词汇与阅读训练。' },
-    { id: 'T002', name: '周雅', phone: '13802234567', gender: '女', school: '南京师范大学', major: '英语',
-      grades: '三年级、四年级', books: '人教版、外研版', students: 2, monthCourses: 21, monthHours: 21, status: '在职',
-      join: '2024-09-12', intro: '低年级启蒙教学，课堂节奏把控好。' },
-    { id: 'T003', name: '何俊', phone: '13803234567', gender: '男', school: '四川外国语大学', major: '翻译',
-      grades: '八年级、九年级', books: '人教版', students: 1, monthCourses: 18, monthHours: 18, status: '在职',
-      join: '2025-02-20', intro: '中考冲刺方向，语法与写作。' },
-    { id: 'T004', name: '沈心怡', phone: '13804234567', gender: '女', school: '浙江师范大学', major: '小学教育',
-      grades: '五年级、六年级', books: '外研版', students: 2, monthCourses: 12, monthHours: 12, status: '在职',
-      join: '2025-07-05', intro: '自然拼读与听说训练。' },
-    { id: 'T005', name: '徐峰', phone: '13805234567', gender: '男', school: '湖南师范大学', major: '英语',
-      grades: '九年级', books: '人教版', students: 0, monthCourses: 0, monthHours: 0, status: '停用',
-      join: '2023-08-15', intro: '已停用，存在待重新分配的未来预约。' },
+    {
+      id: 'T001', code: 'T001', name: '李婉', phone: '13801234567', gender: '女',
+      school: '华东师范大学', major: '英语教育', education: '本科',
+      grades: ['七年级', '八年级'], textbooks: ['人教版'],
+      teachingTags: ['词汇强化', '自然拼读', '阅读训练', '家长沟通及时'],
+      teachingExperience: '6 年一对一英语教学经验，累计授课 1200+ 节，带过 4 届中考冲刺。',
+      teachingStyle: '课堂以「预筛 → 分组强化 → 最后一轮复习」为主线，配合莱特纳与 21 天两套复习体系做长期记忆管理。',
+      introduction: '6 年一对一英语教学经验，擅长词汇与阅读训练。',
+      availability: [
+        { weekday: '周一', period: '晚上' }, { weekday: '周三', period: '晚上' },
+        { weekday: '周五', period: '晚上' }, { weekday: '周六', period: '上午' }
+      ],
+      cooperationStatus: '可授课',
+      firstCooperationAt: '2024-03-01', lastCooperationStartAt: '2024-03-01', cooperationEndAt: '',
+      createdBy: '张敏', createdAt: '2024-03-01 09:20', updatedAt: '2026-10-20 14:10', remark: '',
+      rejoinCount: 0,
+      account: { id: 'UA001', loginName: '13801234567', status: '正常', roleId: 'teacher',
+        openedAt: '2024-03-02 10:05', openedBy: '张敏' },
+      coop: [
+        { action: 'CREATED', at: '2024-03-01 09:20', reason: '新教师录入', operator: '张敏' },
+        { action: 'ACTIVATED', at: '2024-03-01 10:00', reason: '资料与账号就绪，进入可授课资源池', operator: '张敏' }
+      ]
+    },
+    {
+      id: 'T002', code: 'T002', name: '周雅', phone: '13802234567', gender: '女',
+      school: '南京师范大学', major: '英语', education: '本科',
+      grades: ['三年级', '四年级'], textbooks: ['人教版', '外研版'],
+      teachingTags: ['低年级启蒙', '自然拼读', '听说训练'],
+      teachingExperience: '4 年小学段一对一教学，主带三、四年级启蒙与拼读。',
+      teachingStyle: '节奏轻快，善用游戏化操练，重视开口频次。',
+      introduction: '低年级启蒙教学，课堂节奏把控好。',
+      availability: [
+        { weekday: '周二', period: '晚上' }, { weekday: '周四', period: '晚上' },
+        { weekday: '周六', period: '上午' }
+      ],
+      cooperationStatus: '可授课',
+      firstCooperationAt: '2024-09-12', lastCooperationStartAt: '2024-09-12', cooperationEndAt: '',
+      createdBy: '张敏', createdAt: '2024-09-12 15:40', updatedAt: '2026-09-12 15:40', remark: '',
+      rejoinCount: 0,
+      account: { id: 'UA002', loginName: '13802234567', status: '正常', roleId: 'teacher',
+        openedAt: '2024-09-13 09:30', openedBy: '张敏' },
+      coop: [
+        { action: 'CREATED', at: '2024-09-12 15:40', reason: '新教师录入', operator: '张敏' },
+        { action: 'ACTIVATED', at: '2024-09-13 09:30', reason: '资料与账号就绪', operator: '张敏' }
+      ]
+    },
+    {
+      id: 'T003', code: 'T003', name: '何俊', phone: '13803234567', gender: '男',
+      school: '四川外国语大学', major: '翻译', education: '硕士',
+      grades: ['八年级', '九年级'], textbooks: ['人教版'],
+      teachingTags: ['语法', '写作', '中考冲刺'],
+      teachingExperience: '5 年中学段教学，专注语法体系梳理与写作提分。',
+      teachingStyle: '结构化板书，按错题类型归因，作业反馈当日给出。',
+      introduction: '中考冲刺方向，语法与写作。',
+      availability: [
+        { weekday: '周一', period: '晚上' }, { weekday: '周二', period: '晚上' },
+        { weekday: '周四', period: '晚上' }, { weekday: '周日', period: '下午' }
+      ],
+      cooperationStatus: '可授课',
+      firstCooperationAt: '2025-02-20', lastCooperationStartAt: '2025-02-20', cooperationEndAt: '',
+      createdBy: '张敏', createdAt: '2025-02-20 11:05', updatedAt: '2026-06-30 18:20', remark: '',
+      rejoinCount: 0,
+      account: { id: 'UA003', loginName: '13803234567', status: '正常', roleId: 'teacher',
+        openedAt: '2025-02-21 10:00', openedBy: '张敏' },
+      coop: [
+        { action: 'CREATED', at: '2025-02-20 11:05', reason: '新教师录入', operator: '张敏' },
+        { action: 'ACTIVATED', at: '2025-02-21 10:00', reason: '资料与账号就绪', operator: '张敏' }
+      ]
+    },
+    {
+      id: 'T004', code: 'T004', name: '沈心怡', phone: '13804234567', gender: '女',
+      school: '浙江师范大学', major: '小学教育', education: '本科',
+      grades: ['五年级', '六年级'], textbooks: ['外研版'],
+      teachingTags: ['自然拼读', '听说训练', '阅读'],
+      teachingExperience: '3 年小学高段教学，外研版教材熟悉。',
+      teachingStyle: '注重语音语调，课后固定 10 分钟家长沟通。',
+      introduction: '自然拼读与听说训练。',
+      availability: [
+        { weekday: '周三', period: '晚上' }, { weekday: '周五', period: '晚上' },
+        { weekday: '周日', period: '上午' }, { weekday: '周日', period: '下午' }
+      ],
+      cooperationStatus: '可授课',
+      firstCooperationAt: '2025-07-05', lastCooperationStartAt: '2025-07-05', cooperationEndAt: '',
+      createdBy: '教务-小陈', createdAt: '2025-07-05 09:50', updatedAt: '2026-09-30 12:00', remark: '',
+      rejoinCount: 0,
+      account: { id: 'UA004', loginName: '13804234567', status: '正常', roleId: 'teacher',
+        openedAt: '2025-07-05 14:20', openedBy: '教务-小陈' },
+      coop: [
+        { action: 'CREATED', at: '2025-07-05 09:50', reason: '新教师录入', operator: '教务-小陈' },
+        { action: 'ACTIVATED', at: '2025-07-05 14:20', reason: '资料与账号就绪', operator: '教务-小陈' }
+      ]
+    },
+    {
+      /* 暂停合作示例：备考研究生入学考试，学员已全部结课，账号按机构策略禁用但档案与历史全部保留 */
+      id: 'T005', code: 'T005', name: '徐峰', phone: '13805234567', gender: '男',
+      school: '湖南师范大学', major: '英语', education: '本科',
+      grades: ['九年级'], textbooks: ['人教版'],
+      teachingTags: ['中考冲刺', '语法'],
+      teachingExperience: '3 年初中段教学。',
+      teachingStyle: '讲练结合，强调整句输出。',
+      introduction: '因备考暂停接课，预计 12 月恢复。',
+      availability: [
+        { weekday: '周六', period: '下午' }, { weekday: '周日', period: '晚上' }
+      ],
+      cooperationStatus: '暂停合作',
+      firstCooperationAt: '2023-08-15', lastCooperationStartAt: '2023-08-15', cooperationEndAt: '',
+      pauseInfo: { reason: '备考研究生入学考试，12 月前无法安排课程', startAt: '2026-10-15',
+        expectResumeAt: '2026-12-20', remark: '学员已在 10 月前全部结课', by: '张敏' },
+      createdBy: '张敏', createdAt: '2023-08-15 10:30', updatedAt: '2026-10-15 09:10', remark: '',
+      rejoinCount: 0,
+      account: { id: 'UA005', loginName: '13805234567', status: '已禁用', roleId: 'teacher',
+        openedAt: '2023-08-16 09:00', openedBy: '张敏', disabledAt: '2026-10-15 09:10' },
+      coop: [
+        { action: 'CREATED', at: '2023-08-15 10:30', reason: '新教师录入', operator: '张敏' },
+        { action: 'ACTIVATED', at: '2023-08-16 09:00', reason: '资料与账号就绪', operator: '张敏' },
+        { action: 'PAUSED', at: '2026-10-15 09:10', reason: '备考研究生入学考试，12 月前无法安排课程', operator: '张敏' }
+      ]
+    },
+    {
+      /* 已退出示例：正式结束合作，历史课程 / 报告 / 教学记录全部保留 */
+      id: 'T006', code: 'T006', name: '郑好', phone: '13806234567', gender: '女',
+      school: '江苏师范大学', major: '英语', education: '本科',
+      grades: ['七年级'], textbooks: ['人教版'],
+      teachingTags: ['词汇', '低年级启蒙'],
+      teachingExperience: '2 年兼职教学，毕业后离开本地。',
+      teachingStyle: '耐心细致，重视基础词汇积累。',
+      introduction: '江苏师范大学英语专业，主带七年级词汇与低年级启蒙，2026 年 6 月毕业后离开本地，已正式结束合作。',
+      availability: [],
+      cooperationStatus: '已退出',
+      firstCooperationAt: '2025-09-01', lastCooperationStartAt: '2025-09-01', cooperationEndAt: '2026-06-30',
+      createdBy: '张敏', createdAt: '2025-09-01 10:00', updatedAt: '2026-06-30 18:00', remark: '',
+      rejoinCount: 0,
+      account: { id: 'UA006', loginName: '13806234567', status: '已禁用', roleId: 'teacher',
+        openedAt: '2025-09-02 09:20', openedBy: '张敏', disabledAt: '2026-06-30 18:00' },
+      coop: [
+        { action: 'CREATED', at: '2025-09-01 10:00', reason: '新教师录入', operator: '张敏' },
+        { action: 'ACTIVATED', at: '2025-09-02 09:20', reason: '资料与账号就绪', operator: '张敏' },
+        { action: 'EXITED', at: '2026-06-30 18:00', reason: '教师毕业后离开本地，正式结束合作', operator: '张敏' }
+      ]
+    },
+    {
+      /* 待启用示例：本周新录入，资料与账号尚未齐备，不进入可分配资源池 */
+      id: 'T007', code: 'T007', name: '苏念', phone: '13807234567', gender: '女',
+      school: '南京大学', major: '英语语言文学', education: '在读研究生',
+      grades: ['五年级', '六年级'], textbooks: ['外研版'],
+      teachingTags: ['阅读', '写作'],
+      teachingExperience: '在校研究生，带过 2 学期小学高段阅读课。',
+      teachingStyle: '以读促写，重视篇章结构。',
+      introduction: '新加入教师，待完善资料并开通账号后启用。',
+      availability: [
+        { weekday: '周二', period: '上午' }, { weekday: '周四', period: '上午' }
+      ],
+      cooperationStatus: '待启用',
+      firstCooperationAt: '', lastCooperationStartAt: '', cooperationEndAt: '',
+      createdBy: '教务-小陈', createdAt: '2026-10-28 16:30', updatedAt: '2026-10-28 16:30', remark: '面试通过，待办入职',
+      rejoinCount: 0,
+      account: null,
+      coop: [
+        { action: 'CREATED', at: '2026-10-28 16:30', reason: '新教师录入（面试通过）', operator: '教务-小陈' }
+      ]
+    },
+  ],
+
+  /* ============================================================
+     教师—学员负责关系（TeacherStudent）
+     ------------------------------------------------------------
+     这是「谁现在负责谁」的唯一事实来源；students[].teacher / teacherName
+     只是由这段关系推导出的缓存字段，供旧页面读取。
+     同一学员同一时间最多一条「当前有效」关系；换教师 = 原关系结束 + 新关系创建。
+     ============================================================ */
+  teacherStudentSeeds: [
+    { teacherId: 'T001', studentId: 'S2026001', startAt: '2026-03-12', assignReason: '新签学员首次分配' },
+    { teacherId: 'T001', studentId: 'S2026008', startAt: '2026-10-02', assignReason: '新签学员首次分配' },
+    { teacherId: 'T002', studentId: 'S2026002', startAt: '2026-04-08', assignReason: '新签学员首次分配' },
+    { teacherId: 'T003', studentId: 'S2026003', startAt: '2026-06-30', assignReason: '由郑好老师转交，负责中考语法方向' },
+    { teacherId: 'T004', studentId: 'S2026004', startAt: '2026-06-11', assignReason: '新签学员首次分配' },
+    { teacherId: 'T002', studentId: 'S2026005', startAt: '2026-07-20', assignReason: '由李婉老师转交，年级方向更匹配' },
+    { teacherId: 'T004', studentId: 'S2026007', startAt: '2026-09-30', assignReason: '由李婉老师转交，低年级教学经验更合适' },
+
+    /* 历史关系：负责关系结束后保留，用于「历史学员」与交接追溯 */
+    { teacherId: 'T001', studentId: 'S2026005', startAt: '2026-06-11', endAt: '2026-07-20', endReason: '年级方向不匹配，转交周雅' },
+    { teacherId: 'T001', studentId: 'S2026007', startAt: '2026-09-18', endAt: '2026-09-30', endReason: '调整至低年级教师' },
+    { teacherId: 'T001', studentId: 'S2026006', startAt: '2026-08-30', endAt: '2026-10-12', endReason: '家长指定更换教师，暂时进入待分配' },
+    { teacherId: 'T006', studentId: 'S2026003', startAt: '2026-05-20', endAt: '2026-06-30', endReason: '教师退出合作，转交何俊' },
   ],
 
   parents: [
@@ -170,15 +351,196 @@ const DB = {
     { id: 'C20261030002', date: '2026-10-30', start: '18:00', end: '19:00', student: '林子轩', teacher: '周雅', type: '一对一', status: '未上课', deduct: '未扣课', creator: '教务处-小陈', meeting: '已生成', note: '学员临时缺课' },
     { id: 'C20261029003', date: '2026-10-29', start: '19:00', end: '20:00', student: '赵一诺', teacher: '何俊', type: '一对一', status: '待处理', deduct: '扣课异常', creator: '教务处-小陈', meeting: '已生成', note: '课时余额不足，待教务处理' },
     { id: 'C20261028004', date: '2026-10-28', start: '17:00', end: '18:00', student: '孙浩宇', teacher: '沈心怡', type: '一对一', status: '已取消', deduct: '未扣课', creator: '教务处-小陈', meeting: '已生成', note: '教师请假，已补课' },
+    /* 已退出教师郑好（T006）的历史课：退出的只是合作关系，这两节课的授课教师永久是郑好 */
+    { id: 'C20260528001', date: '2026-05-28', start: '19:00', end: '20:00', student: '赵一诺', teacher: '郑好', type: '一对一', status: '已完成', deduct: '已扣课', creator: '教务处-小陈', meeting: '已生成', note: '' },
+    { id: 'C20260611002', date: '2026-06-11', start: '19:00', end: '20:00', student: '赵一诺', teacher: '郑好', type: '一对一', status: '已完成', deduct: '已扣课', creator: '教务处-小陈', meeting: '已生成', note: '' },
   ],
 
-  books: [
-    { id: 'WB001', name: '人教版 七年级上 Unit 1 词汇', book: '人教版', grade: '七年级', term: '上学期', unit: 'Unit 1', count: 23, created: '2026-08-20', status: '启用' },
-    { id: 'WB002', name: '人教版 七年级上 Unit 2 词汇', book: '人教版', grade: '七年级', term: '上学期', unit: 'Unit 2', count: 28, created: '2026-08-20', status: '启用' },
-    { id: 'WB003', name: '人教版 八年级上 Unit 1 词汇', book: '人教版', grade: '八年级', term: '上学期', unit: 'Unit 1', count: 31, created: '2026-08-22', status: '启用' },
-    { id: 'WB004', name: '外研版 五年级上 Module 1 词汇', book: '外研版', grade: '五年级', term: '上学期', unit: 'Module 1', count: 18, created: '2026-08-25', status: '启用' },
-    { id: 'WB005', name: '外研版 六年级上 Module 2 词汇', book: '外研版', grade: '六年级', term: '上学期', unit: 'Module 2', count: 20, created: '2026-08-25', status: '启用' },
-    { id: 'WB006', name: '人教版 九年级上 Unit 3 词汇', book: '人教版', grade: '九年级', term: '上学期', unit: 'Unit 3', count: 26, created: '2026-09-01', status: '停用' },
+  /* ============================================================
+     词库种子（仿真「每份 Excel 一个词库」的入库结果）
+     ------------------------------------------------------------
+     每个词库 = 一份来源 Excel；words 是该词库的关联单词，数组顺序即词库内排序。
+     基础单词按英文去重：family / friend / meet / those 同时出现在两个词库中，
+     共用同一条基础单词，只增加词库关联 —— 这正是多对多模型要表达的事实。
+     ============================================================ */
+  wordbookSeeds: [
+    {
+      id: 'WB001', name: '人教版 七年级上 Unit 1 词汇', category: '教材',
+      bookVersion: '人教版', schoolStage: '初中', grade: '七年级', term: '上学期',
+      organization: '按单元',
+      description: '人教版七年级上册 Unit 1 核心词汇，按教材出现顺序排列。单词训练时按本顺序生成待训练队列。',
+      sourceFile: '人教版七上U1词汇.xlsx', createdAt: '2026-08-20 11:02', status: '启用',
+      words: [
+        { en: 'name', ph: '/neɪm/', pos: 'n./v.', cn: '名字；命名；说出…的名字',
+          mean: [{ pos: 'n.', cn: '名字' }, { pos: 'v.', cn: '命名；说出…的名字' }] },
+        { en: 'nice', ph: '/naɪs/', pos: 'adj.', cn: '令人愉快的；友好的' },
+        { en: 'meet', ph: '/miːt/', pos: 'v.', cn: '遇见；相识' },
+        { en: 'too', ph: '/tuː/', pos: 'adv.', cn: '也；太' },
+        { en: 'your', ph: '/jɔː(r)/', pos: 'pron.', cn: '你的；你们的' },
+        { en: 'his', ph: '/hɪz/', pos: 'pron.', cn: '他的' },
+        { en: 'her', ph: '/hɜː(r)/', pos: 'pron.', cn: '她的；她' },
+        { en: 'yes', ph: '/jes/', pos: 'adv.', cn: '是的' },
+        { en: 'she', ph: '/ʃiː/', pos: 'pron.', cn: '她' },
+        { en: 'he', ph: '/hiː/', pos: 'pron.', cn: '他' },
+        { en: 'no', ph: '/nəʊ/', pos: 'adv.', cn: '不；没有' },
+        { en: 'not', ph: '/nɒt/', pos: 'adv.', cn: '不' },
+        { en: 'friend', ph: '/frend/', pos: 'n.', cn: '朋友' },
+        { en: 'question', ph: '/ˈkwestʃən/', pos: 'n./v.', cn: '问题；询问；质疑',
+          mean: [{ pos: 'n.', cn: '问题' }, { pos: 'v.', cn: '询问；质疑' }] },
+        { en: 'answer', ph: '/ˈɑːnsə(r)/', pos: 'n./v.', cn: '回答；答案',
+          mean: [{ pos: 'n.', cn: '回答；答案' }, { pos: 'v.', cn: '回答' }] },
+        { en: 'look', ph: '/lʊk/', pos: 'v./n.', cn: '看；看起来；看一眼',
+          mean: [{ pos: 'v.', cn: '看；看起来' }, { pos: 'n.', cn: '看一眼' }] },
+        { en: 'first', ph: '/fɜːst/', pos: 'adj./adv.', cn: '第一的；首先',
+          mean: [{ pos: 'adj.', cn: '第一的' }, { pos: 'adv.', cn: '首先' }] },
+        { en: 'last', ph: '/lɑːst/', pos: 'adj./v.', cn: '最后的；持续',
+          mean: [{ pos: 'adj.', cn: '最后的；上一个' }, { pos: 'v.', cn: '持续' }] },
+        { en: 'class', ph: '/klɑːs/', pos: 'n.', cn: '班级；课' },
+        { en: 'classroom', ph: '/ˈklɑːsruːm/', pos: 'n.', cn: '教室' },
+        { en: 'library', ph: '/ˈlaɪbrəri/', pos: 'n.', cn: '图书馆' },
+        { en: 'happy', ph: '/ˈhæpi/', pos: 'adj.', cn: '高兴的；快乐的' },
+        { en: 'family', ph: '/ˈfæməli/', pos: 'n.', cn: '家；家人' },
+      ]
+    },
+    {
+      id: 'WB002', name: '人教版 七年级上 Unit 2 词汇', category: '教材',
+      bookVersion: '人教版', schoolStage: '初中', grade: '七年级', term: '上学期',
+      organization: '按单元',
+      description: 'Unit 2「This is my sister」家庭成员与指代词汇。',
+      sourceFile: '人教版七上U2词汇.xlsx', createdAt: '2026-08-20 11:20', status: '启用',
+      words: [
+        { en: 'sister', ph: '/ˈsɪstə(r)/', pos: 'n.', cn: '姐；妹' },
+        { en: 'brother', ph: '/ˈbrʌðə(r)/', pos: 'n.', cn: '兄；弟' },
+        { en: 'mother', ph: '/ˈmʌðə(r)/', pos: 'n.', cn: '母亲；妈妈' },
+        { en: 'father', ph: '/ˈfɑːðə(r)/', pos: 'n.', cn: '父亲；爸爸' },
+        { en: 'parent', ph: '/ˈpeərənt/', pos: 'n.', cn: '父亲（或母亲）；家长' },
+        { en: 'grandmother', ph: '/ˈɡrænmʌðə(r)/', pos: 'n.', cn: '祖母；外祖母' },
+        { en: 'grandfather', ph: '/ˈɡrænfɑːðə(r)/', pos: 'n.', cn: '祖父；外祖父' },
+        { en: 'aunt', ph: '/ɑːnt/', pos: 'n.', cn: '姑母；姨母；婶婶' },
+        { en: 'uncle', ph: '/ˈʌŋkl/', pos: 'n.', cn: '叔叔；舅舅；伯伯' },
+        { en: 'cousin', ph: '/ˈkʌzn/', pos: 'n.', cn: '堂（表）兄弟姐妹' },
+        { en: 'son', ph: '/sʌn/', pos: 'n.', cn: '儿子' },
+        { en: 'daughter', ph: '/ˈdɔːtə(r)/', pos: 'n.', cn: '女儿' },
+        { en: 'family', ph: '/ˈfæməli/', pos: 'n.', cn: '家；家人' },
+        { en: 'friend', ph: '/frend/', pos: 'n.', cn: '朋友' },
+        { en: 'these', ph: '/ðiːz/', pos: 'pron.', cn: '这些' },
+        { en: 'those', ph: '/ðəʊz/', pos: 'pron.', cn: '那些' },
+        { en: 'who', ph: '/huː/', pos: 'pron.', cn: '谁' },
+        { en: 'photo', ph: '/ˈfəʊtəʊ/', pos: 'n.', cn: '照片' },
+        { en: 'here', ph: '/hɪə(r)/', pos: 'adv.', cn: '这里；在这里' },
+        { en: 'dear', ph: '/dɪə(r)/', pos: 'adj.', cn: '亲爱的' },
+        { en: 'thanks', ph: '/θæŋks/', pos: 'n.', cn: '感谢；谢意' },
+        { en: 'have', ph: '/hæv/', pos: 'v.', cn: '有；吃；进行' },
+      ]
+    },
+    {
+      id: 'WB003', name: '人教版 八年级上 Unit 1 词汇', category: '教材',
+      bookVersion: '人教版', schoolStage: '初中', grade: '八年级', term: '上学期',
+      organization: '按单元',
+      description: 'Unit 1「Where did you go on vacation」假期与旅行主题词汇。',
+      sourceFile: '人教版八上U1词汇.xlsx', createdAt: '2026-08-22 09:15', status: '启用',
+      words: [
+        { en: 'vacation', ph: '/vəˈkeɪʃn/', pos: 'n.', cn: '假期；休假' },
+        { en: 'camp', ph: '/kæmp/', pos: 'v./n.', cn: '露营；营地' },
+        { en: 'museum', ph: '/mjuˈziːəm/', pos: 'n.', cn: '博物馆' },
+        { en: 'beach', ph: '/biːtʃ/', pos: 'n.', cn: '海滩；沙滩' },
+        { en: 'mountain', ph: '/ˈmaʊntən/', pos: 'n.', cn: '山；山脉' },
+        { en: 'trip', ph: '/trɪp/', pos: 'n.', cn: '旅行；旅程' },
+        { en: 'wonderful', ph: '/ˈwʌndəfl/', pos: 'adj.', cn: '精彩的；极好的' },
+        { en: 'delicious', ph: '/dɪˈlɪʃəs/', pos: 'adj.', cn: '美味的；可口的' },
+        { en: 'terrible', ph: '/ˈterəbl/', pos: 'adj.', cn: '糟糕的；可怕的' },
+        { en: 'activity', ph: '/ækˈtɪvəti/', pos: 'n.', cn: '活动' },
+        { en: 'decide', ph: '/dɪˈsaɪd/', pos: 'v.', cn: '决定；选定' },
+        { en: 'try', ph: '/traɪ/', pos: 'v./n.', cn: '尝试；努力' },
+        { en: 'bicycle', ph: '/ˈbaɪsɪkl/', pos: 'n.', cn: '自行车' },
+        { en: 'building', ph: '/ˈbɪldɪŋ/', pos: 'n.', cn: '建筑物；楼房' },
+        { en: 'trader', ph: '/ˈtreɪdə(r)/', pos: 'n.', cn: '商人；交易者' },
+        { en: 'difference', ph: '/ˈdɪfrəns/', pos: 'n.', cn: '差别；不同之处' },
+        { en: 'umbrella', ph: '/ʌmˈbrelə/', pos: 'n.', cn: '雨伞' },
+        { en: 'wet', ph: '/wet/', pos: 'adj.', cn: '湿的；潮湿的' },
+        { en: 'hungry', ph: '/ˈhʌŋɡri/', pos: 'adj.', cn: '饥饿的' },
+        { en: 'enough', ph: '/ɪˈnʌf/', pos: 'adj./adv.', cn: '足够的；足够地' },
+        { en: 'top', ph: '/tɒp/', pos: 'n.', cn: '顶部；顶端' },
+        { en: 'wonder', ph: '/ˈwʌndə(r)/', pos: 'v.', cn: '想知道；感到惊讶' },
+        { en: 'quite', ph: '/kwaɪt/', pos: 'adv.', cn: '相当；很' },
+        { en: 'diary', ph: '/ˈdaɪəri/', pos: 'n.', cn: '日记；日记簿' },
+      ]
+    },
+    {
+      id: 'WB004', name: '外研版 五年级上 Module 1 词汇', category: '教材',
+      bookVersion: '外研版', schoolStage: '小学', grade: '五年级', term: '上学期',
+      organization: '按单元',
+      description: 'Module 1「Did you come back yesterday」一般过去时入门词汇。',
+      sourceFile: '外研版五上M1词汇.xlsx', createdAt: '2026-08-25 14:30', status: '启用',
+      words: [
+        { en: 'come', ph: '/kʌm/', pos: 'v.', cn: '来；来到' },
+        { en: 'back', ph: '/bæk/', pos: 'adv.', cn: '回来；向后' },
+        { en: 'yesterday', ph: '/ˈjestədeɪ/', pos: 'n./adv.', cn: '昨天' },
+        { en: 'meet', ph: '/miːt/', pos: 'v.', cn: '遇见；相识' },
+        { en: 'ground', ph: '/ɡraʊnd/', pos: 'n.', cn: '地面；场地' },
+        { en: 'ice cream', ph: '/ˌaɪs ˈkriːm/', pos: 'n.', cn: '冰淇淋' },
+        { en: 'wait', ph: '/weɪt/', pos: 'v.', cn: '等待；等候' },
+        { en: 'hurry', ph: '/ˈhʌri/', pos: 'v.', cn: '匆忙；赶快' },
+        { en: 'finish', ph: '/ˈfɪnɪʃ/', pos: 'v.', cn: '完成；结束' },
+        { en: 'drop', ph: '/drɒp/', pos: 'v.', cn: '掉落；落下' },
+        { en: 'above', ph: '/əˈbʌv/', pos: 'prep.', cn: '在…上方' },
+        { en: 'those', ph: '/ðəʊz/', pos: 'pron.', cn: '那些' },
+        { en: 'email', ph: '/ˈiːmeɪl/', pos: 'n./v.', cn: '电子邮件；发电子邮件' },
+        { en: 'love', ph: '/lʌv/', pos: 'v./n.', cn: '爱；喜爱' },
+        { en: 'weekend', ph: '/ˌwiːkˈend/', pos: 'n.', cn: '周末' },
+        { en: 'letter', ph: '/ˈletə(r)/', pos: 'n.', cn: '信；字母' },
+      ]
+    },
+    {
+      id: 'WB005', name: '外研版 六年级上 Module 2 词汇', category: '教材',
+      bookVersion: '外研版', schoolStage: '小学', grade: '六年级', term: '上学期',
+      organization: '按单元',
+      description: 'Module 2「There is Chinese dancing」场所与描述类词汇。',
+      sourceFile: '外研版六上M2词汇.xlsx', createdAt: '2026-08-25 14:46', status: '启用',
+      words: [
+        { en: 'Chinatown', ph: '/ˈtʃaɪnətaʊn/', pos: 'n.', cn: '唐人街；中国城' },
+        { en: 'dancing', ph: '/ˈdɑːnsɪŋ/', pos: 'n.', cn: '跳舞；舞蹈' },
+        { en: 'restaurant', ph: '/ˈrestrɒnt/', pos: 'n.', cn: '餐馆；饭店' },
+        { en: 'square', ph: '/skweə(r)/', pos: 'n.', cn: '广场；正方形' },
+        { en: 'lake', ph: '/leɪk/', pos: 'n.', cn: '湖；湖泊' },
+        { en: 'boat', ph: '/bəʊt/', pos: 'n.', cn: '小船；艇' },
+        { en: 'tired', ph: '/ˈtaɪəd/', pos: 'adj.', cn: '疲倦的；累的' },
+        { en: 'postcard', ph: '/ˈpəʊstkɑːd/', pos: 'n.', cn: '明信片' },
+        { en: 'shop', ph: '/ʃɒp/', pos: 'n./v.', cn: '商店；购物' },
+        { en: 'special', ph: '/ˈspeʃl/', pos: 'adj.', cn: '特别的；特殊的' },
+        { en: 'surprise', ph: '/səˈpraɪz/', pos: 'n./v.', cn: '惊喜；使惊讶' },
+        { en: 'moon', ph: '/muːn/', pos: 'n.', cn: '月亮；月球' },
+      ]
+    },
+    {
+      id: 'WB006', name: '人教版 九年级上 Unit 3 词汇', category: '教材',
+      bookVersion: '人教版', schoolStage: '初中', grade: '九年级', term: '上学期',
+      organization: '按单元',
+      description: 'Unit 3「Could you tell me where the restrooms are」问路与礼貌请求词汇。已停用：待与新版教材核对后启用。',
+      sourceFile: '人教版九上U3词汇.xlsx', createdAt: '2026-09-01 10:05', status: '停用',
+      words: [
+        { en: 'restroom', ph: '/ˈrestruːm/', pos: 'n.', cn: '洗手间；卫生间' },
+        { en: 'stamp', ph: '/stæmp/', pos: 'n.', cn: '邮票；印章' },
+        { en: 'bookstore', ph: '/ˈbʊkstɔː(r)/', pos: 'n.', cn: '书店' },
+        { en: 'department', ph: '/dɪˈpɑːtmənt/', pos: 'n.', cn: '部门；百货公司' },
+        { en: 'magazine', ph: '/ˌmæɡəˈziːn/', pos: 'n.', cn: '杂志' },
+        { en: 'pardon', ph: '/ˈpɑːdn/', pos: 'int.', cn: '对不起；请再说一遍' },
+        { en: 'beside', ph: '/bɪˈsaɪd/', pos: 'prep.', cn: '在…旁边' },
+        { en: 'central', ph: '/ˈsentrəl/', pos: 'adj.', cn: '中心的；中央的' },
+        { en: 'nearby', ph: '/ˌnɪəˈbaɪ/', pos: 'adj./adv.', cn: '附近的；在附近' },
+        { en: 'mail', ph: '/meɪl/', pos: 'v./n.', cn: '邮寄；邮件' },
+        { en: 'staff', ph: '/stɑːf/', pos: 'n.', cn: '职员；全体员工' },
+        { en: 'suggest', ph: '/səˈdʒest/', pos: 'v.', cn: '建议；提议' },
+        { en: 'convenient', ph: '/kənˈviːniənt/', pos: 'adj.', cn: '方便的；便利的' },
+        { en: 'corner', ph: '/ˈkɔːnə(r)/', pos: 'n.', cn: '角落；拐角' },
+        { en: 'polite', ph: '/pəˈlaɪt/', pos: 'adj.', cn: '有礼貌的；客气的' },
+        { en: 'direct', ph: '/dəˈrekt/', pos: 'adj./v.', cn: '直接的；指路' },
+        { en: 'request', ph: '/rɪˈkwest/', pos: 'n./v.', cn: '请求；要求' },
+        { en: 'whom', ph: '/huːm/', pos: 'pron.', cn: '谁（宾格）' },
+        { en: 'grape', ph: '/ɡreɪp/', pos: 'n.', cn: '葡萄' },
+        { en: 'correct', ph: '/kəˈrekt/', pos: 'adj./v.', cn: '正确的；改正' },
+      ]
+    },
   ],
 
   articles: [
@@ -188,49 +550,8 @@ const DB = {
     { id: 'AR004', name: 'Our Family Weekend', book: '外研版', grade: '六年级', term: '上学期', unit: 'Module 2', sentences: 5, audio: '未生成', status: '启用' },
   ],
 
-  /* 23 个训练单词（人教版 七年级上 Unit 1）—— 与 PRD 11.4 示例分组一致 */
-  words: [
-    { en: 'name', ph: '/neɪm/', mean: [{ pos: 'n.', cn: '名字' }, { pos: 'v.', cn: '命名；说出…的名字' }] },
-    { en: 'nice', ph: '/naɪs/', mean: [{ pos: 'adj.', cn: '令人愉快的；友好的' }] },
-    { en: 'meet', ph: '/miːt/', mean: [{ pos: 'v.', cn: '遇见；相识' }] },
-    { en: 'too', ph: '/tuː/', mean: [{ pos: 'adv.', cn: '也；太' }] },
-    { en: 'your', ph: '/jɔː(r)/', mean: [{ pos: 'pron.', cn: '你的；你们的' }] },
-    { en: 'his', ph: '/hɪz/', mean: [{ pos: 'pron.', cn: '他的' }] },
-    { en: 'her', ph: '/hɜː(r)/', mean: [{ pos: 'pron.', cn: '她的；她' }] },
-    { en: 'yes', ph: '/jes/', mean: [{ pos: 'adv.', cn: '是的' }] },
-    { en: 'she', ph: '/ʃiː/', mean: [{ pos: 'pron.', cn: '她' }] },
-    { en: 'he', ph: '/hiː/', mean: [{ pos: 'pron.', cn: '他' }] },
-    { en: 'no', ph: '/nəʊ/', mean: [{ pos: 'adv.', cn: '不；没有' }] },
-    { en: 'not', ph: '/nɒt/', mean: [{ pos: 'adv.', cn: '不' }] },
-    { en: 'friend', ph: '/frend/', mean: [{ pos: 'n.', cn: '朋友' }] },
-    { en: 'question', ph: '/ˈkwestʃən/', mean: [{ pos: 'n.', cn: '问题' }, { pos: 'v.', cn: '询问；质疑' }] },
-    { en: 'answer', ph: '/ˈɑːnsə(r)/', mean: [{ pos: 'n.', cn: '回答；答案' }, { pos: 'v.', cn: '回答' }] },
-    { en: 'look', ph: '/lʊk/', mean: [{ pos: 'v.', cn: '看；看起来' }, { pos: 'n.', cn: '看一眼' }] },
-    { en: 'first', ph: '/fɜːst/', mean: [{ pos: 'adj.', cn: '第一的' }, { pos: 'adv.', cn: '首先' }] },
-    { en: 'last', ph: '/lɑːst/', mean: [{ pos: 'adj.', cn: '最后的；上一个' }, { pos: 'v.', cn: '持续' }] },
-    { en: 'class', ph: '/klɑːs/', mean: [{ pos: 'n.', cn: '班级；课' }] },
-    { en: 'classroom', ph: '/ˈklɑːsruːm/', mean: [{ pos: 'n.', cn: '教室' }] },
-    { en: 'library', ph: '/ˈlaɪbrəri/', mean: [{ pos: 'n.', cn: '图书馆' }] },
-    { en: 'happy', ph: '/ˈhæpi/', mean: [{ pos: 'adj.', cn: '高兴的；快乐的' }] },
-    { en: 'family', ph: '/ˈfæməli/', mean: [{ pos: 'n.', cn: '家；家人' }] },
-  ],
+  /* 词库单词统一来自 wordbookSeeds（每份 Excel 对应一个词库），不再单独维护一份全局词表 */
 
-  /* 词库内更完整的单词列表（词库详情页） */
-  bankWords: [
-    { en: 'name', ph: '/neɪm/', pos: 'n./v.', cn: '名字；命名', source: '人教版词表', status: '启用' },
-    { en: 'nice', ph: '/naɪs/', pos: 'adj.', cn: '令人愉快的；友好的', source: '人教版词表', status: '启用' },
-    { en: 'meet', ph: '/miːt/', pos: 'v.', cn: '遇见；相识', source: '人教版词表', status: '启用' },
-    { en: 'too', ph: '/tuː/', pos: 'adv.', cn: '也；太', source: '人教版词表', status: '启用' },
-    { en: 'your', ph: '/jɔː(r)/', pos: 'pron.', cn: '你的；你们的', source: '人教版词表', status: '启用' },
-    { en: 'his', ph: '/hɪz/', pos: 'pron.', cn: '他的', source: '人教版词表', status: '启用' },
-    { en: 'her', ph: '/hɜː(r)/', pos: 'pron.', cn: '她的；她', source: '人教版词表', status: '启用' },
-    { en: 'question', ph: '/ˈkwestʃən/', pos: 'n./v.', cn: '问题；询问', source: '人教版词表', status: '启用' },
-    { en: 'answer', ph: '/ˈɑːnsə(r)/', pos: 'n./v.', cn: '回答；答案', source: '人教版词表', status: '启用' },
-    { en: 'classroom', ph: '/ˈklɑːsruːm/', pos: 'n.', cn: '教室', source: '人工录入', status: '启用' },
-    { en: 'library', ph: '/ˈlaɪbrəri/', pos: 'n.', cn: '图书馆', source: '人工录入', status: '启用' },
-  ],
-
-  /* 文章句子 */
   sentences: [
     { i: 1, en: 'Today is my first day at school.', cn: '今天是我上学的第一天。' },
     { i: 2, en: 'I meet my new teacher in the classroom.', cn: '我在教室里见到了我的新老师。' },

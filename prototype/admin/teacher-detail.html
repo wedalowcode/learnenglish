@@ -5,202 +5,909 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>教师详情</title>
 <link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .avail-grid { display: grid; grid-template-columns: 76px repeat(3, 1fr); gap: 6px; font-size: 12.5px; }
+  .avail-grid .h { color: var(--text-3); font-size: 12px; text-align: center; padding-bottom: 2px; }
+  .avail-grid .d { color: var(--text-2); line-height: 34px; }
+  .avail-cell {
+    height: 34px; border-radius: 6px; border: 1px dashed var(--border-2);
+    display: flex; align-items: center; justify-content: center; color: var(--text-3); font-size: 12px;
+  }
+  .avail-cell.on {
+    border: 1px solid #bbf7d0; background: var(--success-soft); color: #15803d; font-weight: 600;
+  }
+  .coop-row { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
+  .coop-row:last-child { border-bottom: none; }
+  .coop-row .who { flex: 0 0 168px; color: var(--text-3); }
+  .big-name { font-size: 20px; font-weight: 700; letter-spacing: -.3px; }
+  .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .plan-row { display: grid; grid-template-columns: 1fr 120px 150px; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
+  .plan-row:last-child { border-bottom: none; }
+</style>
 </head>
 <body>
 <div class="layout">
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar" id="topbar"></header>
-    <main class="content">
+    <main class="content" id="page"></main>
+  </div>
+</div>
 
-      <div class="page-head">
-        <div>
-          <div class="crumb">教学管理<span class="sep">/</span><a href="teacher-list.html">教师管理</a><span class="sep">/</span>教师详情</div>
-          <h1 class="page-title">李婉 <span class="tag tag-green" style="font-size:12px;vertical-align:middle">在职</span></h1>
-          <div class="page-sub">T001 · 七年级 / 八年级 · 人教版 · 入职 2024-03-01 · 13801234567</div>
-        </div>
-        <div class="page-actions">
-          <a class="btn" href="teacher-list.html">返回</a>
-          <button class="btn" onclick="Proto.toast('打开编辑表单（示意）')">编辑资料</button>
-          <button class="btn" onclick="Proto.toast('前往学员分配（示意）')">分配学员</button>
-          <button class="btn btn-danger" onclick="tryDisable()">停用教师</button>
-        </div>
-      </div>
+<!-- 分配学员 -->
+<div class="drawer-mask" id="assign-mask" onclick="Proto.closeDrawer('assign')"></div>
+<div class="drawer" id="assign">
+  <div class="modal-head">
+    <div class="modal-title">分配学员</div>
+    <button class="modal-close" onclick="Proto.closeDrawer('assign')">×</button>
+  </div>
+  <div class="modal-body">
+    <div class="alert alert-info mb16"><span class="ico">i</span>
+      <div>分配后创建一条<b>师生负责关系</b>，学员的「当前教师」随之更新。
+        同一学员同一时间只有一名负责教师；已有教师的学员请使用「更换教师」，不会直接覆盖。</div></div>
+    <div class="field mb12"><label>选择学员 <span class="req">*</span></label>
+      <select class="select" id="as_student"></select>
+      <div class="tip">只列出当前没有负责教师的学员</div></div>
+    <div class="field mb12"><label>生效日期</label>
+      <input class="input" type="date" id="as_date"></div>
+    <div class="field"><label>分配原因 <span class="req">*</span></label>
+      <textarea class="textarea" id="as_reason" placeholder="如：新签学员，按擅长年级匹配"></textarea></div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn" onclick="Proto.closeDrawer('assign')">取消</button>
+    <button class="btn btn-primary" onclick="doAssign()">确认分配</button>
+  </div>
+</div>
 
-      <div class="grid g4 mb16">
-        <div class="card stat"><div class="stat-label">当前负责学员</div><div class="stat-value">2<small>人</small></div>
-          <div class="stat-foot">陈可欣、付嘉禾</div></div>
-        <div class="card stat"><div class="stat-label">本月完成课程</div><div class="stat-value">26<small>节</small></div>
-          <div class="stat-foot"><span class="trend-up">↑ 13%</span> 较上月</div></div>
-        <div class="card stat"><div class="stat-label">本月授课课时</div><div class="stat-value">26<small>课时</small></div>
-          <div class="stat-foot">均按已完成扣课统计</div></div>
-        <div class="card stat"><div class="stat-label">课程完成率</div><div class="stat-value">93<small>%</small></div>
-          <div class="stat-foot">2 节取消 / 未上课</div></div>
-      </div>
+<!-- 学员更换教师 / 解除关系 -->
+<div class="mask" id="stuModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="stuTitle">更换负责教师</div>
+      <button class="modal-close" onclick="Proto.closeModal('stuModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-warn mb16"><span class="ico">!</span>
+        <div>更换教师会结束原负责关系并新建一条关系；<b>学员的历史课程仍显示当时的授课教师</b>。</div></div>
+      <div class="desc g2 mb16" id="stuInfo"></div>
+      <div class="field mb12"><label>新负责教师 <span class="req">*</span></label>
+        <select class="select" id="stu_new"></select></div>
+      <div class="field"><label>调整原因 <span class="req">*</span></label>
+        <textarea class="textarea" id="stu_reason" placeholder="将写入关系记录，可追溯"></textarea></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('stuModal')">取消</button>
+      <button class="btn btn-danger" onclick="doRelease()">解除关系</button>
+      <button class="btn btn-primary" onclick="doTransfer()">确认更换</button>
+    </div>
+  </div>
+</div>
 
-      <div class="card">
-        <div class="tabs" id="ttabs">
-          <button class="tab active" data-pane="t1">基础资料</button>
-          <button class="tab" data-pane="t2">当前学员<span class="count">2</span></button>
-          <button class="tab" data-pane="t3">历史学员<span class="count">3</span></button>
-          <button class="tab" data-pane="t4">课程安排</button>
-          <button class="tab" data-pane="t5">授课记录</button>
-          <button class="tab" data-pane="t6">教学统计</button>
-        </div>
+<!-- 课程改派 -->
+<div class="mask" id="courseModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">改派课程教师</div>
+      <button class="modal-close" onclick="Proto.closeModal('courseModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div>只有<b>未完成</b>的课程可以改派；已完成、已取消的课程保留原授课教师。</div></div>
+      <div class="desc g2 mb16" id="ct_info"></div>
+      <div class="field mb12"><label>新授课教师 <span class="req">*</span></label>
+        <select class="select" id="ct_new"></select></div>
+      <div class="field"><label>改派原因</label>
+        <textarea class="textarea" id="ct_reason" placeholder="如：原教师临时请假"></textarea></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('courseModal')">取消</button>
+      <button class="btn btn-primary" onclick="doReassignCourse()">确认改派</button>
+    </div>
+  </div>
+</div>
 
-        <div class="tab-pane active" id="t1">
-          <div class="grid g2" style="gap:24px">
-            <div>
-              <div class="section-title">教师信息</div>
-              <div class="desc g1">
-                <div class="desc-item"><span class="k">教师编号</span><span class="v mono">T001</span></div>
-                <div class="desc-item"><span class="k">姓名</span><span class="v">李婉</span></div>
-                <div class="desc-item"><span class="k">性别</span><span class="v">女</span></div>
-                <div class="desc-item"><span class="k">手机号</span><span class="v mono">13801234567</span></div>
-                <div class="desc-item"><span class="k">学校</span><span class="v">华东师范大学</span></div>
-                <div class="desc-item"><span class="k">专业</span><span class="v">英语教育</span></div>
-                <div class="desc-item"><span class="k">擅长年级</span><span class="v">七年级、八年级</span></div>
-                <div class="desc-item"><span class="k">擅长教材</span><span class="v">人教版</span></div>
-                <div class="desc-item"><span class="k">入职时间</span><span class="v">2024-03-01</span></div>
-                <div class="desc-item"><span class="k">账号状态</span><span class="v"><span class="tag tag-green">正常</span> 13801234567</span></div>
-              </div>
-            </div>
-            <div>
-              <div class="section-title">个人简介</div>
-              <div style="background:var(--bg);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--text-2);line-height:1.8">
-                6 年一对一英语教学经验，擅长词汇与阅读训练。课堂以「预筛 → 分组强化 → 最后一轮复习」为主线，
-                配合莱特纳与 21 天两套复习体系做长期记忆管理。
-              </div>
-              <div class="section-title mt16">教学特点标签</div>
-              <div class="flex gap8" style="flex-wrap:wrap">
-                <span class="tag tag-blue nodot">词汇强化</span>
-                <span class="tag tag-blue nodot">自然拼读</span>
-                <span class="tag tag-blue nodot">阅读训练</span>
-                <span class="tag tag-blue nodot">家长沟通及时</span>
-              </div>
-            </div>
-          </div>
-        </div>
+<!-- 暂停合作 -->
+<div class="mask" id="pauseModal">
+  <div class="modal wide">
+    <div class="modal-head">
+      <div class="modal-title">暂停合作</div>
+      <button class="modal-close" onclick="Proto.closeModal('pauseModal')">×</button>
+    </div>
+    <div class="modal-body" id="pauseBody"></div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('pauseModal')">取消</button>
+      <button class="btn btn-primary" onclick="doPause()">确认暂停合作</button>
+    </div>
+  </div>
+</div>
 
-        <div class="tab-pane" id="t2">
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>学员</th><th>年级</th><th>教材</th><th>剩余课时</th><th>最近上课</th><th>待复习单词</th><th>状态</th><th>操作</th></tr></thead>
-              <tbody id="curStudents"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="tab-pane" id="t3">
-          <div class="alert alert-info mb16"><span class="ico">i</span>
-            <div>学员归属已调整，历史课程仍保留<b>当时</b>的授课教师为李婉，不会被新归属覆盖。</div></div>
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>学员</th><th>年级</th><th>授课期间</th><th>授课节数</th><th>调整原因</th><th>操作</th></tr></thead>
-              <tbody>
-                <tr><td class="strong">吴思远</td><td>九年级</td><td>2026-08-30 ~ 2026-10-12</td><td class="mono">6</td><td>家长指定换教师</td>
-                  <td><button class="btn-link" onclick="Proto.toast('查看历史授课记录（示意）')">查看记录</button></td></tr>
-                <tr><td class="strong">孙雨桐</td><td>三年级</td><td>2026-06-11 ~ 2026-07-20</td><td class="mono">4</td><td>年级方向不匹配</td>
-                  <td><button class="btn-link" onclick="Proto.toast('查看历史授课记录（示意）')">查看记录</button></td></tr>
-                <tr><td class="strong">林雨萱</td><td>二年级</td><td>2026-09-18 ~ 2026-09-30</td><td class="mono">2</td><td>调整至低年级教师</td>
-                  <td><button class="btn-link" onclick="Proto.toast('查看历史授课记录（示意）')">查看记录</button></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="tab-pane" id="t4">
-          <div class="flex jcb mb12">
-            <div class="small muted">今日 3 节 · 本周 11 节 · 未来 7 天 9 节</div>
-            <a class="btn btn-sm" href="schedule-calendar.html">前往排课</a>
-          </div>
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>日期</th><th>时间</th><th>学员</th><th>课程类型</th><th>会议链接</th><th>状态</th><th>操作</th></tr></thead>
-              <tbody id="teacherCourses"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="tab-pane" id="t5">
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>课程日期</th><th>学员</th><th>教学主题</th><th class="right">训练单词</th><th class="right">文章</th><th>报告</th><th>操作</th></tr></thead>
-              <tbody>
-                <tr><td>2026-11-02</td><td>陈可欣</td><td>Unit 1 词汇强化</td><td class="right mono">23</td><td class="right mono">—</td>
-                  <td><span class="tag tag-green">已提交</span></td><td><button class="btn-link" onclick="Proto.toast('查看教学记录（示意）')">查看</button></td></tr>
-                <tr><td>2026-10-31</td><td>陈可欣</td><td>Unit 3 词汇强化 + 短文听读</td><td class="right mono">23</td><td class="right mono">1</td>
-                  <td><span class="tag tag-green">已提交</span></td><td><button class="btn-link" onclick="Proto.toast('查看教学记录（示意）')">查看</button></td></tr>
-                <tr><td>2026-10-30</td><td>付嘉禾</td><td>Unit 1 单词初筛</td><td class="right mono">23</td><td class="right mono">—</td>
-                  <td><span class="tag tag-amber">草稿</span></td><td><a class="btn-link" href="../teacher/teaching-record.html">去提交</a></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="tab-pane" id="t6">
-          <div class="grid g2">
-            <div class="card">
-              <div class="card-head"><div class="card-title">近 6 个月授课量</div></div>
-              <div class="card-body">
-                <div class="bars">
-                  <div class="b"><i style="height:58%"></i><span>6月</span></div>
-                  <div class="b"><i style="height:64%"></i><span>7月</span></div>
-                  <div class="b"><i style="height:42%"></i><span>8月</span></div>
-                  <div class="b"><i style="height:78%"></i><span>9月</span></div>
-                  <div class="b"><i style="height:88%"></i><span>10月</span></div>
-                  <div class="b"><i style="height:92%"></i><span>11月</span></div>
-                </div>
-              </div>
-            </div>
-            <div class="card">
-              <div class="card-head"><div class="card-title">教学质量指标</div></div>
-              <div class="card-body">
-                <div class="flex jcb small mb8"><span>报告按时提交率</span><span class="mono">96%</span></div>
-                <div class="bar mb16"><i style="width:96%"></i></div>
-                <div class="flex jcb small mb8"><span>课程完成率</span><span class="mono">93%</span></div>
-                <div class="bar green mb16"><i style="width:93%"></i></div>
-                <div class="flex jcb small mb8"><span>学员续费意愿（家长反馈）</span><span class="mono">良好</span></div>
-                <div class="bar amber mb16"><i style="width:78%"></i></div>
-                <div class="small muted mt12">口径：报告按时提交率 = 课程结束后 24h 内提交的报告数 / 应提交数</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </main>
+<!-- 恢复合作 -->
+<div class="mask" id="resumeModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">恢复合作</div>
+      <button class="modal-close" onclick="Proto.closeModal('resumeModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div>恢复后回到「可授课」。<b>暂停期间被解除的学员关系不会自动恢复</b>，需由教务重新确认分配。</div></div>
+      <div class="field mb12"><label class="check"><input type="checkbox" id="r_account" checked> 继续使用原登录账号</label></div>
+      <div class="field mb12"><label class="check"><input type="checkbox" id="r_cap" checked> 保留原教学能力资料（擅长年级 / 教材 / 可授课时间）</label></div>
+      <div class="field mb12"><label class="check"><input type="checkbox" id="r_sched" checked> 重新开放排课与学员分配资格</label></div>
+      <div class="field"><label>恢复备注</label>
+        <textarea class="textarea" id="r_remark" placeholder="如：考试结束，可正常接课"></textarea></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('resumeModal')">取消</button>
+      <button class="btn btn-primary" onclick="doResume()">确认恢复</button>
+    </div>
   </div>
 </div>
 
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'admin', active: 'teacher-list' });
+Store.setSession({ role: 'admin', operatorName: '张敏' });
+const S = Store;
 
-const mine = DB.students.filter(s => s.teacherName === '李婉');
-Proto.renderRows('curStudents', mine, s => `
-  <tr><td class="strong"><a href="student-detail.html">${s.name}</a></td><td>${s.grade}</td><td>${s.book}</td>
-    <td class="mono" ${s.remain < 10 ? 'style="color:var(--danger);font-weight:600"' : ''}>${s.remain}</td>
-    <td class="small muted">${s.lastCourse}</td><td class="mono">${s.words.review}</td>
-    <td><span class="tag tag-green">${s.status}</span></td>
-    <td class="ops"><a class="btn-link" href="student-detail.html">档案</a>
-      <a class="btn-link" href="../teacher/student-profile.html">学习档案</a></td></tr>`, 8, '暂无在负责学员');
+const QS = new URLSearchParams(location.search);
+const TID = QS.get('id') || 'T001';
+let T = S.teacher(TID);
 
-const tc = DB.courses.filter(c => c.teacher === '李婉' && c.date >= DB.today);
-Proto.renderRows('teacherCourses', tc, c => `
-  <tr><td>${c.date}</td><td class="mono">${c.start}-${c.end}</td><td class="strong">${c.student}</td>
-    <td>${c.type}</td>
-    <td>${c.meeting === '已生成'
-      ? '<span class="tag tag-green nodot">已生成</span>' : '<span class="tag tag-slate nodot">未生成</span>'}</td>
-    <td><span class="tag ${c.status === '已完成' ? 'tag-green' : 'tag-blue'}">${c.status}</span></td>
-    <td class="ops"><a class="btn-link" href="course-detail.html">详情</a></td></tr>`, 7, '暂无课程安排');
+if (!T) {
+  document.getElementById('page').innerHTML = `
+    <div class="page-head"><div><div class="crumb">教学管理<span class="sep">/</span>
+      <a href="teacher-list.html">教师资源池</a><span class="sep">/</span>未找到</div>
+      <h1 class="page-title">教师不存在</h1></div></div>
+    <div class="card"><div class="empty"><div class="e-ico">▤</div>
+      <p>没有找到编号为 <b class="mono">${TID}</b> 的教师档案</p>
+      <div class="mt16"><a class="btn btn-primary" href="teacher-list.html">返回教师列表</a></div>
+    </div></div>`;
+} else {
+  boot();
+}
 
-function tryDisable() {
-  const future = DB.courses.filter(c => c.teacher === '李婉' && c.date >= DB.today && c.status !== '已取消');
-  Proto.confirmBox('无法停用',
-    `李婉 还有 <b>${future.length} 个</b>未来有效预约，系统将拦截停用操作。<br><br>
-     请先在排课页重新分配或取消这些预约。`, '前往排课', () => location.href = 'schedule-calendar.html');
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function coopTag(s) { return `<span class="tag tag-${S.COOP_TONE[s] || 'slate'}">${s}</span>`; }
+function accTag(s) { return `<span class="tag tag-${S.ACCOUNT_TONE[s] || 'slate'} nodot">${s}</span>`; }
+function dash(v) { return v ? esc(v) : '<span class="muted">未填写</span>'; }
+
+function boot() {
+  T = S.teacher(TID);
+  const st = S.teacherStat(TID);
+  const acc = S.accountOf(TID);
+  const chk = S.activationCheck(TID);
+  const alerts = S.teacherAlerts(TID);
+
+  document.getElementById('page').innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="crumb">教学管理<span class="sep">/</span>
+          <a href="teacher-list.html">教师资源池</a><span class="sep">/</span>${esc(T.name)}</div>
+        <h1 class="page-title">${esc(T.name)}
+          ${coopTag(T.cooperationStatus)}
+          ${accTag(st.accountStatus)}
+        </h1>
+        <div class="page-sub">
+          ${T.code} · ${T.grades.length ? T.grades.join(' / ') : '年级未填写'} ·
+          ${T.textbooks.length ? T.textbooks.join('、') : '教材未填写'} ·
+          合作开始 ${T.lastCooperationStartAt || '—'} · ${T.phone}
+        </div>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="teacher-list.html">返回</a>
+        <a class="btn" href="teacher-form.html?id=${T.id}">编辑资料</a>
+        ${T.cooperationStatus === S.COOP.READY
+          ? `<button class="btn" onclick="openAssign()">分配学员</button>
+             <button class="btn" onclick="openPause()">暂停合作</button>`
+          : ''}
+        ${T.cooperationStatus === S.COOP.PENDING
+          ? `${st.accountStatus === S.ACCOUNT.NONE
+              ? `<button class="btn" onclick="doOpenAccount()">开通账号</button>` : ''}
+             <button class="btn btn-primary" onclick="doActivate()">启用教师</button>`
+          : ''}
+        ${T.cooperationStatus === S.COOP.PAUSED
+          ? `<button class="btn btn-primary" onclick="openResume()">恢复合作</button>
+             <a class="btn btn-danger" href="teacher-exit.html?id=${T.id}">退出合作</a>`
+          : ''}
+        ${T.cooperationStatus === S.COOP.EXITED
+          ? `<button class="btn btn-primary" onclick="doRejoin()">重新加入</button>` : ''}
+      </div>
+    </div>
+
+    ${statusBanner(chk, alerts, acc)}
+
+    <div class="grid g4 mb16">
+      <div class="card stat"><div class="stat-label">当前负责学员</div>
+        <div class="stat-value">${st.currentStudents}<small>人</small></div>
+        <div class="stat-foot">${S.currentStudentsOf(TID).map(x => esc(x.student.name)).join('、') || '暂无'}</div></div>
+      <div class="card stat"><div class="stat-label">本月完成课程</div>
+        <div class="stat-value">${st.monthCourses}<small>节</small></div>
+        <div class="stat-foot">按已完成课程统计</div></div>
+      <div class="card stat"><div class="stat-label">本月授课课时</div>
+        <div class="stat-value">${st.monthHours}<small>课时</small></div>
+        <div class="stat-foot">按课程实际时长折算</div></div>
+      <div class="card stat"><div class="stat-label">最近授课</div>
+        <div class="stat-value" style="font-size:19px">${st.lastCourseAt || '从未'}</div>
+        <div class="stat-foot">累计 ${st.doneCourses} 节 / ${st.doneHours} 课时</div></div>
+    </div>
+
+    <div class="card">
+      <div class="tabs" id="ttabs">
+        <button class="tab active" data-pane="t1">基础资料</button>
+        <button class="tab" data-pane="t2">教学能力</button>
+        <button class="tab" data-pane="t3">当前学员<span class="count">${st.currentStudents}</span></button>
+        <button class="tab" data-pane="t4">历史学员<span class="count">${S.historyStudentsOf(TID).length}</span></button>
+        <button class="tab" data-pane="t5">课程安排<span class="count">${S.coursesOfTeacher(TID).filter(c => c.date >= S.TODAY).length}</span></button>
+        <button class="tab" data-pane="t6">授课记录<span class="count">${st.doneCourses}</span></button>
+        <button class="tab" data-pane="t7">合作记录</button>
+        <button class="tab" data-pane="t8">教学统计</button>
+      </div>
+
+      <div class="tab-pane active" id="t1">${paneBasic(acc)}</div>
+      <div class="tab-pane" id="t2">${paneCapability()}</div>
+      <div class="tab-pane" id="t3">${paneCurrentStudents()}</div>
+      <div class="tab-pane" id="t4">${paneHistoryStudents()}</div>
+      <div class="tab-pane" id="t5">${paneCourses()}</div>
+      <div class="tab-pane" id="t6">${paneRecords()}</div>
+      <div class="tab-pane" id="t7">${paneCoop()}</div>
+      <div class="tab-pane" id="t8">${paneStats(st)}</div>
+    </div>`;
+
+  fitDrawerOptions();
+  if (QS.get('assign') === '1') openAssign();
+  if (QS.get('pause') === '1') openPause();
+  if (QS.get('focus') === 'activation') {
+    Proto.toast('已恢复原档案，请开通账号或补充资料后启用', 'warn');
+  }
+}
+
+/* ---------- 顶部状态横幅 ---------- */
+function statusBanner(chk, alerts, acc) {
+  if (T.cooperationStatus === S.COOP.PAUSED) {
+    const p = T.pauseInfo || {};
+    return `<div class="alert alert-warn mb16"><span class="ico">!</span>
+      <div><b>暂停合作中</b>：${esc(p.reason || '—')}<br>
+        暂停开始 ${p.startAt || '—'} · 预计恢复 ${p.expectResumeAt || '未填写'} ·
+        操作人 ${esc(p.by || '—')}<br>
+        当前仍负责 <b>${alerts.students}</b> 名学员（已标记需教务关注），
+        未来课程 <b>${alerts.future}</b> 节。暂停期间不参与新排课与新学员分配。</div></div>`;
+  }
+  if (T.cooperationStatus === S.COOP.EXITED) {
+    return `<div class="alert alert-danger mb16"><span class="ico">!</span>
+      <div><b>已退出合作</b>，账号${acc ? '已禁用' : '未开通'}，不能再分配学员或排课。
+        档案、历史课程、教学记录与学习报告全部保留；如再次合作请使用「重新加入」复用本档案。</div></div>`;
+  }
+  if (T.cooperationStatus === S.COOP.PENDING) {
+    return `<div class="alert alert-warn mb16"><span class="ico">!</span>
+      <div><b>待启用</b>：${chk.ready ? '启用条件已满足，可以启用。' : '还缺少：' + esc(chk.missing.join('；'))}
+        待启用期间可以查看档案、完善资料，但<b>不能分配学员、不能创建有效排课</b>。</div></div>`;
+  }
+  if (alerts.attention) {
+    return `<div class="alert alert-info mb16"><span class="ico">i</span>
+      <div>有 <b>${alerts.attention}</b> 名学员关系被标记为需教务关注。</div></div>`;
+  }
+  return '';
+}
+
+/* ---------- Tab 1 基础资料 ---------- */
+function paneBasic(acc) {
+  const logs = S.changeLogsOf(TID);
+  const FIELD = {
+    name: '姓名', phone: '手机号', gender: '性别', school: '学校', major: '专业',
+    education: '学历', introduction: '个人简介', remark: '备注', grades: '擅长年级',
+    textbooks: '擅长教材', teachingTags: '教学方向', teachingExperience: '教学经验',
+    teachingStyle: '教学特点', availability: '可授课时间', accountId: '登录账号'
+  };
+  return `
+    <div class="grid g2" style="gap:24px">
+      <div>
+        <div class="section-title">教师信息</div>
+        <div class="desc g1">
+          <div class="desc-item"><span class="k">教师编号</span><span class="v mono">${T.code}</span></div>
+          <div class="desc-item"><span class="k">姓名</span><span class="v">${esc(T.name)}</span></div>
+          <div class="desc-item"><span class="k">手机号</span><span class="v mono">${T.phone}</span></div>
+          <div class="desc-item"><span class="k">性别</span><span class="v">${dash(T.gender)}</span></div>
+          <div class="desc-item"><span class="k">学校</span><span class="v">${dash(T.school)}</span></div>
+          <div class="desc-item"><span class="k">专业</span><span class="v">${dash(T.major)}</span></div>
+          <div class="desc-item"><span class="k">学历</span><span class="v">${dash(T.education)}</span></div>
+          <div class="desc-item"><span class="k">合作状态</span><span class="v">${coopTag(T.cooperationStatus)}</span></div>
+          <div class="desc-item"><span class="k">账号状态</span><span class="v">${accTag(S.accountStatusOf(TID))}
+            ${acc ? `<span class="muted small">登录名 ${acc.loginName}</span>` : ''}</span></div>
+          <div class="desc-item"><span class="k">合作开始</span><span class="v">${T.lastCooperationStartAt || '—'}</span></div>
+          <div class="desc-item"><span class="k">合作结束</span><span class="v">${T.cooperationEndAt || '—'}</span></div>
+          <div class="desc-item"><span class="k">首次加入</span><span class="v">${T.firstCooperationAt || '—'}</span></div>
+          <div class="desc-item"><span class="k">创建时间</span><span class="v small muted">${T.createdAt} · ${esc(T.createdBy || '—')}</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="section-title">个人简介</div>
+        <div style="background:var(--bg);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--text-2);line-height:1.8">
+          ${T.introduction ? esc(T.introduction) : '<span class="muted">未填写</span>'}
+        </div>
+        <div class="section-title mt16">备注</div>
+        <div class="small muted">${T.remark ? esc(T.remark) : '无'}</div>
+
+        <div class="section-title mt16">登录账号</div>
+        <div class="small" style="line-height:1.9">
+          ${acc ? `账号 ID <span class="mono">${acc.id}</span> · 登录名 <span class="mono">${acc.loginName}</span>
+            · 角色 ${acc.roleId} · 开通于 ${acc.openedAt || '—'}（${esc(acc.openedBy || '—')}）
+            <br>账号与教师档案通过 accountId 关联，<b>不作为教师业务标识</b>。` :
+            '<span class="muted">尚未开通登录账号，教师无法进入教学工作台。</span>'}
+        </div>
+        <div class="mt12 flex gap8">
+          ${!acc && T.cooperationStatus !== S.COOP.EXITED
+            ? `<button class="btn btn-sm btn-primary" onclick="doOpenAccount()">开通登录账号</button>` : ''}
+          ${acc && acc.status === S.ACCOUNT.OK && T.cooperationStatus === S.COOP.READY
+            ? `<button class="btn btn-sm" onclick="doDisableAccount()">禁用登录</button>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="flex jcb aic mb12">
+      <div class="section-title mt0">资料变更记录</div>
+      <span class="small muted">关键字段修改留痕，历史课程不受姓名/手机号变更影响</span>
+    </div>
+    <div class="table-wrap">
+      <table class="table compact">
+        <thead><tr><th style="width:180px">时间</th><th style="width:110px">字段</th>
+          <th>修改前</th><th>修改后</th><th style="width:110px">操作人</th></tr></thead>
+        <tbody>
+          ${logs.length ? logs.slice(0, 20).map(l => `
+            <tr>
+              <td class="small muted mono">${l.createdAt}</td>
+              <td>${FIELD[l.fieldName] || l.fieldName}</td>
+              <td class="small muted">${esc(l.oldValue) || '—'}</td>
+              <td class="small">${esc(l.newValue) || '—'}</td>
+              <td class="small">${esc(l.operatorId)}</td>
+            </tr>`).join('') :
+            `<tr><td colspan="5"><div class="empty"><div class="e-ico">▤</div><p>还没有资料变更记录</p></div></td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+/* ---------- Tab 2 教学能力 ---------- */
+function paneCapability() {
+  const has = (d, p) => T.availability.some(a => a.weekday === d && a.period === p);
+  const rows = S.WEEKDAYS.map(d => `
+    <div class="d">${d}</div>
+    ${S.PERIODS.map(p => `<div class="avail-cell ${has(d, p) ? 'on' : ''}">
+      ${has(d, p) ? '可授课' : '—'}</div>`).join('')}`).join('');
+  return `
+    <div class="grid g2" style="gap:24px">
+      <div>
+        <div class="section-title">擅长与方向</div>
+        <div class="desc g1">
+          <div class="desc-item"><span class="k">擅长年级</span><span class="v">
+            ${T.grades.length ? T.grades.join('、') : '<span class="muted">未填写</span>'}</span></div>
+          <div class="desc-item"><span class="k">擅长教材</span><span class="v">
+            ${T.textbooks.length ? T.textbooks.join('、') : '<span class="muted">未填写</span>'}</span></div>
+          <div class="desc-item"><span class="k">教学方向</span><span class="v">
+            ${T.teachingTags.length
+              ? `<span class="tag-list">${T.teachingTags.map(t => `<span class="tag tag-blue nodot">${esc(t)}</span>`).join('')}</span>`
+              : '<span class="muted">未填写</span>'}</span></div>
+        </div>
+        <div class="section-title mt16">教学经验</div>
+        <div class="small" style="line-height:1.9;color:var(--text-2)">${T.teachingExperience ? esc(T.teachingExperience) : '<span class="muted">未填写</span>'}</div>
+        <div class="section-title mt16">教学特点</div>
+        <div class="small" style="line-height:1.9;color:var(--text-2)">${T.teachingStyle ? esc(T.teachingStyle) : '<span class="muted">未填写</span>'}</div>
+      </div>
+      <div>
+        <div class="flex jcb aic">
+          <div class="section-title mt0">可授课时间</div>
+          <span class="small muted">${S.availabilityText(T)}</span>
+        </div>
+        <div class="avail-grid mt8">
+          <div class="h"></div>${S.PERIODS.map(p => `<div class="h">${p}</div>`).join('')}
+          ${rows}
+        </div>
+        <div class="alert alert-info mt16"><span class="ico">i</span>
+          <div>可授课时间只是<b>排课参考</b>，不等于系统已经创建了课程预约；临时调整随时生效，不影响已有课程。</div></div>
+        <div class="mt12"><a class="btn btn-sm" href="teacher-form.html?id=${T.id}">编辑教学能力</a></div>
+      </div>
+    </div>`;
+}
+
+/* ---------- Tab 3 当前学员 ---------- */
+function paneCurrentStudents() {
+  const list = S.currentStudentsOf(TID);
+  if (!list.length) {
+    return `<div class="empty"><div class="e-ico">▤</div>
+      <p>${T.cooperationStatus === S.COOP.READY ? '当前没有负责的学员' : '当前状态下不承担学员'}</p></div>`;
+  }
+  return `
+    ${list.some(x => x.relation.attention)
+      ? `<div class="alert alert-warn mb16"><span class="ico">!</span>
+          <div>部分学员关系被标记为「需教务关注」，请确认是否需要转移到其他教师。</div></div>` : ''}
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>学员</th><th>年级</th><th class="right">剩余课时</th><th>最近授课</th>
+          <th class="right">未来课程</th><th>负责开始</th><th>分配原因</th><th class="right">课时</th>
+          <th>关注</th><th style="width:190px">操作</th></tr></thead>
+        <tbody>
+          ${list.map(x => `
+            <tr>
+              <td class="strong"><a href="student-detail.html?id=${x.student.id}">${esc(x.student.name)}</a></td>
+              <td>${esc(x.student.grade)}</td>
+              <td class="right mono" ${x.remain < 10 ? 'style="color:var(--danger);font-weight:600"' : ''}>${x.remain}</td>
+              <td class="small muted">${x.lastCourseAt || '—'}</td>
+              <td class="right mono">${x.futureCourses}</td>
+              <td class="small">${x.relation.startAt}</td>
+              <td class="small muted">${esc(x.relation.assignReason)}</td>
+              <td class="right mono">${x.student.words ? x.student.words.total : '—'}</td>
+              <td>${x.relation.attention
+                ? `<span class="tag tag-amber nodot">需关注</span>` : '<span class="muted small">—</span>'}</td>
+              <td class="ops">
+                <a class="btn-link" href="student-detail.html?id=${x.student.id}">档案</a>
+                <button class="btn-link" onclick="openStu('${x.student.id}')">更换教师</button>
+                <button class="btn-link danger" onclick="openStu('${x.student.id}', 1)">解除关系</button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+/* ---------- Tab 4 历史学员 ---------- */
+function paneHistoryStudents() {
+  const list = S.historyStudentsOf(TID);
+  return `
+    <div class="alert alert-info mb16"><span class="ico">i</span>
+      <div>学员归属已结束，但历史课程仍保留<b>当时</b>的授课教师为 ${esc(T.name)}，不会被新归属覆盖。</div></div>
+    ${list.length ? `
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>学员</th><th>年级</th><th>负责期间</th><th class="right">授课节数</th>
+          <th>调整原因</th><th style="width:120px">操作</th></tr></thead>
+        <tbody>
+          ${list.map(x => `
+            <tr>
+              <td class="strong">${esc(x.student.name)}</td>
+              <td>${esc(x.student.grade)}</td>
+              <td class="mono small">${x.relation.startAt} ~ ${x.relation.endAt}</td>
+              <td class="right mono">${x.doneCourses}</td>
+              <td class="small muted">${esc(x.relation.endReason)}</td>
+              <td class="ops">
+                <a class="btn-link" href="student-detail.html?id=${x.student.id}">学员档案</a>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : `<div class="empty"><div class="e-ico">▤</div><p>还没有历史学员记录</p></div>`}`;
+}
+
+/* ---------- Tab 5 课程安排 ---------- */
+function paneCourses() {
+  const all = S.coursesOfTeacher(TID).slice().sort((a, b) => (a.date + a.start) < (b.date + b.start) ? 1 : -1);
+  const future = all.filter(c => c.date >= S.TODAY && (c.status === '待上课' || c.status === '授课中'));
+  return `
+    <div class="flex jcb mb12">
+      <div class="small muted">
+        共 ${all.length} 节 · 未来有效 ${future.length} 节 ·
+        待调整 ${all.filter(c => c.needsAdjust).length} 节
+      </div>
+      <a class="btn btn-sm" href="schedule-calendar.html">前往排课管理</a>
+    </div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th style="width:104px">日期</th><th style="width:104px">时间</th><th>学员</th>
+          <th>类型</th><th>课程状态</th><th>扣课</th><th>腾讯会议</th>
+          <th>标记</th><th style="width:150px">操作</th></tr></thead>
+        <tbody>
+          ${all.length ? all.map(c => `
+            <tr>
+              <td class="nowrap">${c.date}</td>
+              <td class="mono">${c.start}-${c.end}</td>
+              <td class="strong">${esc(c.student)}</td>
+              <td class="small">${esc(c.type)}</td>
+              <td><span class="tag ${c.status === '已完成' ? 'tag-green' : c.status === '已取消' ? 'tag-slate' : c.status === '未上课' ? 'tag-amber' : 'tag-blue'}">${c.status}</span></td>
+              <td class="small muted">${c.deductState || c.deduct}</td>
+              <td class="small">${c.meeting === '已生成' ? '<span class="tag tag-green nodot">已生成</span>' : '<span class="tag tag-slate nodot">未生成</span>'}</td>
+              <td>${c.needsAdjust ? '<span class="tag tag-amber nodot">待调整</span>' : '<span class="muted small">—</span>'}</td>
+              <td class="ops">
+                <a class="btn-link" href="course-detail.html?id=${c.id}">详情</a>
+                ${(c.status === '待上课' || c.status === '授课中')
+                  ? `<button class="btn-link" onclick="openCourse('${c.id}')">改派</button>` : ''}
+              </td>
+            </tr>`).join('') :
+            `<tr><td colspan="9"><div class="empty"><div class="e-ico">▤</div><p>还没有排课记录</p></div></td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+/* ---------- Tab 6 授课记录 ---------- */
+function paneRecords() {
+  const recs = S.recordsOfTeacher(TID).slice().sort((a, b) => a.planStart < b.planStart ? 1 : -1);
+  return `
+    <div class="small muted mb12">实际完成的课程与教学记录；教师资料变更不会改变这里的授课事实。</div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th style="width:112px">课程日期</th><th>学员</th><th>教学主题</th>
+          <th class="right">训练单词</th><th class="right">莱特纳</th><th class="right">21 天</th>
+          <th>报告状态</th><th style="width:100px">操作</th></tr></thead>
+        <tbody>
+          ${recs.length ? recs.map(r => {
+            const s = S.student(r.studentId);
+            const sn = r.snapshot || S.recordView(r) || {};
+            const rp = r.reportId ? S.report(r.reportId) : null;
+            return `<tr>
+              <td class="nowrap">${String(r.planStart).slice(0, 10)}</td>
+              <td class="strong">${s ? esc(s.name) : r.studentId}</td>
+              <td class="small">${rp ? esc(rp.title) : (r.teacherNote ? esc(r.teacherNote.slice(0, 18)) : '—')}</td>
+              <td class="right mono">${sn.trainWords || 0}</td>
+              <td class="right mono">${sn.leitnerWords || 0}</td>
+              <td class="right mono">${sn.plan21Words || 0}</td>
+              <td>${rp ? `<span class="tag ${rp.status === '已发布' ? 'tag-green' : rp.status === '已提交' ? 'tag-blue' : rp.status === '编辑中' ? 'tag-amber' : 'tag-slate'}">${rp.status}</span>` : '<span class="muted small">未生成</span>'}</td>
+              <td class="ops"><a class="btn-link" href="course-detail.html?id=${r.courseId}">查看</a></td>
+            </tr>`;
+          }).join('') :
+          `<tr><td colspan="8"><div class="empty"><div class="e-ico">▤</div><p>还没有完成的课程记录</p></div></td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+/* ---------- Tab 7 合作记录 ---------- */
+function paneCoop() {
+  const list = S.cooperationsOf(TID);
+  return `
+    <div class="grid g2" style="gap:24px">
+      <div>
+        <div class="section-title">合作生命周期</div>
+        <div class="timeline">
+          ${list.length ? list.map((c, i) => `
+            <div class="tl-item ${i === list.length - 1 ? 'on' : ''}">
+              <div class="tl-head">
+                <span class="tag ${c.action === 'EXITED' ? 'tag-red' : c.action === 'PAUSED' ? 'tag-blue' : 'tag-green'} nodot">
+                  ${S.COOP_ACTION_LABEL[c.action] || c.action}</span>
+                <span class="tl-time">${c.effectiveAt}</span>
+              </div>
+              <div class="tl-body">
+                ${esc(c.reason) || '<span class="muted">未填写原因</span>'}
+                ${c.remark ? `<div class="box">${esc(c.remark)}</div>` : ''}
+                <div class="small muted mt8">操作人：${esc(c.operatorName) || '—'}</div>
+              </div>
+            </div>`).join('') : '<div class="muted small">暂无记录</div>'}
+        </div>
+      </div>
+      <div>
+        <div class="section-title">合作摘要</div>
+        <div class="desc g1">
+          <div class="desc-item"><span class="k">首次加入</span><span class="v">${T.firstCooperationAt || '—'}</span></div>
+          <div class="desc-item"><span class="k">本轮开始</span><span class="v">${T.lastCooperationStartAt || '—'}</span></div>
+          <div class="desc-item"><span class="k">结束合作</span><span class="v">${T.cooperationEndAt || '—'}</span></div>
+          <div class="desc-item"><span class="k">重新加入次数</span><span class="v">${T.rejoinCount || 0} 次</span></div>
+          <div class="desc-item"><span class="k">当前状态</span><span class="v">${coopTag(T.cooperationStatus)}</span></div>
+        </div>
+        ${T.pauseInfo ? `
+          <div class="alert alert-warn mt16"><span class="ico">!</span>
+            <div><b>暂停信息</b><br>原因：${esc(T.pauseInfo.reason)}<br>
+              开始：${T.pauseInfo.startAt}<br>预计恢复：${T.pauseInfo.expectResumeAt || '未填写'}<br>
+              备注：${esc(T.pauseInfo.remark) || '—'}</div></div>` : ''}
+        <div class="alert alert-info mt16"><span class="ico">i</span>
+          <div>同一自然人多次合作共用一份档案：<b>首次加入时间不变</b>，每轮合作记录新的开始时间与操作原因。</div></div>
+      </div>
+    </div>`;
+}
+
+/* ---------- Tab 8 教学统计 ---------- */
+function paneStats(st) {
+  const months = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(S.TODAY.slice(0, 4), Number(S.TODAY.slice(5, 7)) - 1 - i, 1);
+    months.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+  }
+  const vals = months.map(m => (st.monthsBy[m] ? st.monthsBy[m].count : 0));
+  const max = Math.max.apply(null, vals.concat([1]));
+  return `
+    <div class="grid g4 mb16">
+      <div class="card stat"><div class="stat-label">累计授课课程</div>
+        <div class="stat-value">${st.doneCourses}<small>节</small></div>
+        <div class="stat-foot">全部已完成课程</div></div>
+      <div class="card stat"><div class="stat-label">累计授课课时</div>
+        <div class="stat-value">${st.doneHours}<small>课时</small></div>
+        <div class="stat-foot">按课程时长折算</div></div>
+      <div class="card stat"><div class="stat-label">累计负责学员</div>
+        <div class="stat-value">${st.totalStudents}<small>人</small></div>
+        <div class="stat-foot">当前负责 ${st.currentStudents} 人</div></div>
+      <div class="card stat"><div class="stat-label">最近授课日期</div>
+        <div class="stat-value" style="font-size:19px">${st.lastCourseAt || '从未'}</div>
+        <div class="stat-foot">课程完成率 ${st.completionRate}%</div></div>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-head"><div class="card-title">近 6 个月完成课程</div>
+          <span class="small muted">按课程表实时统计</span></div>
+        <div class="card-body">
+          <div class="bars">
+            ${months.map((m, i) => `
+              <div class="b"><i style="height:${Math.round(vals[i] / max * 88)}%"></i>
+                <span>${Number(m.slice(5))}月</span></div>`).join('')}
+          </div>
+          <div class="small muted mt8">对应节数：${months.map((m, i) => Number(m.slice(5)) + '月 ' + vals[i] + ' 节').join(' · ')}</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title">课程质量指标</div></div>
+        <div class="card-body">
+          <div class="flex jcb small mb8"><span>课程完成率</span><span class="mono">${st.completionRate}%</span></div>
+          <div class="bar green mb16"><i style="width:${st.completionRate}%"></i></div>
+          <div class="flex jcb small mb8"><span>取消 / 未上课</span>
+            <span class="mono">${st.cancelledCourses} / ${st.missedCourses} 节</span></div>
+          <div class="bar amber mb16"><i style="width:${st.courses ? Math.round((st.cancelledCourses + st.missedCourses) / st.courses * 100) : 0}%"></i></div>
+          <div class="flex jcb small mb8"><span>已生成学习报告</span><span class="mono">${st.reportCount} 份</span></div>
+          <div class="bar mb16"><i style="width:${st.reportCount ? Math.min(100, Math.round(st.reportCount / Math.max(1, st.doneCourses) * 100)) : 0}%"></i></div>
+          <div class="small muted">口径：完成率 = 已完成 /（已完成 + 取消 + 未上课）；所有数字来自课程表与师生关系，不存静态值。</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ---------- 账号 ---------- */
+function doOpenAccount() {
+  Proto.confirmBox('开通登录账号',
+    `为 <b>${T.name}</b> 开通教师登录账号，登录名使用手机号 <b class="mono">${T.phone}</b>。<br><br>
+     账号与教师档案分离：账号只解决「能不能登录」，能否授课仍由合作状态决定。`,
+    '确认开通', () => {
+      try {
+        S.openTeacherAccount(TID, { inviteChannel: '短信邀请' });
+        Proto.toast('账号已开通', 'ok');
+        boot();
+      } catch (e) { Proto.toast(e.message, 'err'); }
+    });
+}
+
+function doDisableAccount() {
+  Proto.confirmBox('禁用教师登录',
+    `禁用后 <b>${T.name}</b> 无法进入教学工作台，但合作状态仍为「可授课」，档案与历史不受影响。<br><br>
+     如需停止接课，请使用「暂停合作」。`,
+    '确认禁用', () => {
+      try {
+        S.setAccountStatus(TID, S.ACCOUNT.DISABLED, { reason: '管理员手动禁用登录' });
+        Proto.toast('账号已禁用', 'ok');
+        boot();
+      } catch (e) { Proto.toast(e.message, 'err'); }
+    });
+}
+
+/* ---------- 启用 / 暂停 / 恢复 ---------- */
+function doActivate() {
+  const chk = S.activationCheck(TID);
+  if (!chk.ready) {
+    Proto.confirmBox('还不能启用',
+      `还缺少：<br><br>${chk.missing.map(x => '· ' + x).join('<br>')}
+       <br><br><a href="teacher-form.html?id=${TID}">去完善资料</a>`,
+      '知道了', () => { });
+    return;
+  }
+  Proto.confirmBox('启用教师',
+    `启用后合作状态变为「可授课」，账号恢复登录，可以分配学员与排课。`,
+    '确认启用', () => {
+      try {
+        S.activateTeacher(TID, { reason: '资料与账号就绪' });
+        Proto.toast('已启用', 'ok');
+        boot();
+      } catch (e) { Proto.toast(e.message, 'err'); }
+    });
+}
+
+function openPause() {
+  const future = S.futureCoursesOf(TID);
+  const pool = S.teacherPool();
+  const students = S.currentStudentsOf(TID);
+  const rows = future.map(c => `
+    <div class="plan-row" data-course="${c.id}">
+      <div>
+        <div class="strong small">${c.date} ${c.start}-${c.end} · ${esc(c.student)}</div>
+        <div class="small muted">${c.id} · ${c.type} · ${c.status}</div>
+      </div>
+      <select class="select" data-act="${c.id}" onchange="togglePauseTarget('${c.id}')">
+        <option value="keep">保留（待确认）</option>
+        <option value="reassign">改派教师</option>
+        <option value="cancel">取消课程</option>
+      </select>
+      <select class="select" data-to="${c.id}" disabled>
+        <option value="">选择接替教师</option>
+        ${pool.map(p => `<option value="${p.teacher.id}">${esc(p.teacher.name)}（${p.stat.currentStudents} 人）</option>`).join('')}
+      </select>
+    </div>`).join('');
+
+  document.getElementById('pauseBody').innerHTML = `
+    <div class="alert alert-warn mb16"><span class="ico">!</span>
+      <div>暂停<b>不是</b>退出：档案、历史课程、教学记录全部保留；当前 ${students.length} 名学员关系保留并标记为需教务关注。</div></div>
+    <div class="form-grid g3">
+      <div class="field"><label>暂停原因 <span class="req">*</span></label>
+        <input class="input" id="p_reason" placeholder="如：备考 / 实习 / 个人原因"></div>
+      <div class="field"><label>暂停开始日期 <span class="req">*</span></label>
+        <input class="input" type="date" id="p_start" value="${S.TODAY}"></div>
+      <div class="field"><label>预计恢复日期</label>
+        <input class="input" type="date" id="p_resume"></div>
+      <div class="field full"><label>备注</label>
+        <input class="input" id="p_remark" placeholder="补充说明，将写入合作记录"></div>
+    </div>
+    <div class="divider"></div>
+    <div class="flex jcb aic mb8">
+      <div class="section-title mt0">未来有效课程（${future.length} 节）</div>
+      <span class="small muted">有未来预约时必须逐节决定保留 / 改派 / 取消</span>
+    </div>
+    ${future.length ? rows : '<div class="alert alert-info"><span class="ico">i</span><div>该教师没有未来有效课程，可直接暂停。</div></div>'}
+    <div id="pauseErr"></div>`;
+  Proto.openModal('pauseModal');
+}
+
+function togglePauseTarget(cid) {
+  const act = document.querySelector(`[data-act="${cid}"]`).value;
+  const sel = document.querySelector(`[data-to="${cid}"]`);
+  sel.disabled = act !== 'reassign';
+  if (act !== 'reassign') sel.value = '';
+}
+
+function doPause() {
+  const future = S.futureCoursesOf(TID);
+  const courses = {};
+  for (const c of future) {
+    const act = document.querySelector(`[data-act="${c.id}"]`).value;
+    const to = document.querySelector(`[data-to="${c.id}"]`).value;
+    if (act === 'reassign' && !to) {
+      document.getElementById('pauseErr').innerHTML =
+        `<div class="alert alert-danger mt12"><span class="ico">!</span><div>课程 ${c.id} 选择了改派，但还没有选择接替教师。</div></div>`;
+      return;
+    }
+    courses[c.id] = { action: act, toTeacherId: to };
+  }
+  try {
+    S.pauseTeacher(TID, {
+      reason: document.getElementById('p_reason').value.trim(),
+      startAt: document.getElementById('p_start').value,
+      expectResumeAt: document.getElementById('p_resume').value,
+      remark: document.getElementById('p_remark').value.trim(),
+      courses: courses
+    });
+    Proto.closeModal('pauseModal');
+    Proto.toast('已暂停合作，学员关系保留并标记关注', 'ok');
+    boot();
+  } catch (e) {
+    document.getElementById('pauseErr').innerHTML =
+      `<div class="alert alert-danger mt12"><span class="ico">!</span><div>${e.message}</div></div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+function openResume() {
+  document.getElementById('r_remark').value = '';
+  Proto.openModal('resumeModal');
+}
+
+function doResume() {
+  try {
+    S.resumeTeacher(TID, {
+      useSameAccount: document.getElementById('r_account').checked,
+      reason: '暂停结束，教务确认恢复',
+      remark: document.getElementById('r_remark').value.trim()
+    });
+    Proto.closeModal('resumeModal');
+    Proto.toast('已恢复合作，原学员关系不会自动恢复', 'ok');
+    boot();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+function doRejoin() {
+  Proto.confirmBox('重新加入',
+    `确认让 <b>${T.name}</b> 重新加入？<br><br>
+     · 复用原教师档案与编号 <b>${T.code}</b>，不会新建重复教师<br>
+     · 历史合作记录、历史课程全部保留<br>
+     · 状态先回到「待启用」，需走完启用流程才能接课`,
+    '确认重新加入', () => {
+      try {
+        S.rejoinTeacher(TID, { reason: '已退出教师再次加入，复用原档案' });
+        Proto.toast('已恢复原档案，当前状态：待启用', 'ok');
+        boot();
+      } catch (e) { Proto.toast(e.message, 'err'); }
+    });
+}
+
+/* ---------- 学员分配 / 更换 / 解除 ---------- */
+function fitDrawerOptions() {
+  const free = S.students().filter(s => !S.activeRelationOfStudent(s.id));
+  document.getElementById('as_student').innerHTML = free.length
+    ? `<option value="">请选择学员</option>` + free.map(s =>
+      `<option value="${s.id}">${esc(s.name)} · ${esc(s.grade)} · 剩余 ${s.remain} 课时</option>`).join('')
+    : `<option value="">没有待分配的学员</option>`;
+  document.getElementById('as_date').value = S.TODAY;
+  document.getElementById('as_reason').value = '';
+}
+
+function openAssign() {
+  fitDrawerOptions();
+  Proto.openDrawer('assign');
+}
+
+function doAssign() {
+  const sid = document.getElementById('as_student').value;
+  const reason = document.getElementById('as_reason').value.trim();
+  if (!sid) { Proto.toast('请选择要分配的学员', 'err'); return; }
+  try {
+    S.assignStudent(TID, sid, { reason: reason, startAt: document.getElementById('as_date').value });
+    Proto.closeDrawer('assign');
+    Proto.toast('已分配，学员当前教师已更新', 'ok');
+    boot();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+let stuTarget = null;
+function openStu(sid, releaseMode) {
+  stuTarget = sid;
+  const s = S.student(sid);
+  const cur = S.activeRelationOfStudent(sid);
+  const curT = cur ? S.teacher(cur.teacherId) : null;
+  document.getElementById('stuTitle').textContent = releaseMode ? '解除师生关系' : '更换负责教师';
+  document.getElementById('stuInfo').innerHTML = `
+    <div class="desc-item"><span class="k">学员</span><span class="v">${esc(s.name)} · ${esc(s.grade)}</span></div>
+    <div class="desc-item"><span class="k">当前教师</span><span class="v">${curT ? esc(curT.name) : '未分配'}</span></div>
+    <div class="desc-item"><span class="k">负责开始</span><span class="v mono">${cur ? cur.startAt : '—'}</span></div>
+    <div class="desc-item"><span class="k">分配原因</span><span class="v small muted">${cur ? esc(cur.assignReason) : '—'}</span></div>`;
+  document.getElementById('stu_new').innerHTML = `<option value="">请选择教师</option>` +
+    S.teacherPool().filter(p => p.teacher.id !== TID)
+      .map(p => `<option value="${p.teacher.id}">${esc(p.teacher.name)}（当前 ${p.stat.currentStudents} 人 · ${p.teacher.grades.join('/')}）</option>`).join('');
+  document.getElementById('stu_reason').value = '';
+  Proto.openModal('stuModal');
+}
+
+function doTransfer() {
+  const to = document.getElementById('stu_new').value;
+  const reason = document.getElementById('stu_reason').value.trim();
+  if (!to) { Proto.toast('请选择新的负责教师', 'err'); return; }
+  try {
+    S.transferStudent(stuTarget, to, { reason: reason });
+    Proto.closeModal('stuModal');
+    Proto.toast('已更换负责教师，历史课程授课教师不变', 'ok');
+    boot();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+function doRelease() {
+  const reason = document.getElementById('stu_reason').value.trim();
+  try {
+    S.releaseStudent(stuTarget, { reason: reason });
+    Proto.closeModal('stuModal');
+    Proto.toast('已解除关系，学员进入待分配', 'ok');
+    boot();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+/* ---------- 课程改派 ---------- */
+let courseTarget = null;
+function openCourse(cid) {
+  courseTarget = cid;
+  const c = S.course(cid);
+  document.getElementById('ct_info').innerHTML = `
+    <div class="desc-item"><span class="k">课程</span><span class="v mono">${c.id}</span></div>
+    <div class="desc-item"><span class="k">时间</span><span class="v">${c.date} ${c.start}-${c.end}</span></div>
+    <div class="desc-item"><span class="k">学员</span><span class="v">${esc(c.student)}</span></div>
+    <div class="desc-item"><span class="k">当前教师</span><span class="v">${esc(c.teacher)}</span></div>`;
+  document.getElementById('ct_new').innerHTML = `<option value="">请选择教师</option>` +
+    S.teacherPool().filter(p => p.teacher.id !== TID)
+      .map(p => `<option value="${p.teacher.id}">${esc(p.teacher.name)}（${p.stat.currentStudents} 人）</option>`).join('');
+  document.getElementById('ct_reason').value = '';
+  Proto.openModal('courseModal');
+}
+
+function doReassignCourse() {
+  const to = document.getElementById('ct_new').value;
+  const reason = document.getElementById('ct_reason').value.trim();
+  if (!to) { Proto.toast('请选择接替教师', 'err'); return; }
+  try {
+    S.reassignCourse(courseTarget, to, { reason: reason });
+    Proto.closeModal('courseModal');
+    Proto.toast('课程已改派，操作已写入改派记录', 'ok');
+    boot();
+  } catch (e) { Proto.toast(e.message, 'err'); }
 }
 </script>
 </body>

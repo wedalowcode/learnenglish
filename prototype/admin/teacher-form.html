@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>教师资料</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips label {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px;
+    border: 1px solid var(--border-2); border-radius: 999px; padding: 4px 10px;
+    cursor: pointer; user-select: none; background: #fff; color: var(--text-2);
+  }
+  .chips input { margin: 0; accent-color: var(--primary); }
+  .chips label:has(input:checked) { border-color: var(--primary); color: var(--primary-dark); background: var(--primary-soft); }
+  .avail-edit { display: grid; grid-template-columns: 76px repeat(3, 1fr); gap: 8px; align-items: center; }
+  .avail-edit .h { font-size: 12px; color: var(--text-3); text-align: center; }
+  .avail-edit .d { font-size: 12.5px; color: var(--text-2); }
+  .avail-edit label {
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    border: 1px dashed var(--border-2); border-radius: 6px; height: 34px;
+    font-size: 12px; color: var(--text-3); cursor: pointer; background: #fff;
+  }
+  .avail-edit label:has(input:checked) {
+    border: 1px solid #bbf7d0; background: var(--success-soft); color: #15803d; font-weight: 600;
+  }
+  .avail-edit input { accent-color: var(--success); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content" id="page"></main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'teacher-list' });
+Store.setSession({ role: 'admin', operatorName: '张敏' });
+const S = Store;
+const QS = new URLSearchParams(location.search);
+const TID = QS.get('id') || '';
+const EDITING = !!TID;
+const ORIG = EDITING ? S.teacher(TID) : null;
+
+if (EDITING && !ORIG) {
+  document.getElementById('page').innerHTML = `
+    <div class="card mt24"><div class="empty"><div class="e-ico">▤</div>
+      <p>教师 ${TID} 不存在</p>
+      <div class="mt16"><a class="btn btn-primary" href="teacher-list.html">返回列表</a></div>
+    </div></div>`;
+} else {
+  render();
+}
+
+function render() {
+  const t = ORIG || {};
+  const chk = EDITING ? S.activationCheck(TID) : null;
+  document.getElementById('page').innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="crumb">教学管理<span class="sep">/</span>
+          <a href="teacher-list.html">教师资源池</a><span class="sep">/</span>
+          ${EDITING ? '<a href="teacher-detail.html?id=' + TID + '">' + esc(t.name) + '</a><span class="sep">/</span>编辑资料' : '新增教师'}</div>
+        <h1 class="page-title">${EDITING ? '编辑教师资料' : '新增教师'}</h1>
+        <div class="page-sub">
+          ${EDITING
+            ? `${t.code} · 合作状态 ${t.cooperationStatus} · 账号 ${S.accountStatusOf(TID)} · 资料变更会写入变更记录`
+            : '兼职教师流动性大：可先录入姓名与手机号，再逐步完善教学能力'}
+        </div>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="${EDITING ? 'teacher-detail.html?id=' + TID : 'teacher-list.html'}">取消</a>
+        <button class="btn btn-primary" onclick="save()">保存</button>
+      </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start">
+      <div>
+        <div class="card">
+          <div class="card-head"><div class="card-title">基础资料</div>
+            <span class="small muted">姓名与手机号必填</span></div>
+          <div class="card-body">
+            <div class="form-grid g2">
+              <div class="field"><label>教师姓名 <span class="req">*</span></label>
+                <input class="input" id="f_name" maxlength="20" value="${esc(t.name || '')}"></div>
+              <div class="field"><label>手机号 <span class="req">*</span></label>
+                <input class="input" id="f_phone" maxlength="11" value="${esc(t.phone || '')}">
+                <div class="tip">同机构内唯一；更换手机号会保留修改记录</div></div>
+              <div class="field"><label>性别</label>
+                <select class="select" id="f_gender">
+                  ${['', '女', '男'].map(g => `<option value="${g}" ${t.gender === g ? 'selected' : ''}>${g || '未填写'}</option>`).join('')}
+                </select></div>
+              <div class="field"><label>学历</label>
+                <select class="select" id="f_education">
+                  ${['', '本科', '硕士', '在读研究生', '博士', '大专'].map(g =>
+                    `<option value="${g}" ${t.education === g ? 'selected' : ''}>${g || '未填写'}</option>`).join('')}
+                </select></div>
+              <div class="field"><label>学校</label>
+                <input class="input" id="f_school" value="${esc(t.school || '')}" placeholder="如 华东师范大学"></div>
+              <div class="field"><label>专业</label>
+                <input class="input" id="f_major" value="${esc(t.major || '')}" placeholder="如 英语教育"></div>
+              <div class="field full"><label>个人简介</label>
+                <textarea class="textarea" id="f_intro" placeholder="教学年限、擅长方向等">${esc(t.introduction || '')}</textarea></div>
+              <div class="field full"><label>备注</label>
+                <input class="input" id="f_remark" value="${esc(t.remark || '')}" placeholder="内部备注，不对家长与教师展示"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt16">
+          <div class="card-head"><div class="card-title">教学能力</div>
+            <span class="small muted">决定教师能接哪些学员与课程</span></div>
+          <div class="card-body">
+            <div class="field mb16"><label>擅长年级</label>
+              <div class="chips" id="f_grades">
+                ${S.TEACHER_GRADES.map(g => `<label><input type="checkbox" value="${g}"
+                  ${(t.grades || []).indexOf(g) >= 0 ? 'checked' : ''}>${g}</label>`).join('')}
+              </div></div>
+            <div class="field mb16"><label>擅长教材</label>
+              <div class="chips" id="f_textbooks">
+                ${S.TEACHER_TEXTBOOKS.map(g => `<label><input type="checkbox" value="${g}"
+                  ${(t.textbooks || []).indexOf(g) >= 0 ? 'checked' : ''}>${g}</label>`).join('')}
+              </div></div>
+            <div class="field mb16"><label>教学方向</label>
+              <div class="chips" id="f_tags">
+                ${S.TEACHING_TAGS.map(g => `<label><input type="checkbox" value="${g}"
+                  ${(t.teachingTags || []).indexOf(g) >= 0 ? 'checked' : ''}>${g}</label>`).join('')}
+              </div></div>
+            <div class="form-grid g2">
+              <div class="field"><label>教学经验</label>
+                <textarea class="textarea" id="f_exp" placeholder="带过哪些年级、多少年、成果">${esc(t.teachingExperience || '')}</textarea></div>
+              <div class="field"><label>教学特点</label>
+                <textarea class="textarea" id="f_style" placeholder="课堂风格、节奏、家长沟通方式">${esc(t.teachingStyle || '')}</textarea></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt16">
+          <div class="card-head"><div class="card-title">可授课时间</div>
+            <span class="small muted">排课参考，不等于预约</span></div>
+          <div class="card-body">
+            <div class="avail-edit">
+              <div></div>
+              ${S.PERIODS.map(p => `<div class="h">${p}（${S.PERIOD_TIME[p]}）</div>`).join('')}
+              ${S.WEEKDAYS.map(d => `
+                <div class="d">${d}</div>
+                ${S.PERIODS.map(p => {
+                  const has = (t.availability || []).some(a => a.weekday === d && a.period === p);
+                  return `<label><input type="checkbox" data-day="${d}" data-period="${p}" ${has ? 'checked' : ''}>
+                    ${has ? '可授课' : '不可'}</label>`;
+                }).join('')}`).join('')}
+            </div>
+            <div class="alert alert-info mt16"><span class="ico">i</span>
+              <div>可授课时间用于排课时优先推荐教师，临时调整随时生效；<b>不会</b>因为调整时间而影响已排课程。</div></div>
+          </div>
+        </div>
+
+        <div class="flex gap8 mt16">
+          <button class="btn btn-primary" onclick="save()">保存</button>
+          <a class="btn" href="${EDITING ? 'teacher-detail.html?id=' + TID : 'teacher-list.html'}">取消</a>
+        </div>
+      </div>
+
+      <div>
+        ${EDITING ? `
+        <div class="card">
+          <div class="card-head"><div class="card-title">启用条件</div></div>
+          <div class="card-body">
+            ${chk.items.map(x => `
+              <div class="flex aic gap8 mb8" style="font-size:12.5px">
+                <span style="color:${x.ok ? 'var(--success)' : 'var(--text-3)'}">${x.ok ? '✓' : '○'}</span>
+                <span class="${x.ok ? '' : 'muted'}">${x.label}</span>
+              </div>`).join('')}
+            <div class="small muted mt12">
+              ${chk.ready ? '启用条件已满足，可在教师详情页执行「启用」。'
+                : '缺少必填项时无法启用，但可以随时保存草稿。'}
+            </div>
+          </div>
+        </div>
+        <div class="card mt16">
+          <div class="card-head"><div class="card-title">档案信息</div></div>
+          <div class="card-body">
+            <div class="desc g1">
+              <div class="desc-item"><span class="k">教师编号</span><span class="v mono">${t.code}</span></div>
+              <div class="desc-item"><span class="k">合作状态</span><span class="v">${t.cooperationStatus}</span></div>
+              <div class="desc-item"><span class="k">首次加入</span><span class="v">${t.firstCooperationAt || '—'}</span></div>
+              <div class="desc-item"><span class="k">创建时间</span><span class="v small muted">${t.createdAt}</span></div>
+              <div class="desc-item"><span class="k">变更记录</span><span class="v">${S.changeLogsOf(TID).length} 条</span></div>
+            </div>
+            <div class="small muted mt12">编号由系统生成，不可修改；教师档案不允许物理删除。</div>
+          </div>
+        </div>` : `
+        <div class="card">
+          <div class="card-head"><div class="card-title">录入说明</div></div>
+          <div class="card-body small" style="line-height:1.9;color:var(--text-2)">
+            新教师创建后状态为 <b>待启用</b>：<br>
+            · 可以查看与编辑档案<br>
+            · 不能分配学员、不能创建有效排课<br>
+            · 需开通登录账号后才能启用<br><br>
+            <b>手机号唯一</b>：同一自然人不能重复建档；已退出教师再次加入请走「恢复原档案」。
+          </div>
+        </div>`}
+
+        <div class="card mt16">
+          <div class="card-head"><div class="card-title">保存说明</div></div>
+          <div class="card-body small" style="line-height:1.9;color:var(--text-2)">
+            关键字段（姓名、手机号、擅长年级、教材、可授课时间等）修改会逐条写入<b>资料变更记录</b>，
+            记录修改前后内容与操作人。历史课程的授课教师快照不受资料变更影响。
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  document.querySelectorAll('.avail-edit input').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const lab = inp.closest('label');
+      lab.lastChild.textContent = inp.checked ? ' 可授课' : ' 不可';
+    });
+  });
+}
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function checkedIn(id) {
+  return Array.from(document.querySelectorAll('#' + id + ' input:checked')).map(x => x.value);
+}
+
+function save() {
+  const body = {
+    name: document.getElementById('f_name').value.trim(),
+    phone: document.getElementById('f_phone').value.trim(),
+    gender: document.getElementById('f_gender').value,
+    education: document.getElementById('f_education').value,
+    school: document.getElementById('f_school').value.trim(),
+    major: document.getElementById('f_major').value.trim(),
+    introduction: document.getElementById('f_intro').value.trim(),
+    remark: document.getElementById('f_remark').value.trim(),
+    grades: checkedIn('f_grades'),
+    textbooks: checkedIn('f_textbooks'),
+    teachingTags: checkedIn('f_tags'),
+    teachingExperience: document.getElementById('f_exp').value.trim(),
+    teachingStyle: document.getElementById('f_style').value.trim(),
+    availability: Array.from(document.querySelectorAll('.avail-edit input:checked')).map(x => ({
+      weekday: x.dataset.day, period: x.dataset.period
+    }))
+  };
+  try {
+    if (EDITING) {
+      const r = S.updateTeacher(TID, body);
+      Proto.toast(r.changes ? `已保存 ${r.changes} 项修改` : '没有需要保存的修改', r.changes ? 'ok' : '');
+      setTimeout(() => location.href = 'teacher-detail.html?id=' + TID, 600);
+    } else {
+      const t = S.createTeacher(body, { reason: '完整表单录入' });
+      Proto.toast(`已创建教师「${t.name}」，编号 ${t.code}`, 'ok');
+      setTimeout(() => location.href = 'teacher-detail.html?id=' + t.id, 600);
+    }
+  } catch (e) {
+    if (e.code === 'PHONE_DUPLICATE' || e.code === 'PHONE_EXITED') {
+      const ex = e.data && e.data.teacher;
+      Proto.confirmBox('手机号已被占用', e.message +
+        (ex ? `<br><br><a href="teacher-detail.html?id=${ex.id}">查看教师「${ex.name}」原档案</a>` : ''),
+        '知道了', () => { });
+    } else {
+      Proto.toast(e.message, 'err');
+    }
+  }
+}
+</script>
+</body>
+</html>

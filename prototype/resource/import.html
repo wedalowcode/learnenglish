@@ -3,16 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>资源导入</title>
+<title>批量导入词库</title>
 <link rel="stylesheet" href="../assets/css/common.css">
 <style>
   .dropzone {
     border:1.5px dashed var(--border-2); border-radius:10px; background:#fbfdff;
-    padding:36px 20px; text-align:center; cursor:pointer; transition:all .15s;
+    padding:30px 20px; text-align:center; cursor:pointer; transition:all .15s;
   }
-  .dropzone:hover { border-color:var(--primary); background:var(--primary-soft); }
-  .dropzone .dz-ico { font-size:26px; color:var(--text-3); margin-bottom:8px; }
-  .flow-steps { display:flex; flex-wrap:wrap; gap:6px; }
+  .dropzone:hover, .dropzone.drag { border-color:var(--primary); background:var(--primary-soft); }
+  .dropzone .dz-ico { font-size:26px; color:var(--text-3); margin-bottom:6px; }
+  .dropzone .dz-title { font-size:14px; font-weight:500; }
+
+  .flow { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
   .fs { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-3);
     background:#f8fafc; border:1px solid var(--border); border-radius:20px; padding:3px 10px; }
   .fs b { width:16px; height:16px; border-radius:50%; background:var(--border); color:#fff;
@@ -21,6 +23,52 @@
   .fs.on b { background:var(--primary); }
   .fs.done { background:var(--success-soft); border-color:#bbf7d0; color:#15803d; }
   .fs.done b { background:var(--success); }
+  .fs-ar { color:var(--text-3); font-size:11px; }
+
+  .fcard { margin-top:16px; }
+  .fcard.error { border-color:#fecaca; }
+  .fcard.imported { border-color:#bbf7d0; }
+  .fname { font-size:13.5px; font-weight:600; word-break:break-all; }
+  .fsub { font-size:11.5px; color:var(--text-3); margin-top:2px; }
+
+  .mini-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+  .ms { border:1px solid var(--border); border-radius:8px; padding:8px 10px; background:#fcfdff; }
+  .ms .k { font-size:11px; color:var(--text-3); }
+  .ms .v { font-size:17px; font-weight:700; margin-top:2px; font-variant-numeric:tabular-nums; }
+  .ms .v small { font-size:11px; font-weight:400; color:var(--text-3); margin-left:2px; }
+  .ms.warn { background:var(--warning-soft); border-color:#fde68a; }
+  .ms.bad { background:var(--danger-soft); border-color:#fecaca; }
+  .ms.ok { background:var(--success-soft); border-color:#bbf7d0; }
+
+  .mapgrid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; }
+  .mapgrid .field > label { font-size:11.5px; }
+  .mapgrid .field .req { color:var(--danger); }
+
+  .issue-list { border:1px solid var(--border); border-radius:8px; max-height:150px; overflow:auto; }
+  .issue { display:flex; gap:8px; padding:6px 10px; font-size:12px; border-bottom:1px solid var(--border); }
+  .issue:last-child { border-bottom:none; }
+  .issue .ln { color:var(--text-3); font-variant-numeric:tabular-nums; min-width:52px; }
+  .issue.err { background:rgba(239,68,68,.04); }
+  .issue.warn { background:rgba(234,179,8,.05); }
+
+  .flist { display:flex; flex-direction:column; gap:6px; }
+  .fitem { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border);
+    border-radius:8px; background:#fff; font-size:12.5px; }
+  .fitem .ico { width:22px; height:22px; border-radius:5px; background:var(--success-soft); color:#15803d;
+    display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; flex:none; }
+  .fitem .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .fitem .sz { color:var(--text-3); font-variant-numeric:tabular-nums; }
+
+  .sticky-bar { position:sticky; bottom:12px; z-index:5; margin-top:16px;
+    border-radius:10px; box-shadow:0 8px 24px rgba(15,23,42,.10); background:#fff; }
+  .sticky-bar .card-body { border-radius:10px; }
+  /* 底部悬浮操作条会盖住内容，留出可滚动的余量 */
+  main.content { padding-bottom: 80px; }
+  .kv { display:flex; justify-content:space-between; gap:10px; font-size:12.5px; padding:5px 0;
+    border-bottom:1px dashed var(--border); }
+  .kv:last-child { border-bottom:none; }
+  .kv .k { color:var(--text-3); }
+  .kv .v { font-weight:500; text-align:right; }
 </style>
 </head>
 <body>
@@ -32,234 +80,779 @@
 
       <div class="page-head">
         <div>
-          <div class="crumb">资源中心<span class="sep">/</span>资源导入</div>
-          <h1 class="page-title">资源导入</h1>
-          <div class="page-sub">Excel 单词 / 词库导入 · 文章文本导入 · 音频资源关联 · 导入失败不破坏已有资源</div>
+          <div class="crumb">资源中心<span class="sep">/</span>批量导入</div>
+          <h1 class="page-title">批量导入词库</h1>
+          <div class="page-sub">一次选择一批 Excel，每个文件解析成一个词库 · 基础单词跨词库复用，词库内排序独立</div>
         </div>
         <div class="page-actions">
           <a class="btn" href="wordbook-list.html">返回词库</a>
+          <button class="btn" onclick="downloadTemplate()">下载模板</button>
         </div>
       </div>
 
       <div class="card mb16">
-        <div class="card-body" style="padding:14px 16px">
-          <div class="flow-steps" id="flowSteps">
-            <div class="fs done"><b>1</b>下载模板</div>
-            <div class="fs done"><b>2</b>上传文件</div>
-            <div class="fs on"><b>3</b>解析内容</div>
-            <div class="fs"><b>4</b>展示预览</div>
-            <div class="fs"><b>5</b>校验必填字段</div>
-            <div class="fs"><b>6</b>检查重复数据</div>
-            <div class="fs"><b>7</b>确认导入</div>
-            <div class="fs"><b>8</b>展示成功失败数量</div>
-            <div class="fs"><b>9</b>失败行下载</div>
-          </div>
+        <div class="card-body" style="padding:12px 16px">
+          <div class="flow" id="flow"></div>
         </div>
       </div>
 
       <div class="grid g-2-1" style="align-items:start">
         <div>
-          <!-- Step 1-2 -->
-          <div class="card" id="stepUpload">
-            <div class="card-head"><div class="card-title">第一步：选择导入类型并上传文件</div></div>
-            <div class="card-body">
-              <div class="form-grid g3 mb16">
-                <div class="field"><label>导入类型</label>
-                  <select class="select" id="impType">
-                    <option>Excel 单词导入</option><option>Excel 词库导入</option>
-                    <option>文章文本导入</option><option>音频资源关联</option>
-                  </select></div>
-                <div class="field"><label>目标词库</label>
-                  <select class="select">
-                    <option>人教版 七年级上 Unit 1 词汇</option>
-                    <option>人教版 七年级上 Unit 2 词汇</option>
-                    <option>新建词库…</option>
-                  </select></div>
-                <div class="field"><label>重复数据处理</label>
-                  <select class="select">
-                    <option>跳过重复行</option><option>更新已有单词</option><option>全部报错不导入</option>
-                  </select></div>
-              </div>
-
-              <div class="dropzone" onclick="simulateUpload()">
-                <div class="dz-ico">⇪</div>
-                <div style="font-size:14px;font-weight:500">点击选择文件，或将 Excel 拖到此处</div>
-                <div class="small muted mt8">支持 .xlsx / .xls，单个文件不超过 10MB；模板请勿修改表头</div>
-              </div>
-
-              <div class="flex jcb aic mt16">
-                <div class="flex gap8">
-                  <button class="btn" onclick="Proto.toast('模板已下载（示意）','ok')">下载单词导入模板</button>
-                  <button class="btn" onclick="Proto.toast('模板已下载（示意）','ok')">下载词库导入模板</button>
-                </div>
-                <span class="small muted">模板含：单词 / 音标 / 词性 / 中文释义 / 音频文件名</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Step 3-6 -->
-          <div class="card hidden" id="stepPreview">
+          <div class="card">
             <div class="card-head">
-              <div class="card-title">第二至六步：解析、预览与校验</div>
-              <span class="small muted" id="fileMeta">人教版七上U1词汇_新增.xlsx · 10 行</span>
+              <div class="card-title">第一步：选择文件<span class="hint">可多选、可拖拽、可继续追加</span></div>
+              <span class="small muted" id="fileHint">一个文件 = 一个词库</span>
             </div>
             <div class="card-body">
-              <div class="grid g4 mb16">
-                <div class="card stat" style="padding:10px 12px"><div class="stat-label">解析行数</div>
-                  <div class="stat-value" style="font-size:18px">10</div></div>
-                <div class="card stat" style="padding:10px 12px"><div class="stat-label">校验通过</div>
-                  <div class="stat-value" style="font-size:18px;color:var(--success)">8</div></div>
-                <div class="card stat" style="padding:10px 12px"><div class="stat-label">校验失败</div>
-                  <div class="stat-value" style="font-size:18px;color:var(--danger)">2</div></div>
-                <div class="card stat" style="padding:10px 12px"><div class="stat-label">重复数据</div>
-                  <div class="stat-value" style="font-size:18px;color:var(--warning)">1</div></div>
+              <div class="dropzone" id="dz">
+                <div class="dz-ico">⇪</div>
+                <div class="dz-title">点击选择文件，或把多个 Excel 拖到这里</div>
+                <div class="small muted mt8">支持 .xlsx / .xls，单个文件建议不超过 10MB；解析在浏览器本地完成，不上传服务器</div>
               </div>
-
-              <div class="alert alert-warn mb16"><span class="ico">!</span>
-                <div>检测到 <b>2 处问题</b>：第 4 行缺少音标（必填）、第 7 行单词 <b>friend</b> 与词库已有记录重复。
-                  按当前设置，重复行将被跳过，缺失必填字段的行不会导入。</div></div>
-
-              <div class="table-wrap">
-                <table class="table compact">
-                  <thead><tr><th style="width:48px">行号</th><th>单词</th><th>音标</th><th>词性</th><th>中文释义</th>
-                    <th>音频</th><th style="width:200px">校验结果</th></tr></thead>
-                  <tbody id="previewRows"></tbody>
-                </table>
+              <input type="file" id="fileInput" multiple accept=".xlsx,.xls" style="display:none">
+              <div class="flex jcb aic mt12">
+                <div class="flex gap8">
+                  <button class="btn btn-sm" onclick="pickFiles()">选择文件</button>
+                  <button class="btn btn-sm" id="clearBtn" onclick="clearFiles()" disabled>清空列表</button>
+                </div>
+                <span class="small muted" id="sumTip">尚未选择文件</span>
               </div>
-            </div>
-            <div class="card-foot">
-              <button class="btn" onclick="resetFlow()">重新上传</button>
-              <button class="btn" onclick="Proto.toast('失败行已下载（示意）','ok')">下载失败行</button>
-              <button class="btn btn-primary" onclick="confirmImport()">确认导入 8 条</button>
+              <div class="alert alert-info mt12 hidden" id="targetTip"></div>
             </div>
           </div>
 
-          <!-- Step 7-9 -->
-          <div class="card hidden" id="stepDone">
-            <div class="card-head"><div class="card-title">导入结果</div>
-              <span class="tag tag-green nodot">已完成</span></div>
-            <div class="card-body">
-              <div class="grid g3 mb16">
-                <div class="card stat" style="padding:12px"><div class="stat-label">成功导入</div>
-                  <div class="stat-value" style="color:var(--success)">8</div></div>
-                <div class="card stat" style="padding:12px"><div class="stat-label">失败</div>
-                  <div class="stat-value" style="color:var(--danger)">2</div></div>
-                <div class="card stat" style="padding:12px"><div class="stat-label">跳过（重复）</div>
-                  <div class="stat-value" style="color:var(--warning)">1</div></div>
-              </div>
-              <div class="alert alert-success mb12"><span class="ico">✓</span>
-                <div>导入采用事务处理：<b>失败行不影响已成功写入的数据，也不会破坏词库原有资源</b>。</div></div>
-              <div class="alert alert-info"><span class="ico">i</span>
-                <div>失败行已生成错误报告，修正后可重新导入；系统会自动跳过已成功写入的单词，避免重复。</div></div>
-              <div class="flex gap8 mt16">
-                <button class="btn" onclick="Proto.toast('失败行文件已下载（示意）','ok')">下载失败行</button>
-                <a class="btn" href="wordbook-detail.html">查看词库</a>
-                <button class="btn btn-primary" onclick="resetFlow()">继续导入</button>
-              </div>
+          <div id="fileCards"></div>
+
+          <div class="card mt16 hidden" id="resultCard">
+            <div class="card-head">
+              <div class="card-title">入库结果</div>
+              <span class="small muted" id="resultBatch"></span>
             </div>
+            <div class="card-body" id="resultBody"></div>
           </div>
         </div>
 
         <div>
           <div class="card">
-            <div class="card-head"><div class="card-title">字段说明</div></div>
-            <div class="card-body" style="font-size:12.5px;line-height:1.9;color:var(--text-2)">
-              <div class="mb8"><b style="color:var(--text)">必填：</b>单词、中文释义</div>
-              <div class="mb8"><b style="color:var(--text)">建议填写：</b>音标、词性、音频文件名</div>
-              <div class="mb8"><b style="color:var(--text)">多释义：</b>同一单元格内用分号分隔，如「问题；询问」</div>
-              <div class="mb8"><b style="color:var(--text)">多词性：</b>用斜杠分隔，如「n./v.」</div>
-              <div><b style="color:var(--text)">音频：</b>填写文件名，系统按词库路径自动匹配</div>
-            </div>
-          </div>
-          <div class="card mt16">
-            <div class="card-head"><div class="card-title">导入历史</div></div>
+            <div class="card-head"><div class="card-title">批次设置</div></div>
             <div class="card-body">
-              <div class="m-row"><span class="k">08-20 11:02 · 23 成功</span><span class="tag tag-green nodot">全部成功</span></div>
-              <div class="m-row"><span class="k">08-20 10:48 · 21 成功 / 2 失败</span><span class="tag tag-amber nodot">部分失败</span></div>
-              <div class="m-row"><span class="k">08-18 15:20 · 0 成功 / 5 失败</span><span class="tag tag-red nodot">全部失败</span></div>
+              <div class="field mb12">
+                <label>操作人</label>
+                <select class="select" id="operator" onchange="onOperator()">
+                  <option value="A001">张敏（教务处）</option>
+                  <option value="T001">李婉（教师）</option>
+                  <option value="A002">小陈（教务）</option>
+                </select>
+              </div>
+              <label class="flex gap8 aic" style="font-size:12.5px;cursor:pointer">
+                <input type="checkbox" id="fillMissing" checked onchange="renderAll()">
+                <span>用本次数据补齐已有单词缺失的音标 / 音频</span>
+              </label>
+              <div class="small muted mt8" style="line-height:1.7">
+                只会补空字段，不覆盖已有内容；<b>不会改动学员学习状态</b>。
+              </div>
             </div>
           </div>
-          <div class="alert alert-warn mt16"><span class="ico">!</span>
-            <div>整批导入采用事务：任一行写入失败不会导致词库出现「半套数据」。已完成写入的行可回滚（导入批次内）。</div>
+
+          <div class="card mt16">
+            <div class="card-head"><div class="card-title">识别规则</div></div>
+            <div class="card-body" style="font-size:12px;line-height:1.85;color:var(--text-2)">
+              <div class="mb8"><b style="color:var(--text)">必填：</b>英文单词、中文释义</div>
+              <div class="mb8"><b style="color:var(--text)">表头同义词：</b>单词 / 英文 / word / 词汇；中文 / 释义 / meaning / 翻译；音标 / phonetic；词性 / pos；音频 / audio</div>
+              <div class="mb8"><b style="color:var(--text)">不猜列：</b>认不出表头时，用列映射手动指定</div>
+              <div class="mb8"><b style="color:var(--text)">多释义：</b>同一单元格用「；」分隔</div>
+              <div><b style="color:var(--text)">重复：</b>文件内重复跳过；跨词库同名复用基础单词</div>
+            </div>
+          </div>
+
+          <div class="card mt16">
+            <div class="card-head">
+              <div class="card-title">最近导入批次</div>
+              <a class="btn-link" href="wordbook-list.html">词库管理</a>
+            </div>
+            <div class="card-body" id="histBox"></div>
           </div>
         </div>
       </div>
+
+      <div class="card mt16 sticky-bar hidden" id="batchBar">
+        <div class="card-body" style="padding:12px 16px">
+          <div class="flex jcb aic wrap gap12">
+            <div class="small" id="batchSum"></div>
+            <div class="flex gap8">
+              <button class="btn" onclick="downloadAllFailed()" id="dlBtn" disabled>下载失败行</button>
+              <button class="btn" onclick="parseAllAgain()">重新解析全部</button>
+              <button class="btn btn-primary" id="importAllBtn" onclick="importAll()">全部入库</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </main>
+  </div>
+</div>
+
+<!-- 文件明细 -->
+<div class="mask" id="detailModal">
+  <div class="modal wide" style="width:900px">
+    <div class="modal-head">
+      <div class="modal-title" id="dTitle">解析明细</div>
+      <button class="modal-close" onclick="Proto.closeModal('detailModal')">×</button>
+    </div>
+    <div class="modal-body" id="dBody"></div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('detailModal')">关闭</button>
+    </div>
   </div>
 </div>
 
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/vendor/xlsx.full.min.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'admin', active: 'import' });
 
-const PREVIEW = [
-  { row: 1, en: 'school', ph: '/skuːl/', pos: 'n.', cn: '学校', audio: 'school.mp3', ok: true },
-  { row: 2, en: 'teacher', ph: '/ˈtiːtʃə(r)/', pos: 'n.', cn: '老师；教师', audio: 'teacher.mp3', ok: true },
-  { row: 3, en: 'student', ph: '/ˈstjuːdnt/', pos: 'n.', cn: '学生', audio: 'student.mp3', ok: true },
-  { row: 4, en: 'blackboard', ph: '', pos: 'n.', cn: '黑板', audio: 'blackboard.mp3', ok: false, why: '缺少音标（必填校验未通过）' },
-  { row: 5, en: 'sit', ph: '/sɪt/', pos: 'v.', cn: '坐；坐下', audio: 'sit.mp3', ok: true },
-  { row: 6, en: 'know', ph: '/nəʊ/', pos: 'v.', cn: '知道；认识', audio: 'know.mp3', ok: true },
-  { row: 7, en: 'friend', ph: '/frend/', pos: 'n.', cn: '朋友', audio: 'friend.mp3', ok: false, why: '与词库已有单词重复（按设置跳过）' },
-  { row: 8, en: 'love', ph: '/lʌv/', pos: 'v./n.', cn: '爱；喜爱', audio: 'love.mp3', ok: true },
-  { row: 9, en: 'new', ph: '/njuː/', pos: 'adj.', cn: '新的', audio: 'new.mp3', ok: true },
-  { row: 10, en: 'day', ph: '/deɪ/', pos: 'n.', cn: '天；日子', audio: 'day.mp3', ok: true },
-];
+const Q = new URLSearchParams(location.search);
+const TARGET_BOOK = Q.get('book') || '';
+const OPERATORS = { A001: '张敏', T001: '李婉', A002: '小陈' };
+const FIELD_LABEL = { en: '英文单词', ph: '音标', pos: '词性', cn: '中文释义', audio: '音频' };
+const STATUS_TAG = {
+  ready: ['就绪', 'tag-blue'],
+  error: ['需要处理', 'tag-red'],
+  imported: ['已入库', 'tag-green'],
+  failed: ['入库失败', 'tag-red']
+};
 
-function setFlow(stage) {
-  const steps = document.querySelectorAll('.fs');
-  steps.forEach((el, i) => {
-    el.className = 'fs';
-    if (stage === 'preview') {
-      if (i < 2) el.classList.add('done');
-      else if (i < 6) el.classList.add('on');
-    } else if (stage === 'done') {
-      if (i < 6) el.classList.add('done');
-      else if (i < 8) el.classList.add('on');
+const files = [];          // 每个文件一条解析状态
+let batchId = '';
+let uidSeq = 0;
+
+/* ---------------- 工具 ---------------- */
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function fmtSize(n) {
+  if (!n) return '—';
+  return n > 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+}
+function colLabel(i, headerRowCells) {
+  const name = headerRowCells && headerRowCells[i];
+  const letter = XLSX.utils.encode_col(i);
+  return name ? letter + ' · ' + String(name).trim().slice(0, 12) : letter + ' 列';
+}
+function operatorName() { return OPERATORS[document.getElementById('operator').value] || '张敏'; }
+
+/* ---------------- 上传 ---------------- */
+function pickFiles() {
+  const input = document.getElementById('fileInput');
+  input.value = '';                    // 允许重复选同一个文件（必须在打开对话框之前清）
+  input.click();
+}
+
+document.getElementById('fileInput').addEventListener('change', function (e) {
+  /* 不能在这里清空 input.value：清空会让浏览器中途丢弃正在读取的文件 */
+  addFiles(e.target.files);
+});
+
+const dz = document.getElementById('dz');
+dz.addEventListener('click', pickFiles);
+['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => {
+  e.preventDefault(); dz.classList.add('drag');
+}));
+['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => {
+  e.preventDefault(); dz.classList.remove('drag');
+}));
+dz.addEventListener('drop', e => {
+  if (e.dataTransfer && e.dataTransfer.files) addFiles(e.dataTransfer.files);
+});
+
+function addFiles(list) {
+  const arr = [].slice.call(list || []).filter(f => /\.(xlsx|xls)$/i.test(f.name));
+  const skipped = (list ? list.length : 0) - arr.length;
+  if (!arr.length) {
+    Proto.toast(skipped ? '只支持 .xlsx / .xls 文件' : '没有选择文件', 'warn');
+    return;
+  }
+  arr.forEach(f => {
+    const item = {
+      uid: 'f' + (++uidSeq), file: f, name: f.name, size: f.size,
+      wb: null, sheetNames: [], sheetName: '', rows: [], headerRow: 0,
+      dataStartRow: 1, mapping: {}, analysis: null, status: 'parsing',
+      error: '', jobId: '', wordbookId: '', expanded: false, failedCsv: '',
+      meta: {
+        name: f.name.replace(/\.(xlsx|xls)$/i, ''), category: '教材',
+        schoolStage: '', bookVersion: '', grade: '', term: '', organization: '',
+        description: ''
+      }
+    };
+    files.push(item);
+    readFile(item);
+  });
+  if (skipped) Proto.toast('已忽略 ' + skipped + ' 个非 Excel 文件', 'warn');
+  renderAll();
+}
+
+function readFile(item) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      item.wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      item.sheetNames = item.wb.SheetNames.slice();
+      if (!item.sheetNames.length) throw new Error('文件里没有工作表');
+      /* 默认工作表：第一个能识别出完整表头的工作表（跳过封面 / 说明页） */
+      let pick = item.sheetNames[0];
+      for (const n of item.sheetNames) {
+        const rows = sheetRows(item, n);
+        const h = Store.detectHeader(rows);
+        if (h.complete) { pick = n; break; }
+      }
+      loadSheet(item, pick);
+      renderAll();                     // 解析完成必须重渲染，否则卡片会一直停在「解析中」
+    } catch (err) {
+      item.status = 'error';
+      item.error = '文件无法解析：' + (err.message || err);
+      renderAll();
+    }
+  };
+  reader.onerror = () => {
+    item.status = 'error';
+    item.error = '读取文件失败';
+    renderAll();
+  };
+  reader.readAsArrayBuffer(item.file);
+}
+
+function sheetRows(item, sheetName) {
+  const ws = item.wb.Sheets[sheetName];
+  if (!ws) return [];
+  /* blankrows:true 保留真实行号，后面报错行号才对得上 Excel */
+  return XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', blankrows: true });
+}
+
+function loadSheet(item, sheetName) {
+  item.sheetName = sheetName;
+  item.rows = sheetRows(item, sheetName);
+  const h = Store.detectHeader(item.rows);
+  item.headerRow = h.row || 0;
+  item.dataStartRow = h.row ? h.row + 1 : 1;
+  item.mapping = h.complete ? Object.assign({}, h.mapping)
+    : (h.mapping.en !== undefined || h.mapping.cn !== undefined ? Object.assign({}, h.mapping) : {});
+  analyze(item);
+}
+
+function setSheet(uid, name) {
+  const f = byUid(uid); if (!f) return;
+  f.wordbookId = ''; f.jobId = ''; f.status = 'parsing';
+  loadSheet(f, name);
+  renderAll();
+}
+
+function setStartRow(uid, v) {
+  const f = byUid(uid); if (!f) return;
+  f.dataStartRow = Math.max(1, Number(v) || 1);
+  analyze(f);
+  renderAll();
+}
+
+function setMapping(uid, key, v) {
+  const f = byUid(uid); if (!f) return;
+  if (v === '') delete f.mapping[key];
+  else f.mapping[key] = Number(v);
+  analyze(f);
+  renderAll();
+}
+
+function setMeta(uid, key, v) {
+  const f = byUid(uid); if (!f) return;
+  f.meta[key] = v;
+}
+
+function byUid(uid) { return files.filter(f => f.uid === uid)[0] || null; }
+
+function analyze(item) {
+  if (!item.rows.length) {
+    item.analysis = null;
+    item.status = 'error';
+    item.error = '工作表「' + item.sheetName + '」没有数据';
+    return;
+  }
+  if (item.mapping.en === undefined || item.mapping.cn === undefined) {
+    item.analysis = Store.analyzeImport({
+      fileName: item.name, sheetName: item.sheetName, headerRow: item.headerRow,
+      dataStartRow: item.dataStartRow, mapping: item.mapping, rows: item.rows,
+      targetBookId: ''
+    });
+    item.status = 'error';
+    item.error = '未识别出' + (item.mapping.en === undefined ? '英文单词列' : '中文释义列')
+      + '，请手动选择对应列';
+    return;
+  }
+  item.analysis = Store.analyzeImport({
+    fileName: item.name, sheetName: item.sheetName, headerRow: item.headerRow,
+    dataStartRow: item.dataStartRow, mapping: item.mapping, rows: item.rows,
+    targetBookId: TARGET_BOOK || ''
+  });
+  item.error = '';
+  if (item.analysis.entries.length) item.status = 'ready';
+  else { item.status = 'error'; item.error = '没有可入库的有效单词'; }
+}
+
+function removeFile(uid) {
+  const i = files.findIndex(f => f.uid === uid);
+  if (i >= 0) files.splice(i, 1);
+  renderAll();
+}
+
+function clearFiles() {
+  files.length = 0;
+  renderAll();
+}
+
+function parseAllAgain() {
+  files.forEach(f => {
+    if (f.wb) { loadSheet(f, f.sheetName || f.sheetNames[0]); }
+    else { f.status = 'parsing'; readFile(f); }
+  });
+  renderAll();
+  Proto.toast('已重新解析 ' + files.length + ' 个文件', 'ok');
+}
+
+function onOperator() { renderAll(); }
+
+/* ---------------- 渲染 ---------------- */
+function renderAll() {
+  renderFlow();
+  renderFileCards();
+  renderSummary();
+  renderHistory();
+  renderTargetTip();
+}
+
+function renderFlow() {
+  const has = files.length > 0;
+  const doneCount = files.filter(f => f.status === 'imported').length;
+  const step = !has ? 1 : (doneCount === files.length && has ? 4 : 2);
+  const names = ['选择文件', '解析与校验', '补全词库信息', '入库结果'];
+  document.getElementById('flow').innerHTML = names.map((n, i) => {
+    const idx = i + 1;
+    const cls = idx < step ? 'fs done' : (idx === step ? 'fs on' : 'fs');
+    return `<span class="${cls}"><b>${idx < step ? '✓' : idx}</b>${n}</span>`
+      + (i < names.length - 1 ? '<span class="fs-ar">→</span>' : '');
+  }).join('');
+}
+
+function renderTargetTip() {
+  const box = document.getElementById('targetTip');
+  if (!TARGET_BOOK) { box.classList.add('hidden'); return; }
+  const b = Store.wordbook(TARGET_BOOK);
+  box.classList.remove('hidden');
+  box.innerHTML = b
+    ? `<span class="ico">i</span><div>本次为<b>继续导入</b>：所有文件都会追加到词库
+        <b>${esc(b.name)}</b>（当前 ${b.wordCount} 词）。词库名称与分类沿用现有设置。</div>`
+    : `<span class="ico">!</span><div>目标词库 ${esc(TARGET_BOOK)} 不存在，将按新建词库处理。</div>`;
+}
+
+function renderFileCards() {
+  const box = document.getElementById('fileCards');
+  document.getElementById('clearBtn').disabled = !files.length;
+  if (!files.length) {
+    box.innerHTML = `<div class="card mt16"><div class="empty"><div class="e-ico">⇪</div>
+      <p>还没有选择文件。一次可以选择多个 Excel，每个文件会生成一个词库。</p>
+      <button class="btn btn-primary btn-sm" onclick="pickFiles()">选择文件</button></div></div>`;
+    return;
+  }
+  box.innerHTML = files.map(f => cardHtml(f)).join('');
+}
+
+function cardHtml(f) {
+  const st = STATUS_TAG[f.status] || ['解析中', 'tag-slate'];
+  const a = f.analysis;
+  const headerCells = f.headerRow ? (f.rows[f.headerRow - 1] || []) : (f.rows[0] || []);
+  const colCount = Math.max.apply(null, f.rows.slice(0, 12).map(r => r.length).concat([headerCells.length, 1]));
+
+  const colOpts = (key) => {
+    let out = `<option value="">未映射</option>`;
+    for (let i = 0; i < colCount; i++) {
+      const sel = f.mapping[key] === i ? ' selected' : '';
+      out += `<option value="${i}"${sel}>${esc(colLabel(i, headerCells))}</option>`;
+    }
+    return out;
+  };
+  const sheetOpts = f.sheetNames.map(n =>
+    `<option value="${esc(n)}"${n === f.sheetName ? ' selected' : ''}>${esc(n)}</option>`).join('');
+
+  const stat = a ? a.stats : { parsedRows: 0, newWords: 0, existingWords: 0, dupInFile: 0, missingRequired: 0, badFormat: 0 };
+  const inBook = a ? a.inBook : 0;
+  const issues = a ? a.issues.slice(0, 6) : [];
+
+  const m = f.meta;
+  const nameVal = TARGET_BOOK && Store.wordbook(TARGET_BOOK) ? Store.wordbook(TARGET_BOOK).name : m.name;
+
+  return `
+  <div class="card fcard ${f.status}" id="card-${f.uid}">
+    <div class="card-head">
+      <div>
+        <div class="fname">${esc(f.name)} <span class="tag ${st[1]} nodot">${st[0]}</span></div>
+        <div class="fsub">${fmtSize(f.size)} · ${f.sheetNames.length} 个工作表 · 当前「${esc(f.sheetName || '—')}」·
+          ${f.headerRow ? '表头第 ' + f.headerRow + ' 行' : '未识别表头'} · 数据从第 ${f.dataStartRow} 行开始</div>
+      </div>
+      <div class="flex gap8">
+        <button class="btn btn-sm" onclick="showDetail('${f.uid}')">查看明细</button>
+        <button class="btn btn-sm btn-ghost" onclick="removeFile('${f.uid}')">移除</button>
+      </div>
+    </div>
+    <div class="card-body">
+      ${f.error ? `<div class="alert alert-warn mb12"><span class="ico">!</span><div>${esc(f.error)}</div></div>` : ''}
+
+      <div class="form-grid g3 mb12">
+        <div class="field"><label>工作表</label>
+          <select class="select" onchange="setSheet('${f.uid}', this.value)">${sheetOpts}</select></div>
+        <div class="field"><label>数据起始行</label>
+          <input class="input" type="number" min="1" value="${f.dataStartRow}"
+            onchange="setStartRow('${f.uid}', this.value)">
+          <span class="tip">跳过封面、说明行的另一种办法</span></div>
+        <div class="field"><label>表头行</label>
+          <input class="input" value="${f.headerRow ? '第 ' + f.headerRow + ' 行' : '未识别'}" readonly
+            style="background:var(--bg);color:var(--text-2)"></div>
+      </div>
+
+      <div class="section-title" style="margin:4px 0 8px">列映射
+        <span class="small muted" style="font-weight:400">认不出就手动选，系统不猜列</span></div>
+      <div class="mapgrid mb16">
+        ${['en', 'cn', 'ph', 'pos', 'audio'].map(k => `
+          <div class="field"><label>${FIELD_LABEL[k]}${k === 'en' || k === 'cn' ? '<span class="req">*</span>' : ''}</label>
+            <select class="select" onchange="setMapping('${f.uid}','${k}',this.value)">${colOpts(k)}</select>
+          </div>`).join('')}
+      </div>
+
+      <div class="mini-stats mb12">
+        <div class="ms"><div class="k">解析行数</div><div class="v">${stat.parsedRows}<small>行</small></div></div>
+        <div class="ms ok"><div class="k">有效单词</div><div class="v">${a ? a.entries.length : 0}<small>个</small></div></div>
+        <div class="ms"><div class="k">新增基础单词</div><div class="v">${stat.newWords}<small>个</small></div></div>
+        <div class="ms"><div class="k">已存在单词</div><div class="v">${stat.existingWords}<small>个</small></div></div>
+        <div class="ms ${stat.dupInFile ? 'warn' : ''}"><div class="k">文件内重复</div><div class="v">${stat.dupInFile}<small>行</small></div></div>
+        <div class="ms ${inBook ? 'warn' : ''}"><div class="k">本词库已有</div><div class="v">${inBook}<small>行</small></div></div>
+        <div class="ms ${stat.missingRequired ? 'bad' : ''}"><div class="k">缺失必填</div><div class="v">${stat.missingRequired}<small>行</small></div></div>
+        <div class="ms ${stat.badFormat ? 'bad' : ''}"><div class="k">格式异常</div><div class="v">${stat.badFormat}<small>行</small></div></div>
+      </div>
+
+      <div class="small muted" style="margin:-4px 0 12px">
+        可选字段缺失（可为空，入库后可在词库详情补）：
+        音标 <b>${stat.missingPh || 0}</b> · 词性 <b>${stat.missingPos || 0}</b> · 音频 <b>${stat.missingAudio || 0}</b>
+      </div>
+
+      ${issues.length ? `<div class="issue-list mb12">${issues.map(i => `
+        <div class="issue ${i.level === 'error' ? 'err' : 'warn'}">
+          <span class="ln">第 ${i.row} 行</span>
+          <span>${esc(i.message)}</span>
+        </div>`).join('')}
+        ${a.issues.length > 6 ? `<div class="issue"><span class="ln"></span><span class="muted">还有 ${a.issues.length - 6} 条，点「查看明细」看全部</span></div>` : ''}
+      </div>` : ''}
+
+      ${a && a.fillCandidates.length ? `<div class="alert alert-info mb12"><span class="ico">i</span>
+        <div>有 <b>${a.fillCandidates.length}</b> 个已存在的单词缺少
+          ${Array.from(new Set(a.fillCandidates.map(x => x.missing.join('、')))).join(' / ')}，
+          将按右侧「补齐」设置处理：${document.getElementById('fillMissing').checked ? '用本次数据补齐空字段' : '保持原样'}。</div></div>` : ''}
+
+      <div class="section-title" style="margin:8px 0">入库信息<span class="small muted"
+        style="font-weight:400">除名称外都可留空</span></div>
+      <div class="form-grid g3">
+        <div class="field full"><label>词库名称 <span class="req">*</span></label>
+          <input class="input" id="nm-${f.uid}" value="${esc(nameVal)}"
+            ${TARGET_BOOK ? 'readonly style="background:var(--bg)"' : ''}
+            oninput="setMeta('${f.uid}','name',this.value)"></div>
+        <div class="field"><label>分类</label>
+          <select class="select" onchange="setMeta('${f.uid}','category',this.value)">
+            ${Store.WB_CATEGORIES.map(c => `<option${m.category === c ? ' selected' : ''}>${c}</option>`).join('')}
+          </select></div>
+        <div class="field"><label>适用学段</label>
+          <select class="select" onchange="setMeta('${f.uid}','schoolStage',this.value)">
+            <option value="">未指定</option>
+            ${Store.WB_STAGES.map(c => `<option${m.schoolStage === c ? ' selected' : ''}>${c}</option>`).join('')}
+          </select></div>
+        <div class="field"><label>教材版本</label>
+          <input class="input" value="${esc(m.bookVersion)}" placeholder="如 人教版 / 外研版"
+            oninput="setMeta('${f.uid}','bookVersion',this.value)"></div>
+        <div class="field"><label>年级</label>
+          <input class="input" value="${esc(m.grade)}" placeholder="如 七年级"
+            oninput="setMeta('${f.uid}','grade',this.value)"></div>
+        <div class="field"><label>学期</label>
+          <select class="select" onchange="setMeta('${f.uid}','term',this.value)">
+            <option value="">未指定</option>
+            <option${m.term === '上学期' ? ' selected' : ''}>上学期</option>
+            <option${m.term === '下学期' ? ' selected' : ''}>下学期</option>
+          </select></div>
+        <div class="field"><label>组织方式</label>
+          <select class="select" onchange="setMeta('${f.uid}','organization',this.value)">
+            <option value="">未指定</option>
+            ${Store.WB_ORG.map(c => `<option${m.organization === c ? ' selected' : ''}>${c}</option>`).join('')}
+          </select></div>
+        <div class="field full"><label>说明</label>
+          <input class="input" value="${esc(m.description)}" placeholder="选填"
+            oninput="setMeta('${f.uid}','description',this.value)"></div>
+      </div>
+    </div>
+    <div class="card-foot" style="display:flex;justify-content:space-between;align-items:center">
+      <span class="small muted">${f.status === 'imported'
+        ? '已写入词库 ' + esc(f.wordbookName || f.wordbookId)
+        : (a && a.entries.length ? '可入库 ' + a.entries.length + ' 个单词' : '暂无可入库内容')}</span>
+      <div class="flex gap8">
+        ${f.status === 'imported' && f.wordbookId
+          ? `<a class="btn btn-sm" href="wordbook-detail.html?id=${f.wordbookId}">查看词库</a>`
+          : `<button class="btn btn-sm" ${a && a.entries.length ? '' : 'disabled'}
+              onclick="importOne('${f.uid}')">仅导入这个文件</button>`}
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderSummary() {
+  const bar = document.getElementById('batchBar');
+  bar.classList.toggle('hidden', !files.length);
+  if (!files.length) return;
+  const ready = files.filter(f => f.status === 'ready');
+  const done = files.filter(f => f.status === 'imported');
+  const bad = files.filter(f => f.status === 'error' || f.status === 'failed');
+  const totalWords = ready.reduce((n, f) => n + (f.analysis ? f.analysis.entries.length : 0), 0);
+
+  document.getElementById('sumTip').textContent =
+    `已选择 ${files.length} 个文件 · ${ready.length} 个待入库 · ${done.length} 个已入库`;
+  document.getElementById('batchSum').innerHTML =
+    `<b>${files.length}</b> 个文件 / <b>${ready.length}</b> 个待入库 / <b>${done.length}</b> 个已入库`
+    + (bad.length ? ` / <b style="color:var(--danger)">${bad.length}</b> 个需处理` : '')
+    + ` · 本次可写入 <b>${totalWords}</b> 个单词关联`;
+
+  const btn = document.getElementById('importAllBtn');
+  btn.disabled = !ready.length;
+  btn.textContent = ready.length ? `全部入库（${ready.length} 个文件）` : '全部入库';
+
+  document.getElementById('dlBtn').disabled = !files.some(f => f.failedCsv);
+}
+
+function renderHistory() {
+  const list = Store.importBatches().slice(0, 4);
+  const box = document.getElementById('histBox');
+  if (!list.length) {
+    box.innerHTML = `<div class="small muted" style="line-height:1.8">还没有导入记录。<br>
+      导入成功后会在这里留下批次号、操作人和汇总数据。</div>`;
+    return;
+  }
+  box.innerHTML = list.map(b => `
+    <div class="kv"><span class="k">${esc(b.createdAt.slice(5))} · ${esc(b.id)}</span>
+      <span class="v">${b.okCount}/${b.fileCount} 文件 · ${b.newLinks} 关联</span></div>
+  `).join('');
+}
+
+/* ---------------- 明细 ---------------- */
+function showDetail(uid) {
+  const f = byUid(uid);
+  if (!f || !f.analysis) { Proto.toast('还没有解析结果', 'warn'); return; }
+  const a = f.analysis;
+  document.getElementById('dTitle').textContent = f.name + ' · 解析明细';
+  const ROW_TAG = {
+    'new': ['新增', 'tag-green'],
+    'existing': ['复用已有', 'tag-blue'],
+    'inBook': ['本词库已有', 'tag-amber'],
+    'dup': ['文件内重复', 'tag-amber'],
+    'missing': ['缺必填', 'tag-red'],
+    'bad': ['格式异常', 'tag-red']
+  };
+  const rows = a.rows.slice(0, 300).map(r => {
+    const t = ROW_TAG[r.status] || ['—', 'tag-slate'];
+    return `<tr>
+      <td class="mono muted">${r.sheetRow}</td>
+      <td class="strong">${esc(r.en) || '<span class="muted">—</span>'}</td>
+      <td class="mono small muted">${esc(r.ph) || '—'}</td>
+      <td class="small">${esc(r.pos) || '—'}</td>
+      <td>${esc(r.cn) || '<span class="muted">—</span>'}</td>
+      <td class="small muted">${esc(r.audio) || '—'}</td>
+      <td><span class="tag ${t[1]} nodot">${t[0]}</span></td>
+      <td class="small muted">${esc(r.note || '')}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('dBody').innerHTML = `
+    <div class="small muted mb12">
+      工作表「${esc(f.sheetName)}」· 表头第 ${f.headerRow || '—'} 行 · 数据从第 ${f.dataStartRow} 行 ·
+      共 ${a.rows.length} 行数据${a.rows.length > 300 ? '（仅显示前 300 行）' : ''}
+    </div>
+    <div class="table-wrap"><table class="table compact">
+      <thead><tr><th style="width:52px">行号</th><th style="width:110px">英文</th><th style="width:110px">音标</th>
+        <th style="width:64px">词性</th><th>中文释义</th><th style="width:80px">音频</th>
+        <th style="width:88px">结果</th><th style="width:180px">说明</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="8" class="muted">没有数据行</td></tr>'}</tbody>
+    </table></div>`;
+  Proto.openModal('detailModal');
+}
+
+/* ---------------- 入库 ---------------- */
+function inputOf(f) {
+  return {
+    fileName: f.name, fileSize: f.size, sheetName: f.sheetName,
+    headerRow: f.headerRow, dataStartRow: f.dataStartRow,
+    mapping: f.mapping, rows: f.rows, targetBookId: TARGET_BOOK || ''
+  };
+}
+
+function metaOf(f) {
+  const m = Object.assign({}, f.meta);
+  const target = TARGET_BOOK ? Store.wordbook(TARGET_BOOK) : null;
+  if (target) { m.wordbookId = target.id; m.name = target.name; }
+  m.operatorId = document.getElementById('operator').value;
+  m.operatorName = operatorName();
+  m.batchId = batchId;
+  return m;
+}
+
+function ensureBatch() {
+  if (!batchId) {
+    const b = Store.startImportBatch({
+      operatorId: document.getElementById('operator').value,
+      operatorName: operatorName(),
+      fileCount: files.length
+    });
+    batchId = b.id;
+  }
+  return batchId;
+}
+
+function importOne(uid) {
+  const f = byUid(uid);
+  if (!f) return;
+  ensureBatch();
+  const r = Store.commitImport(inputOf(f), metaOf(f), { fillMissing: document.getElementById('fillMissing').checked });
+  applyResult(f, r);
+  refreshPending();
+  renderAll();
+  if (r.ok) Proto.toast('「' + f.name + '」已入库：新增 ' + r.stats.newWords + ' 个单词，' + r.stats.newLinks + ' 条关联', 'ok');
+  else Proto.toast('入库失败：' + r.reason, 'err');
+}
+
+/** 入库会改变基础单词集合：把还没入库的文件重新分析，避免数字停留在解析时的旧快照 */
+function refreshPending() {
+  files.forEach(x => { if (x.status === 'ready') analyze(x); });
+}
+
+function applyResult(f, r) {
+  if (r.ok) {
+    f.status = 'imported';
+    f.wordbookId = r.wordbookId;
+    f.jobId = r.jobId;
+    f.wordbookName = (Store.wordbook(r.wordbookId) || {}).name || '';
+    f.analysis = r.analysis;
+    f.lastStats = r.stats;
+    const job = Store.importJob(r.jobId);
+    f.failedCsv = job && job.failedRows.length ? Store.failedRowsCsv(job.id) : '';
+  } else {
+    f.status = 'failed';
+    f.error = r.reason;
+    if (r.analysis) f.analysis = r.analysis;
+  }
+}
+
+function importAll() {
+  const todo = files.filter(f => f.status === 'ready');
+  if (!todo.length) { Proto.toast('没有待入库的文件', 'warn'); return; }
+  ensureBatch();
+  let okFiles = 0, failFiles = 0, words = 0, links = 0, firstBook = '';
+  const lines = [];
+
+  todo.forEach(f => {
+    const r = Store.commitImport(inputOf(f), metaOf(f), { fillMissing: document.getElementById('fillMissing').checked });
+    if (r.ok) {
+      okFiles++; words += r.stats.newWords; links += r.stats.newLinks;
+      refreshPending();
+      if (!firstBook) firstBook = r.wordbookId;
+      applyResult(f, r);
+      lines.push(`<div class="kv"><span class="k">${esc(f.name)}</span>
+        <span class="v" style="color:var(--success)">已入库 · ${r.stats.newLinks} 关联</span></div>`);
     } else {
-      if (i < 2) el.classList.add('done');
-      else if (i === 2) el.classList.add('on');
+      failFiles++;
+      applyResult(f, r);
+      if (!f.jobId) {
+        const job = Store.recordImportFailure(inputOf(f), r.reason, metaOf(f));
+        f.jobId = job.id;
+        f.failedCsv = Store.failedRowsCsv(job.id);
+      }
+      lines.push(`<div class="kv"><span class="k">${esc(f.name)}</span>
+        <span class="v" style="color:var(--danger)">失败 · ${esc(r.reason)}</span></div>`);
     }
   });
+
+  files.filter(f => f.status === 'error').forEach(f => {
+    failFiles++;
+    if (!f.jobId) {
+      const job = Store.recordImportFailure(inputOf(f), f.error || '文件未解析成功', metaOf(f));
+      f.jobId = job.id;
+      f.failedCsv = Store.failedRowsCsv(job.id);
+    }
+    lines.push(`<div class="kv"><span class="k">${esc(f.name)}</span>
+      <span class="v" style="color:var(--danger)">未写入 · ${esc(f.error || '未解析成功')}</span></div>`);
+  });
+
+  const batch = Store.finishImportBatch(batchId);
+
+  document.getElementById('resultCard').classList.remove('hidden');
+  document.getElementById('resultBatch').textContent =
+    '批次 ' + batch.id + ' · ' + batch.createdAt + ' · ' + batch.status;
+  document.getElementById('resultBody').innerHTML = `
+    <div class="mini-stats mb12">
+      <div class="ms ok"><div class="k">成功文件</div><div class="v">${okFiles}<small>个</small></div></div>
+      <div class="ms ${failFiles ? 'bad' : ''}"><div class="k">失败文件</div><div class="v">${failFiles}<small>个</small></div></div>
+      <div class="ms"><div class="k">新增基础单词</div><div class="v">${words}<small>个</small></div></div>
+      <div class="ms"><div class="k">新增词库关联</div><div class="v">${links}<small>条</small></div></div>
+    </div>
+    ${lines.join('')}
+    <div class="flex gap8 mt16">
+      ${firstBook ? `<a class="btn" href="wordbook-detail.html?id=${firstBook}">查看第一个词库</a>` : ''}
+      <a class="btn" href="wordbook-list.html">返回词库列表</a>
+      <button class="btn" onclick="downloadAllFailed()">下载失败行</button>
+    </div>`;
+
+  renderAll();
+  Proto.toast(`入库完成：${okFiles} 个文件成功，${failFiles} 个失败`, failFiles ? 'warn' : 'ok');
 }
 
-function simulateUpload() {
-  document.getElementById('stepUpload').classList.add('hidden');
-  document.getElementById('stepPreview').classList.remove('hidden');
-  document.getElementById('stepDone').classList.add('hidden');
-  setFlow('preview');
-  renderPreview();
-  Proto.toast('文件解析完成，发现 2 处问题', 'warn');
+/* ---------------- 下载 ---------------- */
+function download(name, text) {
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 
-function renderPreview() {
-  document.getElementById('previewRows').innerHTML = PREVIEW.map(p => `
-    <tr>
-      <td class="mono muted">${p.row}</td>
-      <td class="strong">${p.en}</td>
-      <td class="mono small ${p.ph ? '' : 'muted'}">${p.ph || '—'}</td>
-      <td class="small">${p.pos}</td>
-      <td>${p.cn}</td>
-      <td class="small muted">${p.audio}</td>
-      <td>${p.ok ? '<span class="tag tag-green nodot">校验通过</span>'
-        : `<span class="tag tag-red nodot">${p.why}</span>`}</td>
-    </tr>`).join('');
+function downloadAllFailed() {
+  const f = files.filter(x => x.failedCsv)[0];
+  if (!f) { Proto.toast('没有失败行可以下载', 'warn'); return; }
+  const all = files.filter(x => x.failedCsv);
+  if (all.length === 1) { download('导入失败行_' + f.name.replace(/\.\w+$/, '') + '.csv', f.failedCsv); return; }
+  /* 多个文件：合并成一份，每个文件前加一列来源 */
+  const head = '来源文件,行号,英文,中文释义,失败原因\r\n';
+  const body = all.map(x => {
+    const lines = x.failedCsv.replace(/^\ufeff/, '').split('\r\n').slice(1).filter(Boolean);
+    return lines.map(l => '"' + x.name.replace(/"/g, '""') + '",' + l).join('\r\n');
+  }).join('\r\n');
+  download('导入失败行_合并.csv', '\ufeff' + head + body);
 }
 
-function confirmImport() {
-  document.getElementById('stepPreview').classList.add('hidden');
-  document.getElementById('stepDone').classList.remove('hidden');
-  setFlow('done');
-  Proto.toast('导入完成：成功 8 条，失败 2 条', 'ok');
+function downloadTemplate() {
+  const rows = [
+    ['单词', '音标', '词性', '中文', '音频'],
+    ['apple', '/ˈæpl/', 'n.', '苹果', 'apple.mp3'],
+    ['orange', '/ˈɒrɪndʒ/', 'n.', '橙子；橘子', '']
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '词汇');
+  XLSX.writeFile(wb, '词库导入模板.xlsx');
+  Proto.toast('模板已下载：单词 / 音标 / 词性 / 中文 / 音频', 'ok');
 }
 
-function resetFlow() {
-  document.getElementById('stepUpload').classList.remove('hidden');
-  document.getElementById('stepPreview').classList.add('hidden');
-  document.getElementById('stepDone').classList.add('hidden');
-  setFlow('upload');
-}
+/* 启动 */
+renderAll();
 </script>
 </body>
 </html>

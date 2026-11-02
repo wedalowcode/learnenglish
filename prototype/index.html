@@ -46,8 +46,10 @@
         <a href="admin/student-detail.html">学员详情（6 Tab）<span class="code">admin/student-detail</span></a>
         <a href="admin/student-form.html">新增 / 编辑学员<span class="code">admin/student-form</span></a>
         <a href="admin/parent-list.html">家长管理<span class="code">admin/parent-list</span></a>
-        <a href="admin/teacher-list.html">教师管理<span class="code">admin/teacher-list</span></a>
-        <a href="admin/teacher-detail.html">教师详情<span class="code">admin/teacher-detail</span></a>
+        <a href="admin/teacher-list.html">教师资源池<span class="code">admin/teacher-list</span></a>
+        <a href="admin/teacher-detail.html?id=T001">教师详情（8 Tab）<span class="code">admin/teacher-detail</span></a>
+        <a href="admin/teacher-form.html?id=T007">教师资料编辑<span class="code">admin/teacher-form</span></a>
+        <a href="admin/teacher-exit.html?id=T001">退出合作交接向导<span class="code">admin/teacher-exit</span></a>
         <a href="admin/lead-list.html">客户线索<span class="code">admin/lead-list</span></a>
         <a href="admin/lead-detail.html">线索详情 / 转学员<span class="code">admin/lead-detail</span></a>
         <a href="admin/agent-list.html">代理管理<span class="code">admin/agent-list</span></a>
@@ -75,7 +77,7 @@
         <a href="resource/wordbook-detail.html">词库详情 / 单词多释义<span class="code">resource/wordbook-detail</span></a>
         <a href="resource/article-list.html">文章管理<span class="code">resource/article-list</span></a>
         <a href="resource/article-detail.html">文章详情 / 句子拆分<span class="code">resource/article-detail</span></a>
-        <a href="resource/import.html">资源导入（9 步）<span class="code">resource/import</span></a>
+        <a href="resource/import.html">批量导入词库<span class="code">resource/import</span></a>
       </div>
       <div class="divider"></div>
       <div class="m-desc" style="margin-bottom:0">
@@ -147,7 +149,7 @@
         <a href="admin/order-create.html">订单生效才生成课时账户与流水 <span class="tag tag-red nodot" style="font-size:10px">账务</span></a>
         <a href="admin/hour-account.html">余额不足 → 课程进「待处理」，不产生负数 <span class="tag tag-red nodot" style="font-size:10px">扣课</span></a>
         <a href="admin/hour-flow.html">误扣只能冲正，原流水不可删 <span class="tag tag-red nodot" style="font-size:10px">幂等</span></a>
-        <a href="admin/teacher-list.html">停用教师先检查未来预约 <span class="tag tag-red nodot" style="font-size:10px">校验</span></a>
+        <a href="admin/teacher-list.html">教师暂停/退出前检查未来课程与学员 <span class="tag tag-red nodot" style="font-size:10px">校验</span></a>
         <a href="teacher/word-training-prescreen.html">超过 45 个只取前 45，其余保留待训练 <span class="tag tag-red nodot" style="font-size:10px">引擎</span></a>
         <a href="teacher/word-training.html">暂不确定 ≠ 掌握；两套复习体系不强绑 <span class="tag tag-red nodot" style="font-size:10px">算法</span></a>
         <a href="agent/customer-create.html">重复手机号 → 归属审核提示 <span class="tag tag-red nodot" style="font-size:10px">归属</span></a>
@@ -203,11 +205,18 @@
           </div>
         </div>
         <div>
-          <div class="section-title">数据模型（24 张业务表）</div>
+          <div class="section-title">数据模型（31 张业务表）</div>
           <div class="note-list" style="columns:2;column-gap:18px">
-            <div>words 基础单词</div>
-            <div>wordbooks 词库</div>
-            <div>wordbookWords 词库词关系</div>
+            <div><b>teachers 教师档案（永不物理删除）</b></div>
+            <div><b>users 登录账号（与档案分离）</b></div>
+            <div><b>teacherStudents 师生负责关系（含历史）</b></div>
+            <div><b>teacherCooperations 合作流水</b></div>
+            <div><b>teacherChanges 资料变更记录</b></div>
+            <div>words 基础单词（按英文唯一）</div>
+            <div>wordbooks 词库（一份 Excel 一个）</div>
+            <div>wordbookWords 词库关联（含排序/来源行号）</div>
+            <div>importBatches 导入批次</div>
+            <div>importJobs 导入任务（文件级）</div>
             <div>prescreens 预筛选记录</div>
             <div>trainTasks 训练任务</div>
             <div>trainDetails 训练明细</div>
@@ -324,6 +333,172 @@
             <a class="btn btn-sm" href="teacher/article-training.html">④ 文章训练</a>
             <a class="btn btn-sm" href="parent/review-words.html">⑤ 家长端词表</a>
             <a class="btn btn-sm" href="admin/hour-flow.html">⑥ 课时流水</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head">
+      <div class="card-title">第五轮迭代 · 兼职教师全生命周期
+        <span class="hint">合作状态与账号状态分离 · 师生关系独立成表 · 退出必须交接</span></div>
+      <div class="flex gap8">
+        <span class="badge-role">存储版本 v6</span>
+        <button class="btn btn-sm" onclick="resetStore()">重置演示数据</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div><b>本轮把教师从「员工记录」改成「资源池」。</b>
+          机构教师全部兼职（大学生、在校研究生、其他兼职人员），流动频繁：
+          有人中途暂停、有人正式退出、退出后又回来。<br>
+          所以教师档案要与登录账号<b>分离</b>（账号只解决能不能登录），
+          教师与学员的负责关系要<b>独立成表</b>（不能只在学员表存一个 teacherName 然后覆盖），
+          每次状态变更都要留<b>合作流水</b>，而历史课程永远保留当时的授课教师。</div></div>
+
+      <div class="grid g2" style="gap:16px">
+        <div>
+          <div class="section-title">这一轮解决的六个问题</div>
+          <div class="note-list">
+            <div style="margin-bottom:9px"><b>1 · 三套状态词表，互不推导</b><br>
+              合作状态（待启用 / 可授课 / 暂停合作 / 已退出）、账号状态（未开通 / 正常 / 已禁用）、
+              课程状态（待上课 / 授课中 / 已完成 / 未上课 / 已取消）各管一件事：
+              暂停合作不等于课程取消，账号被禁用也不等于合作结束。</div>
+            <div style="margin-bottom:9px"><b>2 · 建档轻量，逐步完善</b><br>
+              只填姓名 + 手机号即可建档，编号自动生成（T001…），初始状态「待启用」。
+              手机号同机构唯一；<b>已退出教师再次录入会被拦下</b>，只能走「恢复原档案」，同一自然人不产生第二份档案。</div>
+            <div style="margin-bottom:9px"><b>3 · 师生关系独立成表</b><br>
+              <code>teacherStudents</code> 记录谁在什么时间负责谁、分配原因、结束原因；
+              换教师 = 原关系结束 + 新关系创建，历史关系永不删除。
+              学员表的 <code>teacherName</code> 只是<b>派生缓存</b>，由关系表实时重算。</div>
+            <div style="margin-bottom:9px"><b>4 · 暂停与恢复</b><br>
+              暂停要填原因、开始日期、预计恢复；系统检查未来有效课程，逐节决定「保留待确认 / 改派 / 取消」；
+              当前学员关系<b>保留</b>但标记需教务关注，不因暂停而删除归属。恢复后关系不自动重建，由教务重新确认。</div>
+            <div style="margin-bottom:9px"><b>5 · 退出是一套交接流程</b><br>
+              先列当前学员（含剩余课时、最近授课、是否有接替教师），再列未来课程与未完成记录；
+              每个学员必须「转交 / 解除」，每节课必须「改派 / 取消 / 保留待调整」，否则<b>不允许确认退出</b>；
+              整个退出在一个事务里完成，中途失败（含账号禁用失败）整体回滚。</div>
+            <div><b>6 · 历史永远不被覆盖</b><br>
+              课程自带教师快照（ID + 编号 + 姓名）；已完成课程<b>禁止</b>改派；改派只发生在未来课程上，
+              并且写入改派记录（原教师 / 新教师 / 原因 / 操作人 / 时间）。</div>
+          </div>
+        </div>
+        <div>
+          <div class="section-title">端到端验证路径（九个场景）</div>
+          <div class="note-list">
+            <div style="margin-bottom:9px"><b>① 新教师加入</b>　教师管理 → + 新增教师 → 填姓名与手机号 →
+              自动生成 T008，状态「待启用」；重复录入同一手机号被拦下。</div>
+            <div style="margin-bottom:9px"><b>② 教师启用</b>　详情页开通账号 → 完善教学能力 → 启用 →
+              状态变「可授课」，排课与分配界面立即可选。</div>
+            <div style="margin-bottom:9px"><b>③ 负责学员</b>　详情页「分配学员」→ 选学员 + 填原因 →
+              学员当前教师更新，刷新后仍在。</div>
+            <div style="margin-bottom:9px"><b>④ 暂停合作</b>　填原因 → 处理未来课程 → 确认 →
+              从可分配池消失，历史记录仍可查。</div>
+            <div style="margin-bottom:9px"><b>⑤ 恢复合作</b>　详情页「恢复合作」→ 账号重新启用 →
+              原学员关系不自动恢复。</div>
+            <div style="margin-bottom:9px"><b>⑥ 教师更换</b>　学员列表「分配教师」或教师详情「更换教师」→
+              原关系结束、新关系创建；张老师的历史学员里仍能看到该学员。</div>
+            <div style="margin-bottom:9px"><b>⑦ 正式退出</b>　有 3 名学员 + 2 节未来课 → 退出向导逐项处理 →
+              确认退出 → 账号禁用、历史全部保留。</div>
+            <div style="margin-bottom:9px"><b>⑧ 重新加入</b>　已退出教师用同一手机号再录入 → 提示恢复原档案 →
+              重新走启用流程，历史合作记录仍在。</div>
+            <div><b>⑨ 异常保护</b>　有学员/未来课时不能退出；中途失败整体回滚；
+              历史课程教师不可批量覆盖；无权限角色调用写操作直接被 Store 拦截。</div>
+          </div>
+          <div class="flex gap8 mt12" style="flex-wrap:wrap">
+            <a class="btn btn-sm btn-primary" href="admin/teacher-list.html">教师资源池</a>
+            <a class="btn btn-sm" href="admin/teacher-detail.html?id=T001">教师详情（8 Tab）</a>
+            <a class="btn btn-sm" href="admin/teacher-form.html?id=T007">编辑资料</a>
+            <a class="btn btn-sm" href="admin/teacher-exit.html?id=T001">退出合作向导</a>
+            <a class="btn btn-sm" href="admin/student-list.html">学员分配</a>
+            <a class="btn btn-sm" href="admin/schedule-calendar.html">排课（教师池）</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head">
+      <div class="card-title">第四轮迭代 · 词库批量导入与资源入库
+        <span class="hint">一份 Excel 一个词库 · 基础单词跨库复用 · 文件级原子入库</span></div>
+      <div class="flex gap8">
+        <span class="badge-role">存储版本 v5</span>
+        <button class="btn btn-sm" onclick="resetStore()">重置演示数据</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div><b>本轮把「资源入库」从单文件演示做成真实场景。</b>
+          机构一次收到十几份 Excel，批量选中后浏览器<b>本地真实解析</b>（SheetJS，不上传服务器），
+          每个文件生成一个词库，词库名称/分类/学段/版本/年级等可在入库前逐个修改；
+          同一个英文单词出现在不同词库里，<b>只保留一条基础单词</b>，多出来的只是词库关联。</div></div>
+
+      <div class="grid g2" style="gap:16px">
+        <div>
+          <div class="section-title">这一轮解决的六个问题</div>
+          <div class="note-list">
+            <div style="margin-bottom:9px"><b>1 · 真选择、真解析</b><br>
+              多选 / 拖拽 / 追加 / 移除 / 清空；解析后按文件给出工作表、表头行、数据起始行。
+              封面页、说明页不会被当成数据；表头用同义词识别（单词 / 英文 / word / 词汇…），
+              <b>认不出就手动映射，不按位置猜列</b>。</div>
+            <div style="margin-bottom:9px"><b>2 · 三段式词库模型</b><br>
+              <code>words</code> 基础单词（按英文唯一）+ <code>wordbooks</code> 词库 + <code>wordbookWords</code> 关联。
+              排序、来源文件、原始行号都记在<b>关联</b>上：调整本词库顺序不影响其他词库，
+              从词库移除单词也不删除基础单词、不动学员学习状态。</div>
+            <div style="margin-bottom:9px"><b>3 · 三类重复分开计数</b><br>
+              A 文件内重复 → 跳过重复行；B 目标词库已有 → 跳过重复关联；
+              C 其他词库已有 → <b>复用基础单词</b>，只新增关联。
+              三种数量在文件卡片和导入记录里分别统计，不混成一个「重复」。</div>
+            <div style="margin-bottom:9px"><b>4 · 文件级原子入库</b><br>
+              先算完整写入计划，再一次性落库；中途任何异常整体回滚，不会出现「建了词库只写了一半单词」。
+              一个文件失败不影响同批其他文件已经成功的词库。</div>
+            <div style="margin-bottom:9px"><b>5 · 入库留痕与失败行</b><br>
+              每次导入生成批次 + 文件级记录：解析行数、新增基础单词、新增关联、跳过、失败、失败原因。
+              缺必填 / 格式异常的行可<b>下载成 CSV</b>（带 BOM，Excel 直接打开），修正后重新导入。</div>
+            <div><b>6 · 词库可维护、可被训练使用</b><br>
+              列表按名称 / 分类 / 学段 / 版本 / 状态筛选，可启停；详情按词库 ID 取<b>本词库的关联单词</b>，
+              支持搜索、筛缺音标/缺音频、调排序、编辑基础单词、移除关联、继续导入、查看导入历史。</div>
+          </div>
+        </div>
+        <div>
+          <div class="section-title">端到端验证路径（五个场景）</div>
+          <div class="note-list">
+            <div style="margin-bottom:10px">
+              <b>① 一次选 3 个文件 → 3 个词库</b><br>
+              资源中心 → 批量导入 → 选中 <code>WOWEnglish-全季.xlsx</code>、<code>小学考纲词库.xlsx</code>、
+              <code>初中超前词汇.xlsx</code> → 三张卡片各自显示解析行数与有效单词 → 全部入库 → 生成 3 个词库。
+            </div>
+            <div style="margin-bottom:10px">
+              <b>② 入库前改信息</b><br>
+              在卡片「入库信息」里把名称改成「WOWEnglish 全季词库」、分类改成「课程体系」，只填名称也能入库。
+            </div>
+            <div style="margin-bottom:10px">
+              <b>③ 第二批含已有单词</b><br>
+              再传 <code>新初一单词.xlsx</code>：<code>name / nice / meet / friend</code> 显示为「已存在单词」，
+              不重复创建基础单词；原词库排序与学员复习状态都不变。
+            </div>
+            <div style="margin-bottom:10px">
+              <b>④ 文件内重复</b><br>
+              <code>人教版一年级起点.xlsx</code> 里 red / blue 各出现 3 次 → 卡片显示「文件内重复 3 行」，
+              只写入 7 个单词，不会重复关联。
+            </div>
+            <div style="margin-bottom:10px">
+              <b>⑤ 坏文件独立失败</b><br>
+              同批放一个只有封面的 <code>外研社版中学英语(全).xlsx</code>：它自己失败并留下记录，
+              另外两个文件照常入库；失败行可下载 CSV。
+            </div>
+            <div>
+              <b>⑥ 刷新与教师端</b><br>
+              刷新后词库、关联、导入历史都在；进教师端「单词训练 → 选择词库」能直接选到刚导入的词库。
+            </div>
+          </div>
+          <div class="flex gap8 mt12" style="flex-wrap:wrap">
+            <a class="btn btn-sm btn-primary" href="resource/import.html">批量导入</a>
+            <a class="btn btn-sm" href="resource/wordbook-list.html">词库管理</a>
+            <a class="btn btn-sm" href="resource/wordbook-detail.html?id=WB001">词库详情</a>
+            <a class="btn btn-sm" href="teacher/word-training-setup.html">教师端选词库</a>
           </div>
         </div>
       </div>

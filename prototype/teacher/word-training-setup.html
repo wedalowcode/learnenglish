@@ -47,7 +47,7 @@
           <div class="table-wrap">
             <table class="table">
               <thead>
-                <tr><th style="width:40px"></th><th>词库名称</th><th>单元</th><th class="right">单词数量</th>
+                <tr><th style="width:40px"></th><th>词库名称</th><th>教材 / 年级</th><th class="right">单词数量</th>
                   <th class="right">学员已训练</th><th class="right">已掌握</th><th class="right">待复习</th><th>状态</th></tr>
               </thead>
               <tbody id="rows"></tbody>
@@ -139,22 +139,26 @@ function bookStat(bookId) {
 }
 
 function render() {
-  const books = Store.wordbooks().filter(b => b.book === '人教版');
+  /* 只列「启用且真的有关联单词」的词库：批量导入进来的词库会直接出现在这里 */
+  const books = Store.wordbooks()
+    .filter(b => b.status === '启用')
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   Proto.renderRows('rows', books, b => {
-    const s = b.hasWords ? bookStat(b.id) : { trained: 0, mastered: 0, review: 0 };
-    const dis = b.hasWords ? '' : 'style="opacity:.55;cursor:not-allowed"';
-    return `<tr ${b.hasWords ? `onclick="pick('${b.id}')"` : `onclick="Proto.toast('该词库在原型中未内置单词清单，仅 WB001 提供 23 词演示数据','warn')"`} style="cursor:pointer" ${dis}>
-      <td><input type="radio" name="book" ${selected === b.id ? 'checked' : ''} ${b.hasWords ? '' : 'disabled'}
-        onclick="event.stopPropagation();${b.hasWords ? `pick('${b.id}')` : ''}"></td>
-      <td class="strong">${b.name}</td>
-      <td>${b.unit}</td>
-      <td class="right mono">${b.count}</td>
-      <td class="right mono">${b.hasWords ? s.trained : '—'}</td>
-      <td class="right mono" style="color:var(--success)">${b.hasWords ? s.mastered : '—'}</td>
-      <td class="right mono" style="color:var(--warning)">${b.hasWords ? s.review : '—'}</td>
-      <td>${b.hasWords ? `<span class="tag tag-green">启用</span>` : `<span class="tag tag-slate">未内置词表</span>`}</td>
+    const has = b.wordCount > 0;
+    const s = has ? bookStat(b.id) : { trained: 0, mastered: 0, review: 0 };
+    const dis = has ? '' : 'style="opacity:.55;cursor:not-allowed"';
+    return `<tr ${has ? `onclick="pick('${b.id}')"` : `onclick="Proto.toast('这个词库还没有单词，先到资源中心导入词表','warn')"`} style="cursor:pointer" ${dis}>
+      <td><input type="radio" name="book" ${selected === b.id ? 'checked' : ''} ${has ? '' : 'disabled'}
+        onclick="event.stopPropagation();${has ? `pick('${b.id}')` : ''}"></td>
+      <td class="strong">${b.name}${b.sourceFile ? `<div class="small muted">${b.sourceFile}</div>` : ''}</td>
+      <td class="small">${[b.bookVersion, b.grade, b.term].filter(Boolean).join(' / ') || '<span class="muted">未指定</span>'}</td>
+      <td class="right mono">${b.wordCount}</td>
+      <td class="right mono">${has ? s.trained : '—'}</td>
+      <td class="right mono" style="color:var(--success)">${has ? s.mastered : '—'}</td>
+      <td class="right mono" style="color:var(--warning)">${has ? s.review : '—'}</td>
+      <td>${has ? `<span class="tag tag-green">启用</span>` : `<span class="tag tag-slate">空词库</span>`}</td>
     </tr>`;
-  }, 8);
+  }, 12);
 
   renderResume();
   renderTasks();
@@ -163,7 +167,7 @@ function render() {
     const b = Store.wordbook(selected);
     const s = bookStat(selected);
     document.getElementById('selInfo').innerHTML =
-      `已选择 <b style="color:var(--text)">${b.name}</b> · 共 ${b.count} 词 · 已训练 ${s.trained} · 已掌握 ${s.mastered} · 待复习 ${s.review}`;
+      `已选择 <b style="color:var(--text)">${b.name}</b> · 共 ${b.wordCount} 词 · 已训练 ${s.trained} · 已掌握 ${s.mastered} · 待复习 ${s.review}`;
     document.getElementById('startBtn').disabled = false;
   }
 }

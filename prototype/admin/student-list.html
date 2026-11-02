@@ -110,18 +110,16 @@
   </div>
   <div class="modal-body">
     <div class="alert alert-warn mb16"><span class="ico">!</span>
-      <div>调整教师归属后，<b>历史课程仍保留原授课教师</b>，不会被覆盖。</div></div>
+      <div id="as_warn">调整教师归属后，<b>历史课程仍保留原授课教师</b>，不会被覆盖。</div></div>
     <div class="field mb12"><label>学员</label><input class="input" id="as_student" disabled></div>
     <div class="field mb12"><label>当前教师</label><input class="input" id="as_old" disabled></div>
     <div class="field mb12"><label>新负责教师 <span class="req">*</span></label>
-      <select class="select" id="as_new">
-        <option value="">请选择教师</option>
-        <option>李婉</option><option>周雅</option><option>何俊</option><option>沈心怡</option>
-      </select>
-      <div class="tip">仅显示处于「在职」且可授课的教师</div>
+      <select class="select" id="as_new"></select>
+      <div class="tip" id="as_tip">仅列出「可授课」教师，按当前学员数与擅长年级排序</div>
     </div>
-    <div class="field mb12"><label>生效时间</label><input class="input" type="date" value="2026-11-02"></div>
-    <div class="field"><label>调整原因</label><textarea class="textarea" placeholder="必填，将记入操作日志"></textarea></div>
+    <div class="field mb12"><label>生效时间</label><input class="input" type="date" id="as_date" value="2026-11-02"></div>
+    <div class="field"><label>调整原因 <span class="req">*</span></label>
+      <textarea class="textarea" id="as_reason" placeholder="必填，将写入师生关系记录，可追溯"></textarea></div>
   </div>
   <div class="modal-foot">
     <button class="btn" onclick="Proto.closeDrawer('assign')">取消</button>
@@ -132,8 +130,19 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'admin', active: 'student-list' });
+Store.setSession({ role: 'admin', operatorName: '张敏' });
+const S = Store;
+
+/* 当前教师筛选项来自真实教师 + 未分配 */
+(function initTeacherFilter() {
+  const sel = document.getElementById('f_teacher');
+  const names = S.teachers().filter(t => S.currentRelationsOf(t.id).length).map(t => t.name);
+  sel.innerHTML = '<option value="">全部教师</option>' +
+    names.map(n => `<option>${n}</option>`).join('') + '<option>未分配</option>';
+})();
 
 const STATUS_TAG = { '在读': 'tag-green', '暂停': 'tag-amber', '已关闭': 'tag-slate' };
 
@@ -150,7 +159,7 @@ function currentFilter() {
 
 function applyFilter() {
   const f = currentFilter();
-  const rows = DB.students.filter(s => {
+  const rows = S.students().filter(s => {
     if (f.kw && !(s.name.includes(f.kw) || s.id.toLowerCase().includes(f.kw.toLowerCase()))) return false;
     if (f.phone && !s.phone.includes(f.phone)) return false;
     if (f.grade && s.grade !== f.grade) return false;
@@ -181,7 +190,7 @@ function applyFilter() {
       <td class="ops">
         <a class="btn-link" href="student-detail.html">详情</a>
         <a class="btn-link" href="student-form.html">编辑</a>
-        <button class="btn-link" onclick="openAssign('${s.name}','${s.teacherName}')">分配教师</button>
+        <button class="btn-link" onclick="openAssign('${s.id}')">分配教师</button>
         ${s.status === '在读'
           ? `<button class="btn-link mute" onclick="pause('${s.name}')">暂停</button>`
           : `<button class="btn-link mute" onclick="Proto.toast('已恢复服务（示意）','ok')">恢复</button>`}
@@ -195,17 +204,44 @@ function resetFilter() {
   applyFilter();
 }
 
-function openAssign(name, teacher) {
-  document.getElementById('as_student').value = name;
-  document.getElementById('as_old').value = teacher;
+let assignStudentId = '';
+function openAssign(sid) {
+  assignStudentId = sid;
+  const s = S.student(sid);
+  const cur = S.activeRelationOfStudent(sid);
+  const curT = cur ? S.teacher(cur.teacherId) : null;
+  document.getElementById('as_student').value = `${s.name} · ${s.grade} · 剩余 ${s.remain} 课时`;
+  document.getElementById('as_old').value = curT ? `${curT.name}（${cur.startAt} 起）` : '未分配';
+  document.getElementById('as_date').value = S.TODAY;
+  document.getElementById('as_reason').value = '';
+  document.getElementById('as_warn').innerHTML = cur
+    ? `该学员当前由 <b>${curT.name}</b> 负责。更换后会<b>结束原关系并新建一条关系</b>，
+       历史课程仍保留原授课教师；分配原因必填。`
+    : `该学员当前未分配教师。分配后创建一条负责关系，学员立刻出现在对应教师的「我的学员」中。`;
+  const pool = S.teacherPool({ grade: s.grade, textbook: s.book });
+  document.getElementById('as_new').innerHTML = '<option value="">请选择教师</option>' +
+    pool.map(p => `<option value="${p.teacher.id}" ${cur && cur.teacherId === p.teacher.id ? 'disabled' : ''}>
+      ${p.teacher.name}（当前 ${p.stat.currentStudents} 人 · ${p.teacher.grades.join('/') || '年级未填'}）
+      ${p.full ? '· 年级与教材匹配' : '· ' + p.miss.join('+')}</option>`).join('');
+  document.getElementById('as_tip').innerHTML =
+    `仅列出「可授课」教师；已按学员年级（${s.grade}）与教材（${s.book}）优先排序，
+     匹配度不足的排在后面并标注原因；暂停与已退出教师不出现`;
   Proto.openDrawer('assign');
 }
 
 function doAssign() {
-  const v = document.getElementById('as_new').value;
-  if (!v) { Proto.toast('请选择新的负责教师', 'err'); return; }
-  Proto.closeDrawer('assign');
-  Proto.toast('教师归属已调整，历史课程授课教师保持不变', 'ok');
+  const tid = document.getElementById('as_new').value;
+  const reason = document.getElementById('as_reason').value.trim();
+  if (!tid) { Proto.toast('请选择新的负责教师', 'err'); return; }
+  if (!reason) { Proto.toast('请填写调整原因', 'err'); return; }
+  try {
+    S.transferStudent(assignStudentId, tid, {
+      reason: reason, effectiveAt: document.getElementById('as_date').value
+    });
+    Proto.closeDrawer('assign');
+    Proto.toast('教师归属已更新，历史课程授课教师保持不变', 'ok');
+    applyFilter();
+  } catch (e) { Proto.toast(e.message, 'err'); }
 }
 
 function pause(name) {
