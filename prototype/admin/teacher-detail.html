@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>教师详情</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学管理<span class="sep">/</span><a href="teacher-list.html">教师管理</a><span class="sep">/</span>教师详情</div>
+          <h1 class="page-title">李婉 <span class="tag tag-green" style="font-size:12px;vertical-align:middle">在职</span></h1>
+          <div class="page-sub">T001 · 七年级 / 八年级 · 人教版 · 入职 2024-03-01 · 13801234567</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="teacher-list.html">返回</a>
+          <button class="btn" onclick="Proto.toast('打开编辑表单（示意）')">编辑资料</button>
+          <button class="btn" onclick="Proto.toast('前往学员分配（示意）')">分配学员</button>
+          <button class="btn btn-danger" onclick="tryDisable()">停用教师</button>
+        </div>
+      </div>
+
+      <div class="grid g4 mb16">
+        <div class="card stat"><div class="stat-label">当前负责学员</div><div class="stat-value">2<small>人</small></div>
+          <div class="stat-foot">陈可欣、付嘉禾</div></div>
+        <div class="card stat"><div class="stat-label">本月完成课程</div><div class="stat-value">26<small>节</small></div>
+          <div class="stat-foot"><span class="trend-up">↑ 13%</span> 较上月</div></div>
+        <div class="card stat"><div class="stat-label">本月授课课时</div><div class="stat-value">26<small>课时</small></div>
+          <div class="stat-foot">均按已完成扣课统计</div></div>
+        <div class="card stat"><div class="stat-label">课程完成率</div><div class="stat-value">93<small>%</small></div>
+          <div class="stat-foot">2 节取消 / 未上课</div></div>
+      </div>
+
+      <div class="card">
+        <div class="tabs" id="ttabs">
+          <button class="tab active" data-pane="t1">基础资料</button>
+          <button class="tab" data-pane="t2">当前学员<span class="count">2</span></button>
+          <button class="tab" data-pane="t3">历史学员<span class="count">3</span></button>
+          <button class="tab" data-pane="t4">课程安排</button>
+          <button class="tab" data-pane="t5">授课记录</button>
+          <button class="tab" data-pane="t6">教学统计</button>
+        </div>
+
+        <div class="tab-pane active" id="t1">
+          <div class="grid g2" style="gap:24px">
+            <div>
+              <div class="section-title">教师信息</div>
+              <div class="desc g1">
+                <div class="desc-item"><span class="k">教师编号</span><span class="v mono">T001</span></div>
+                <div class="desc-item"><span class="k">姓名</span><span class="v">李婉</span></div>
+                <div class="desc-item"><span class="k">性别</span><span class="v">女</span></div>
+                <div class="desc-item"><span class="k">手机号</span><span class="v mono">13801234567</span></div>
+                <div class="desc-item"><span class="k">学校</span><span class="v">华东师范大学</span></div>
+                <div class="desc-item"><span class="k">专业</span><span class="v">英语教育</span></div>
+                <div class="desc-item"><span class="k">擅长年级</span><span class="v">七年级、八年级</span></div>
+                <div class="desc-item"><span class="k">擅长教材</span><span class="v">人教版</span></div>
+                <div class="desc-item"><span class="k">入职时间</span><span class="v">2024-03-01</span></div>
+                <div class="desc-item"><span class="k">账号状态</span><span class="v"><span class="tag tag-green">正常</span> 13801234567</span></div>
+              </div>
+            </div>
+            <div>
+              <div class="section-title">个人简介</div>
+              <div style="background:var(--bg);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--text-2);line-height:1.8">
+                6 年一对一英语教学经验，擅长词汇与阅读训练。课堂以「预筛 → 分组强化 → 最后一轮复习」为主线，
+                配合莱特纳与 21 天两套复习体系做长期记忆管理。
+              </div>
+              <div class="section-title mt16">教学特点标签</div>
+              <div class="flex gap8" style="flex-wrap:wrap">
+                <span class="tag tag-blue nodot">词汇强化</span>
+                <span class="tag tag-blue nodot">自然拼读</span>
+                <span class="tag tag-blue nodot">阅读训练</span>
+                <span class="tag tag-blue nodot">家长沟通及时</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="t2">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>学员</th><th>年级</th><th>教材</th><th>剩余课时</th><th>最近上课</th><th>待复习单词</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody id="curStudents"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="t3">
+          <div class="alert alert-info mb16"><span class="ico">i</span>
+            <div>学员归属已调整，历史课程仍保留<b>当时</b>的授课教师为李婉，不会被新归属覆盖。</div></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>学员</th><th>年级</th><th>授课期间</th><th>授课节数</th><th>调整原因</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr><td class="strong">吴思远</td><td>九年级</td><td>2026-08-30 ~ 2026-10-12</td><td class="mono">6</td><td>家长指定换教师</td>
+                  <td><button class="btn-link" onclick="Proto.toast('查看历史授课记录（示意）')">查看记录</button></td></tr>
+                <tr><td class="strong">孙雨桐</td><td>三年级</td><td>2026-06-11 ~ 2026-07-20</td><td class="mono">4</td><td>年级方向不匹配</td>
+                  <td><button class="btn-link" onclick="Proto.toast('查看历史授课记录（示意）')">查看记录</button></td></tr>
+                <tr><td class="strong">林雨萱</td><td>二年级</td><td>2026-09-18 ~ 2026-09-30</td><td class="mono">2</td><td>调整至低年级教师</td>
+                  <td><button class="btn-link" onclick="Proto.toast('查看历史授课记录（示意）')">查看记录</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="t4">
+          <div class="flex jcb mb12">
+            <div class="small muted">今日 3 节 · 本周 11 节 · 未来 7 天 9 节</div>
+            <a class="btn btn-sm" href="schedule-calendar.html">前往排课</a>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>日期</th><th>时间</th><th>学员</th><th>课程类型</th><th>会议链接</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody id="teacherCourses"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="t5">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>课程日期</th><th>学员</th><th>教学主题</th><th class="right">训练单词</th><th class="right">文章</th><th>报告</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr><td>2026-11-02</td><td>陈可欣</td><td>Unit 1 词汇强化</td><td class="right mono">23</td><td class="right mono">—</td>
+                  <td><span class="tag tag-green">已提交</span></td><td><button class="btn-link" onclick="Proto.toast('查看教学记录（示意）')">查看</button></td></tr>
+                <tr><td>2026-10-31</td><td>陈可欣</td><td>Unit 3 词汇强化 + 短文听读</td><td class="right mono">23</td><td class="right mono">1</td>
+                  <td><span class="tag tag-green">已提交</span></td><td><button class="btn-link" onclick="Proto.toast('查看教学记录（示意）')">查看</button></td></tr>
+                <tr><td>2026-10-30</td><td>付嘉禾</td><td>Unit 1 单词初筛</td><td class="right mono">23</td><td class="right mono">—</td>
+                  <td><span class="tag tag-amber">草稿</span></td><td><a class="btn-link" href="../teacher/teaching-record.html">去提交</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="t6">
+          <div class="grid g2">
+            <div class="card">
+              <div class="card-head"><div class="card-title">近 6 个月授课量</div></div>
+              <div class="card-body">
+                <div class="bars">
+                  <div class="b"><i style="height:58%"></i><span>6月</span></div>
+                  <div class="b"><i style="height:64%"></i><span>7月</span></div>
+                  <div class="b"><i style="height:42%"></i><span>8月</span></div>
+                  <div class="b"><i style="height:78%"></i><span>9月</span></div>
+                  <div class="b"><i style="height:88%"></i><span>10月</span></div>
+                  <div class="b"><i style="height:92%"></i><span>11月</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><div class="card-title">教学质量指标</div></div>
+              <div class="card-body">
+                <div class="flex jcb small mb8"><span>报告按时提交率</span><span class="mono">96%</span></div>
+                <div class="bar mb16"><i style="width:96%"></i></div>
+                <div class="flex jcb small mb8"><span>课程完成率</span><span class="mono">93%</span></div>
+                <div class="bar green mb16"><i style="width:93%"></i></div>
+                <div class="flex jcb small mb8"><span>学员续费意愿（家长反馈）</span><span class="mono">良好</span></div>
+                <div class="bar amber mb16"><i style="width:78%"></i></div>
+                <div class="small muted mt12">口径：报告按时提交率 = 课程结束后 24h 内提交的报告数 / 应提交数</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'teacher-list' });
+
+const mine = DB.students.filter(s => s.teacherName === '李婉');
+Proto.renderRows('curStudents', mine, s => `
+  <tr><td class="strong"><a href="student-detail.html">${s.name}</a></td><td>${s.grade}</td><td>${s.book}</td>
+    <td class="mono" ${s.remain < 10 ? 'style="color:var(--danger);font-weight:600"' : ''}>${s.remain}</td>
+    <td class="small muted">${s.lastCourse}</td><td class="mono">${s.words.review}</td>
+    <td><span class="tag tag-green">${s.status}</span></td>
+    <td class="ops"><a class="btn-link" href="student-detail.html">档案</a>
+      <a class="btn-link" href="../teacher/student-profile.html">学习档案</a></td></tr>`, 8, '暂无在负责学员');
+
+const tc = DB.courses.filter(c => c.teacher === '李婉' && c.date >= DB.today);
+Proto.renderRows('teacherCourses', tc, c => `
+  <tr><td>${c.date}</td><td class="mono">${c.start}-${c.end}</td><td class="strong">${c.student}</td>
+    <td>${c.type}</td>
+    <td>${c.meeting === '已生成'
+      ? '<span class="tag tag-green nodot">已生成</span>' : '<span class="tag tag-slate nodot">未生成</span>'}</td>
+    <td><span class="tag ${c.status === '已完成' ? 'tag-green' : 'tag-blue'}">${c.status}</span></td>
+    <td class="ops"><a class="btn-link" href="course-detail.html">详情</a></td></tr>`, 7, '暂无课程安排');
+
+function tryDisable() {
+  const future = DB.courses.filter(c => c.teacher === '李婉' && c.date >= DB.today && c.status !== '已取消');
+  Proto.confirmBox('无法停用',
+    `李婉 还有 <b>${future.length} 个</b>未来有效预约，系统将拦截停用操作。<br><br>
+     请先在排课页重新分配或取消这些预约。`, '前往排课', () => location.href = 'schedule-calendar.html');
+}
+</script>
+</body>
+</html>

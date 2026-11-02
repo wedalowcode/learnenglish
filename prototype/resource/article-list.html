@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文章管理</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">资源中心<span class="sep">/</span>文章管理</div>
+          <h1 class="page-title">文章管理</h1>
+          <div class="page-sub">文章须可拆分为句子 · 句子顺序与文章顺序保持稳定</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="import.html">文本导入</a>
+          <button class="btn btn-primary" onclick="openForm()">+ 新增文章</button>
+        </div>
+      </div>
+
+      <div class="card filter">
+        <div class="field"><label>文章名称</label><input class="input" id="kw" placeholder="输入标题" oninput="render()"></div>
+        <div class="field"><label>教材版本</label>
+          <select class="select" id="bk" onchange="render()"><option value="">全部</option><option>人教版</option><option>外研版</option></select></div>
+        <div class="field"><label>年级</label>
+          <select class="select" id="gr" onchange="render()"><option value="">全部</option>
+            <option>五年级</option><option>六年级</option><option>七年级</option><option>八年级</option></select></div>
+        <div class="field"><label>音频状态</label>
+          <select class="select" id="au" onchange="render()"><option value="">全部</option>
+            <option>已就绪</option><option>部分缺失</option><option>未生成</option></select></div>
+        <div class="filter-actions"><button class="btn btn-primary" onclick="render()">查询</button>
+          <button class="btn" onclick="reset()">重置</button></div>
+      </div>
+
+      <div class="card mt16">
+        <div class="card-head"><div class="card-title">文章列表<span class="hint" id="cnt"></span></div>
+          <span class="small muted">音频缺失的文章仍可训练，但会记录资源异常</span></div>
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th style="width:74px">编号</th><th>文章名称</th><th>教材版本</th><th>年级</th>
+                <th>学期</th><th>单元</th><th class="right">句子数量</th><th>音频状态</th><th>资源状态</th>
+                <th style="width:180px">操作</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 <b id="total">4</b> 条</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<div class="mask" id="formModal">
+  <div class="modal wide">
+    <div class="modal-head"><div class="modal-title" id="ftitle">新增文章</div>
+      <button class="modal-close" onclick="Proto.closeModal('formModal')">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid g3">
+        <div class="field full"><label>文章标题 <span class="req">*</span></label><input class="input" placeholder="如 My First Day at School"></div>
+        <div class="field"><label>教材版本</label>
+          <select class="select"><option>人教版</option><option>外研版</option></select></div>
+        <div class="field"><label>年级</label>
+          <select class="select"><option>五年级</option><option>六年级</option><option>七年级</option><option>八年级</option></select></div>
+        <div class="field"><label>学期</label><select class="select"><option>上学期</option><option>下学期</option></select></div>
+        <div class="field"><label>单元</label><select class="select"><option>Unit 1</option><option>Unit 2</option><option>Unit 3</option></select></div>
+        <div class="field"><label>排序</label><input class="input" type="number" value="10"></div>
+        <div class="field"><label>状态</label><select class="select"><option>启用</option><option>停用</option></select></div>
+        <div class="field full"><label>文章正文（英文）<span class="req">*</span></label>
+          <textarea class="textarea" style="min-height:120px" placeholder="粘贴英文正文，系统按句号/问号/感叹号自动拆句，可人工调整"></textarea>
+          <div class="tip">保存后进入文章详情，可逐句校对中英文与音频</div></div>
+        <div class="field full"><label>中文翻译</label>
+          <textarea class="textarea" style="min-height:90px" placeholder="可粘贴整段中文，系统按句对齐"></textarea></div>
+        <div class="field full"><label>完整文章音频</label>
+          <input class="input" type="file" style="padding:5px 8px;height:auto">
+          <div class="tip">未上传时系统标记为「未生成」，不影响句子级音频</div></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('formModal')">取消</button>
+      <button class="btn btn-primary" onclick="Proto.closeModal('formModal');Proto.toast('文章已创建，请校对句子','ok')">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'article-list' });
+
+const ATAG = { '已就绪': 'tag-green', '部分缺失': 'tag-amber', '未生成': 'tag-slate' };
+
+function render() {
+  const kw = document.getElementById('kw').value.trim();
+  const bk = document.getElementById('bk').value;
+  const gr = document.getElementById('gr').value;
+  const au = document.getElementById('au').value;
+  const rows = DB.articles.filter(a => {
+    if (kw && !a.name.toLowerCase().includes(kw.toLowerCase())) return false;
+    if (bk && a.book !== bk) return false;
+    if (gr && a.grade !== gr) return false;
+    if (au && a.audio !== au) return false;
+    return true;
+  });
+  document.getElementById('cnt').textContent = `筛选结果 ${rows.length} 条`;
+  document.getElementById('total').textContent = rows.length;
+
+  Proto.renderRows('rows', rows, a => `
+    <tr>
+      <td class="mono small">${a.id}</td>
+      <td class="strong"><a href="article-detail.html">${a.name}</a></td>
+      <td>${a.book}</td>
+      <td>${a.grade}</td>
+      <td>${a.term}</td>
+      <td>${a.unit}</td>
+      <td class="right mono">${a.sentences}</td>
+      <td><span class="tag ${ATAG[a.audio]} nodot">${a.audio}</span></td>
+      <td>${a.status === '启用' ? '<span class="tag tag-green">启用</span>' : '<span class="tag tag-slate">停用</span>'}</td>
+      <td class="ops">
+        <a class="btn-link" href="article-detail.html">详情</a>
+        <button class="btn-link" onclick="openForm('${a.name}')">编辑</button>
+        <button class="btn-link" onclick="Proto.toast('已提交音频生成任务（示意）','ok')">生成音频</button>
+      </td>
+    </tr>`, 10, '没有符合条件的文章');
+}
+
+function reset() {
+  document.getElementById('kw').value = '';
+  ['bk', 'gr', 'au'].forEach(id => document.getElementById(id).value = '');
+  render();
+}
+
+function openForm(name) {
+  document.getElementById('ftitle').textContent = name ? '编辑文章 · ' + name : '新增文章';
+  Proto.openModal('formModal');
+}
+render();
+</script>
+</body>
+</html>

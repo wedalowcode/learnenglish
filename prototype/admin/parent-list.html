@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>家长管理</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学管理<span class="sep">/</span>家长列表</div>
+          <h1 class="page-title">家长管理</h1>
+          <div class="page-sub">共 5 位家长 · 关联 8 名学员 · 一个家长可关联多个孩子</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn" onclick="Proto.toast('已发送账号邀请（示意）','ok')">批量发送邀请</button>
+          <button class="btn btn-primary" onclick="openEdit()">+ 新增家长</button>
+        </div>
+      </div>
+
+      <div class="card filter">
+        <div class="field"><label>家长姓名 / 手机号</label>
+          <input class="input" id="kw" placeholder="输入姓名或手机号" oninput="render()"></div>
+        <div class="field"><label>账号状态</label>
+          <select class="select" id="st" onchange="render()">
+            <option value="">全部</option><option>启用</option><option>停用</option>
+          </select></div>
+        <div class="field"><label>关联孩子数量</label>
+          <select class="select" onchange="render()">
+            <option value="">不限</option><option>1 个</option><option>2 个及以上</option>
+          </select></div>
+        <div class="filter-actions"><button class="btn btn-primary" onclick="render()">查询</button></div>
+      </div>
+
+      <div class="card mt16">
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th>家长姓名</th><th>手机号</th><th>微信号</th><th class="center">关联孩子</th><th>孩子姓名</th>
+                  <th>与孩子关系</th><th>首次关联时间</th><th>账号状态</th><th style="width:210px">操作</th></tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 <b id="total">5</b> 条</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="alert alert-warn mt16"><span class="ico">!</span>
+        <div>解除家长与孩子的关联<b>不会删除已产生的课程、订单与课时流水</b>。解除后家长端立即不可见该孩子的数据，历史记录仍保留在机构侧。</div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- 新增/编辑家长 -->
+<div class="mask" id="editModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title" id="editTitle">新增家长</div>
+      <button class="modal-close" onclick="Proto.closeModal('editModal')">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field"><label>家长姓名 <span class="req">*</span></label><input class="input" placeholder="请输入姓名"></div>
+        <div class="field"><label>手机号码 <span class="req">*</span></label><input class="input" placeholder="11 位手机号" maxlength="11"></div>
+        <div class="field"><label>微信号</label><input class="input" placeholder="选填"></div>
+        <div class="field"><label>与孩子关系</label>
+          <select class="select"><option>父亲</option><option>母亲</option><option>祖父母</option><option>其他监护人</option></select></div>
+        <div class="field full"><label>备注</label><textarea class="textarea" placeholder="沟通偏好、接送安排等"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('editModal')">取消</button>
+      <button class="btn btn-primary" onclick="Proto.closeModal('editModal');Proto.toast('家长信息已保存','ok')">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 关联孩子 -->
+<div class="mask" id="linkModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">关联孩子</div>
+      <button class="modal-close" onclick="Proto.closeModal('linkModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span><div>已关联的孩子不可重复关联；关联后家长端即可查看该孩子的课程与学习报告。</div></div>
+      <div class="field mb12"><label>家长</label><input class="input" id="linkParent" disabled></div>
+      <div class="field mb12"><label>选择学员</label>
+        <select class="select">
+          <option value="">请选择学员（可搜索姓名 / 编号）</option>
+          <option>付嘉禾 · S2026008 · 七年级</option>
+          <option>林雨萱 · S2026007 · 二年级</option>
+          <option>孙雨桐 · S2026005 · 三年级</option>
+        </select></div>
+      <div class="field"><label>与孩子关系</label>
+        <select class="select"><option>父亲</option><option>母亲</option><option>祖父母</option><option>其他监护人</option></select></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('linkModal')">取消</button>
+      <button class="btn btn-primary" onclick="Proto.closeModal('linkModal');Proto.toast('已建立关联','ok')">确认关联</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'parent-list' });
+
+function render() {
+  const kw = document.getElementById('kw').value.trim();
+  const st = document.getElementById('st').value;
+  const rows = DB.parents.filter(p => {
+    if (kw && !(p.name.includes(kw) || p.phone.includes(kw))) return false;
+    if (st && p.status !== st) return false;
+    return true;
+  });
+  document.getElementById('total').textContent = rows.length;
+
+  Proto.renderRows('rows', rows, p => {
+    const kids = p.kids.map(id => {
+      const s = DB.students.find(x => x.id === id);
+      return s ? `<a href="student-detail.html">${s.name}</a>` : id;
+    }).join('、');
+    return `<tr>
+      <td class="strong">${p.name}</td>
+      <td class="mono">${p.phone}</td>
+      <td class="small muted">${p.wechat || '—'}</td>
+      <td class="center mono">${p.kids.length}</td>
+      <td>${kids}</td>
+      <td>${p.relation}</td>
+      <td class="small muted">${p.first}</td>
+      <td>${p.status === '启用' ? '<span class="tag tag-green">启用</span>' : '<span class="tag tag-slate">停用</span>'}</td>
+      <td class="ops">
+        <button class="btn-link" onclick="openEdit('${p.name}')">编辑</button>
+        <button class="btn-link" onclick="openLink('${p.name}')">关联孩子</button>
+        <button class="btn-link mute" onclick="unlink('${p.name}')">解除关联</button>
+        <button class="btn-link ${p.status === '启用' ? 'danger' : ''}" onclick="toggle('${p.name}','${p.status}')">${p.status === '启用' ? '停用' : '启用'}</button>
+      </td></tr>`;
+  }, 9, '没有符合条件的家长');
+}
+
+function openEdit(name) {
+  document.getElementById('editTitle').textContent = name ? '编辑家长 · ' + name : '新增家长';
+  Proto.openModal('editModal');
+}
+function openLink(name) {
+  document.getElementById('linkParent').value = name;
+  Proto.openModal('linkModal');
+}
+function unlink(name) {
+  Proto.confirmBox('解除家长与孩子的关联',
+    `确认解除 <b>${name}</b> 与孩子的关联吗？<br><br>
+     解除后家长端将不再显示该孩子的任何数据。<br>
+     <b>已产生的课程、订单、课时流水不会被删除</b>，仍可在机构侧完整追溯。`,
+    '确认解除', () => Proto.toast('已解除关联，历史数据保留', 'ok'));
+}
+function toggle(name, status) {
+  if (status === '启用') {
+    Proto.confirmBox('停用家长账号', `停用后 <b>${name}</b> 将无法登录家长端，孩子数据不受影响。`, '确认停用',
+      () => Proto.toast('账号已停用', 'ok'));
+  } else {
+    Proto.toast('账号已启用', 'ok');
+  }
+}
+render();
+</script>
+</body>
+</html>

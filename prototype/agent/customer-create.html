@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>客户报备</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">客户管理<span class="sep">/</span>客户报备</div>
+          <h1 class="page-title">客户报备</h1>
+          <div class="page-sub">提交后生成线索编号 · 系统自动检查重复手机号</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="my-customers.html">返回我的客户</a>
+          <button class="btn btn-primary" onclick="submitLead()">提交报备</button>
+        </div>
+      </div>
+
+      <div class="grid g-2-1" style="align-items:start">
+        <div class="card">
+          <div class="card-body">
+            <div class="form-section">
+              <div class="section-title">客户信息</div>
+              <div class="form-grid">
+                <div class="field" id="f_name"><label>家长姓名 <span class="req">*</span></label>
+                  <input class="input" id="i_name" placeholder="如 黄女士">
+                  <div class="err">请填写家长姓名</div></div>
+                <div class="field" id="f_phone"><label>联系电话 <span class="req">*</span></label>
+                  <input class="input" id="i_phone" placeholder="11 位手机号" maxlength="11" oninput="checkDup()">
+                  <div class="err">请输入正确的 11 位手机号</div>
+                  <div class="tip">系统按手机号检查是否已有报备记录</div></div>
+                <div class="field"><label>学生年级 <span class="req">*</span></label>
+                  <select class="select"><option value="">请选择</option>
+                    <option>一年级</option><option>二年级</option><option>三年级</option><option>四年级</option>
+                    <option>五年级</option><option>六年级</option><option>七年级</option><option>八年级</option><option>九年级</option>
+                  </select></div>
+                <div class="field"><label>意向课程</label>
+                  <select class="select"><option>30 课时包（一对一）</option>
+                    <option>60 课时包（一对一）</option><option>20 课时包（一对一）</option><option>体验课</option></select></div>
+                <div class="field full"><label>来源说明 <span class="req">*</span></label>
+                  <input class="input" placeholder="如：小区地推 / 老学员家长推荐 / 朋友圈">
+                  <div class="tip">来源说明将写在线索记录中，影响后续归属审核</div></div>
+                <div class="field full"><label>备注</label>
+                  <textarea class="textarea" placeholder="家长诉求、孩子基础情况、方便联系的时间等"></textarea></div>
+              </div>
+            </div>
+
+            <div id="dupBox"></div>
+
+            <div class="divider"></div>
+            <div class="flex gap8" style="justify-content:flex-end">
+              <a class="btn" href="my-customers.html">取消</a>
+              <button class="btn btn-primary" onclick="submitLead()">提交报备</button>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">报备规则</div></div>
+            <div class="card-body" style="font-size:12.5px;color:var(--text-2);line-height:1.9">
+              <div class="mb8">· 手机号<b style="color:var(--text)">未重复</b>：直接创建新线索，归属报备代理</div>
+              <div class="mb8">· 手机号<b style="color:var(--text)">已存在</b>：提示已有记录，进入归属审核</div>
+              <div class="mb8">· 手机号<b style="color:var(--text)">已归属本人</b>：允许补充跟进信息</div>
+              <div>· 归属冲突由机构管理员确认，<b style="color:var(--text)">不以最后报备者为准</b></div>
+            </div>
+          </div>
+
+          <div class="card mt16">
+            <div class="card-head"><div class="card-title">可报备手机号示例</div></div>
+            <div class="card-body" style="font-size:12.5px;color:var(--text-2);line-height:1.9">
+              <div class="mb8">未重复（可新建）：<b class="mono">13688889999</b></div>
+              <div class="mb8">已归属本人（可补充跟进）：<b class="mono">13611112222</b></div>
+              <div>已归属他人（需审核）：<b class="mono">13612223333</b></div>
+              <div class="small muted mt12">点击输入框右侧可快速填入以上号码进行验证。</div>
+              <div class="flex gap8 mt8">
+                <button class="btn btn-sm" onclick="quick('13611112222')">本人客户</button>
+                <button class="btn btn-sm" onclick="quick('13612223333')">他人客户</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="alert alert-info mt16"><span class="ico">i</span>
+            <div>报备成功后会生成线索编号，教务将分配给跟进人；成交后订单保留代理归属，佣金按机构规则生成。</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'agent', active: 'agent-report' });
+
+function quick(v) {
+  document.getElementById('i_phone').value = v;
+  checkDup();
+}
+
+function checkDup() {
+  const phone = document.getElementById('i_phone').value.trim();
+  const box = document.getElementById('dupBox');
+  const found = DB.leads.find(l => l.phone === phone);
+
+  if (!Proto.isPhone(phone)) {
+    box.innerHTML = '';
+    return;
+  }
+
+  if (!found) {
+    box.innerHTML = `<div class="alert alert-success mb12" style="margin-top:16px"><span class="ico">✓</span>
+      <div>该手机号<b>无重复记录</b>，提交后将创建新线索。</div></div>`;
+    return;
+  }
+
+  const isMine = found.agent === 'A001';
+  if (isMine) {
+    box.innerHTML = `<div class="alert alert-info mb12" style="margin-top:16px"><span class="ico">i</span>
+      <div><b>该手机号已归属本人</b>（线索 ${found.id} · ${found.name} · 状态 ${found.status}）。<br>
+      无需重复报备，可直接补充跟进记录。</div>
+      <div class="mt8"><a class="btn btn-sm" href="customer-detail.html">前往补充跟进</a></div></div>`;
+  } else {
+    box.innerHTML = `<div class="alert alert-warn mb12" style="margin-top:16px"><span class="ico">!</span>
+      <div><b>该手机号已存在线索</b>（${found.id} · ${found.name} · 当前归属：${found.follower}）。<br>
+      按规则进入<b>归属审核</b>：由机构管理员核对报备时间与来源说明后确认归属，
+      <b>不以最后报备者判定归属</b>。你的报备将作为补充记录提交。</div>
+      <div class="mt8 flex gap8">
+        <button class="btn btn-sm" onclick="Proto.toast('已提交归属审核，等待管理员确认','warn')">提交归属审核</button>
+        <a class="btn btn-sm" href="my-customers.html">放弃本次报备</a>
+      </div></div>`;
+  }
+}
+
+function submitLead() {
+  const name = document.getElementById('i_name').value.trim();
+  const phone = document.getElementById('i_phone').value.trim();
+  let bad = false;
+
+  Proto.markInvalid('f_name', !name); if (!name) bad = true;
+  Proto.markInvalid('f_phone', !Proto.isPhone(phone)); if (!Proto.isPhone(phone)) bad = true;
+
+  if (bad) { Proto.toast('请检查标红的必填项', 'err'); return; }
+
+  const found = DB.leads.find(l => l.phone === phone);
+  if (found && found.agent !== 'A001') {
+    Proto.toast('该手机号已存在且归属他人，已转入归属审核', 'warn');
+    return;
+  }
+  Proto.toast('报备成功，线索编号 L2026059 已生成', 'ok');
+  setTimeout(() => location.href = 'my-customers.html', 900);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>待复习单词表 · 打印</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  body { background:#e2e8f0; padding:20px 12px 40px; }
+  .sheet {
+    width:210mm; max-width:100%; min-height:297mm; margin:0 auto; background:#fff;
+    padding:14mm 14mm 18mm; box-shadow:0 6px 24px rgba(15,23,42,.14);
+    box-sizing:border-box;
+  }
+  .sheet-head { display:flex; justify-content:space-between; align-items:flex-end;
+    border-bottom:2px solid var(--text); padding-bottom:8px; margin-bottom:14px; }
+  .sheet-title { font-size:20px; font-weight:600; letter-spacing:.5px; }
+  .sheet-sub { font-size:11px; color:var(--text-3); margin-top:3px; }
+  .sheet-meta { font-size:11px; color:var(--text-2); text-align:right; line-height:1.7; }
+  .sheet table { width:100%; border-collapse:collapse; font-size:11.5px; }
+  .sheet th { background:#f1f5f9; border:1px solid #cbd5e1; padding:6px 6px; font-weight:600;
+    color:var(--text); text-align:left; font-size:11px; }
+  .sheet td { border:1px solid #cbd5e1; padding:6px; vertical-align:middle; }
+  .sheet tr:nth-child(even) td { background:#fcfdfe; }
+  .check-box { width:14px; height:14px; border:1px solid #94a3b8; border-radius:2px; display:inline-block; }
+  .sheet-foot { margin-top:14px; display:flex; justify-content:space-between; font-size:10.5px; color:var(--text-3); }
+  .toolbar { width:210mm; max-width:100%; margin:0 auto 14px; display:flex; gap:8px; align-items:center;
+    flex-wrap:wrap; background:#fff; border:1px solid var(--border); border-radius:8px; padding:12px; }
+  @media print {
+    body { background:#fff; padding:0; }
+    .sheet { box-shadow:none; width:100%; padding:0; min-height:0; }
+    .toolbar { display:none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar no-print">
+  <div class="field" style="min-width:150px"><label>学员</label>
+    <select class="select"><option>陈可欣 · 七年级</option><option>付嘉禾 · 七年级</option></select></div>
+  <div class="field" style="min-width:130px"><label>词库</label>
+    <select class="select"><option>全部词库</option><option>人教版七上 Unit 1</option><option>人教版七上 Unit 2</option></select></div>
+  <div class="field" style="min-width:130px"><label>复习体系</label>
+    <select class="select"><option>全部体系</option><option>莱特纳</option><option>21 天记忆</option></select></div>
+  <div class="field" style="min-width:130px"><label>日期</label>
+    <input class="input" type="date" value="2026-11-02"></div>
+  <div class="grow"></div>
+  <button class="btn" onclick="Proto.toast('导出 PDF 将在后续版本实现','warn')">导出 PDF</button>
+  <button class="btn btn-primary" onclick="window.print()">打印（A4）</button>
+</div>
+
+<div class="sheet">
+  <div class="sheet-head">
+    <div>
+      <div class="sheet-title">待复习单词表</div>
+      <div class="sheet-sub">启航英语 · 城东校区 · 教师：李婉</div>
+    </div>
+    <div class="sheet-meta">
+      学员：<b>陈可欣</b>（七年级）<br>
+      生成日期：2026-11-02<br>
+      共 18 个单词
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:34px">序号</th>
+        <th style="width:96px">英文单词</th>
+        <th style="width:104px">音标</th>
+        <th>中文释义</th>
+        <th style="width:96px">教材 / 单元</th>
+        <th style="width:72px">学习状态</th>
+        <th style="width:64px">家庭复习</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <div class="sheet-foot">
+    <span>说明：家庭复习勾选仅作家长辅助记录，不直接修改系统内的正式掌握状态。</span>
+    <span>第 1 页 / 共 1 页</span>
+  </div>
+</div>
+
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+const WORDS = [
+  { en: 'friend', ph: '/frend/', cn: '朋友', unit: 'Unit 1', st: '待复习' },
+  { en: 'question', ph: '/ˈkwestʃən/', cn: '问题；询问', unit: 'Unit 1', st: '待复习' },
+  { en: 'answer', ph: '/ˈɑːnsə(r)/', cn: '回答；答案', unit: 'Unit 1', st: '暂不确定' },
+  { en: 'library', ph: '/ˈlaɪbrəri/', cn: '图书馆', unit: 'Unit 1', st: '待复习' },
+  { en: 'classroom', ph: '/ˈklɑːsruːm/', cn: '教室', unit: 'Unit 1', st: '待复习' },
+  { en: 'family', ph: '/ˈfæməli/', cn: '家；家人', unit: 'Unit 1', st: '暂不确定' },
+  { en: 'class', ph: '/klɑːs/', cn: '班级；课', unit: 'Unit 1', st: '待复习' },
+  { en: 'look', ph: '/lʊk/', cn: '看；看起来', unit: 'Unit 1', st: '待复习' },
+  { en: 'first', ph: '/fɜːst/', cn: '第一的；首先', unit: 'Unit 1', st: '待复习' },
+  { en: 'last', ph: '/lɑːst/', cn: '最后的；持续', unit: 'Unit 1', st: '待复习' },
+  { en: 'happy', ph: '/ˈhæpi/', cn: '高兴的；快乐的', unit: 'Unit 2', st: '待复习' },
+  { en: 'name', ph: '/neɪm/', cn: '名字；命名', unit: 'Unit 2', st: '待复习' },
+  { en: 'nice', ph: '/naɪs/', cn: '令人愉快的；友好的', unit: 'Unit 2', st: '待复习' },
+  { en: 'meet', ph: '/miːt/', cn: '遇见；相识', unit: 'Unit 2', st: '待复习' },
+  { en: 'again', ph: '/əˈɡen/', cn: '再一次；又', unit: 'Unit 2', st: '待复习' },
+  { en: 'repeat', ph: '/rɪˈpiːt/', cn: '重复；重说', unit: 'Unit 2', st: '待复习' },
+  { en: 'practise', ph: '/ˈpræktɪs/', cn: '练习；训练', unit: 'Unit 3', st: '暂不确定' },
+  { en: 'progress', ph: '/ˈprəʊɡres/', cn: '进步；进展', unit: 'Unit 3', st: '待复习' },
+];
+
+document.getElementById('rows').innerHTML = WORDS.map((w, i) => `
+  <tr>
+    <td style="text-align:center;color:#64748b">${i + 1}</td>
+    <td style="font-weight:600;font-size:12.5px">${w.en}</td>
+    <td style="color:#475569;font-family:'Times New Roman',serif">${w.ph}</td>
+    <td>${w.cn}</td>
+    <td style="font-size:10.5px;color:#475569">人教版<br>${w.unit}</td>
+    <td style="font-size:10.5px">${w.st}</td>
+    <td style="text-align:center"><span class="check-box"></span></td>
+  </tr>`).join('');
+</script>
+</body>
+</html>

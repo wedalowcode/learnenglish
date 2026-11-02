@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>资源导入</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .dropzone {
+    border:1.5px dashed var(--border-2); border-radius:10px; background:#fbfdff;
+    padding:36px 20px; text-align:center; cursor:pointer; transition:all .15s;
+  }
+  .dropzone:hover { border-color:var(--primary); background:var(--primary-soft); }
+  .dropzone .dz-ico { font-size:26px; color:var(--text-3); margin-bottom:8px; }
+  .flow-steps { display:flex; flex-wrap:wrap; gap:6px; }
+  .fs { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-3);
+    background:#f8fafc; border:1px solid var(--border); border-radius:20px; padding:3px 10px; }
+  .fs b { width:16px; height:16px; border-radius:50%; background:var(--border); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600; }
+  .fs.on { background:var(--primary-soft); border-color:#bfdbfe; color:var(--primary-dark); }
+  .fs.on b { background:var(--primary); }
+  .fs.done { background:var(--success-soft); border-color:#bbf7d0; color:#15803d; }
+  .fs.done b { background:var(--success); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">资源中心<span class="sep">/</span>资源导入</div>
+          <h1 class="page-title">资源导入</h1>
+          <div class="page-sub">Excel 单词 / 词库导入 · 文章文本导入 · 音频资源关联 · 导入失败不破坏已有资源</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="wordbook-list.html">返回词库</a>
+        </div>
+      </div>
+
+      <div class="card mb16">
+        <div class="card-body" style="padding:14px 16px">
+          <div class="flow-steps" id="flowSteps">
+            <div class="fs done"><b>1</b>下载模板</div>
+            <div class="fs done"><b>2</b>上传文件</div>
+            <div class="fs on"><b>3</b>解析内容</div>
+            <div class="fs"><b>4</b>展示预览</div>
+            <div class="fs"><b>5</b>校验必填字段</div>
+            <div class="fs"><b>6</b>检查重复数据</div>
+            <div class="fs"><b>7</b>确认导入</div>
+            <div class="fs"><b>8</b>展示成功失败数量</div>
+            <div class="fs"><b>9</b>失败行下载</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid g-2-1" style="align-items:start">
+        <div>
+          <!-- Step 1-2 -->
+          <div class="card" id="stepUpload">
+            <div class="card-head"><div class="card-title">第一步：选择导入类型并上传文件</div></div>
+            <div class="card-body">
+              <div class="form-grid g3 mb16">
+                <div class="field"><label>导入类型</label>
+                  <select class="select" id="impType">
+                    <option>Excel 单词导入</option><option>Excel 词库导入</option>
+                    <option>文章文本导入</option><option>音频资源关联</option>
+                  </select></div>
+                <div class="field"><label>目标词库</label>
+                  <select class="select">
+                    <option>人教版 七年级上 Unit 1 词汇</option>
+                    <option>人教版 七年级上 Unit 2 词汇</option>
+                    <option>新建词库…</option>
+                  </select></div>
+                <div class="field"><label>重复数据处理</label>
+                  <select class="select">
+                    <option>跳过重复行</option><option>更新已有单词</option><option>全部报错不导入</option>
+                  </select></div>
+              </div>
+
+              <div class="dropzone" onclick="simulateUpload()">
+                <div class="dz-ico">⇪</div>
+                <div style="font-size:14px;font-weight:500">点击选择文件，或将 Excel 拖到此处</div>
+                <div class="small muted mt8">支持 .xlsx / .xls，单个文件不超过 10MB；模板请勿修改表头</div>
+              </div>
+
+              <div class="flex jcb aic mt16">
+                <div class="flex gap8">
+                  <button class="btn" onclick="Proto.toast('模板已下载（示意）','ok')">下载单词导入模板</button>
+                  <button class="btn" onclick="Proto.toast('模板已下载（示意）','ok')">下载词库导入模板</button>
+                </div>
+                <span class="small muted">模板含：单词 / 音标 / 词性 / 中文释义 / 音频文件名</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3-6 -->
+          <div class="card hidden" id="stepPreview">
+            <div class="card-head">
+              <div class="card-title">第二至六步：解析、预览与校验</div>
+              <span class="small muted" id="fileMeta">人教版七上U1词汇_新增.xlsx · 10 行</span>
+            </div>
+            <div class="card-body">
+              <div class="grid g4 mb16">
+                <div class="card stat" style="padding:10px 12px"><div class="stat-label">解析行数</div>
+                  <div class="stat-value" style="font-size:18px">10</div></div>
+                <div class="card stat" style="padding:10px 12px"><div class="stat-label">校验通过</div>
+                  <div class="stat-value" style="font-size:18px;color:var(--success)">8</div></div>
+                <div class="card stat" style="padding:10px 12px"><div class="stat-label">校验失败</div>
+                  <div class="stat-value" style="font-size:18px;color:var(--danger)">2</div></div>
+                <div class="card stat" style="padding:10px 12px"><div class="stat-label">重复数据</div>
+                  <div class="stat-value" style="font-size:18px;color:var(--warning)">1</div></div>
+              </div>
+
+              <div class="alert alert-warn mb16"><span class="ico">!</span>
+                <div>检测到 <b>2 处问题</b>：第 4 行缺少音标（必填）、第 7 行单词 <b>friend</b> 与词库已有记录重复。
+                  按当前设置，重复行将被跳过，缺失必填字段的行不会导入。</div></div>
+
+              <div class="table-wrap">
+                <table class="table compact">
+                  <thead><tr><th style="width:48px">行号</th><th>单词</th><th>音标</th><th>词性</th><th>中文释义</th>
+                    <th>音频</th><th style="width:200px">校验结果</th></tr></thead>
+                  <tbody id="previewRows"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="card-foot">
+              <button class="btn" onclick="resetFlow()">重新上传</button>
+              <button class="btn" onclick="Proto.toast('失败行已下载（示意）','ok')">下载失败行</button>
+              <button class="btn btn-primary" onclick="confirmImport()">确认导入 8 条</button>
+            </div>
+          </div>
+
+          <!-- Step 7-9 -->
+          <div class="card hidden" id="stepDone">
+            <div class="card-head"><div class="card-title">导入结果</div>
+              <span class="tag tag-green nodot">已完成</span></div>
+            <div class="card-body">
+              <div class="grid g3 mb16">
+                <div class="card stat" style="padding:12px"><div class="stat-label">成功导入</div>
+                  <div class="stat-value" style="color:var(--success)">8</div></div>
+                <div class="card stat" style="padding:12px"><div class="stat-label">失败</div>
+                  <div class="stat-value" style="color:var(--danger)">2</div></div>
+                <div class="card stat" style="padding:12px"><div class="stat-label">跳过（重复）</div>
+                  <div class="stat-value" style="color:var(--warning)">1</div></div>
+              </div>
+              <div class="alert alert-success mb12"><span class="ico">✓</span>
+                <div>导入采用事务处理：<b>失败行不影响已成功写入的数据，也不会破坏词库原有资源</b>。</div></div>
+              <div class="alert alert-info"><span class="ico">i</span>
+                <div>失败行已生成错误报告，修正后可重新导入；系统会自动跳过已成功写入的单词，避免重复。</div></div>
+              <div class="flex gap8 mt16">
+                <button class="btn" onclick="Proto.toast('失败行文件已下载（示意）','ok')">下载失败行</button>
+                <a class="btn" href="wordbook-detail.html">查看词库</a>
+                <button class="btn btn-primary" onclick="resetFlow()">继续导入</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">字段说明</div></div>
+            <div class="card-body" style="font-size:12.5px;line-height:1.9;color:var(--text-2)">
+              <div class="mb8"><b style="color:var(--text)">必填：</b>单词、中文释义</div>
+              <div class="mb8"><b style="color:var(--text)">建议填写：</b>音标、词性、音频文件名</div>
+              <div class="mb8"><b style="color:var(--text)">多释义：</b>同一单元格内用分号分隔，如「问题；询问」</div>
+              <div class="mb8"><b style="color:var(--text)">多词性：</b>用斜杠分隔，如「n./v.」</div>
+              <div><b style="color:var(--text)">音频：</b>填写文件名，系统按词库路径自动匹配</div>
+            </div>
+          </div>
+          <div class="card mt16">
+            <div class="card-head"><div class="card-title">导入历史</div></div>
+            <div class="card-body">
+              <div class="m-row"><span class="k">08-20 11:02 · 23 成功</span><span class="tag tag-green nodot">全部成功</span></div>
+              <div class="m-row"><span class="k">08-20 10:48 · 21 成功 / 2 失败</span><span class="tag tag-amber nodot">部分失败</span></div>
+              <div class="m-row"><span class="k">08-18 15:20 · 0 成功 / 5 失败</span><span class="tag tag-red nodot">全部失败</span></div>
+            </div>
+          </div>
+          <div class="alert alert-warn mt16"><span class="ico">!</span>
+            <div>整批导入采用事务：任一行写入失败不会导致词库出现「半套数据」。已完成写入的行可回滚（导入批次内）。</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'import' });
+
+const PREVIEW = [
+  { row: 1, en: 'school', ph: '/skuːl/', pos: 'n.', cn: '学校', audio: 'school.mp3', ok: true },
+  { row: 2, en: 'teacher', ph: '/ˈtiːtʃə(r)/', pos: 'n.', cn: '老师；教师', audio: 'teacher.mp3', ok: true },
+  { row: 3, en: 'student', ph: '/ˈstjuːdnt/', pos: 'n.', cn: '学生', audio: 'student.mp3', ok: true },
+  { row: 4, en: 'blackboard', ph: '', pos: 'n.', cn: '黑板', audio: 'blackboard.mp3', ok: false, why: '缺少音标（必填校验未通过）' },
+  { row: 5, en: 'sit', ph: '/sɪt/', pos: 'v.', cn: '坐；坐下', audio: 'sit.mp3', ok: true },
+  { row: 6, en: 'know', ph: '/nəʊ/', pos: 'v.', cn: '知道；认识', audio: 'know.mp3', ok: true },
+  { row: 7, en: 'friend', ph: '/frend/', pos: 'n.', cn: '朋友', audio: 'friend.mp3', ok: false, why: '与词库已有单词重复（按设置跳过）' },
+  { row: 8, en: 'love', ph: '/lʌv/', pos: 'v./n.', cn: '爱；喜爱', audio: 'love.mp3', ok: true },
+  { row: 9, en: 'new', ph: '/njuː/', pos: 'adj.', cn: '新的', audio: 'new.mp3', ok: true },
+  { row: 10, en: 'day', ph: '/deɪ/', pos: 'n.', cn: '天；日子', audio: 'day.mp3', ok: true },
+];
+
+function setFlow(stage) {
+  const steps = document.querySelectorAll('.fs');
+  steps.forEach((el, i) => {
+    el.className = 'fs';
+    if (stage === 'preview') {
+      if (i < 2) el.classList.add('done');
+      else if (i < 6) el.classList.add('on');
+    } else if (stage === 'done') {
+      if (i < 6) el.classList.add('done');
+      else if (i < 8) el.classList.add('on');
+    } else {
+      if (i < 2) el.classList.add('done');
+      else if (i === 2) el.classList.add('on');
+    }
+  });
+}
+
+function simulateUpload() {
+  document.getElementById('stepUpload').classList.add('hidden');
+  document.getElementById('stepPreview').classList.remove('hidden');
+  document.getElementById('stepDone').classList.add('hidden');
+  setFlow('preview');
+  renderPreview();
+  Proto.toast('文件解析完成，发现 2 处问题', 'warn');
+}
+
+function renderPreview() {
+  document.getElementById('previewRows').innerHTML = PREVIEW.map(p => `
+    <tr>
+      <td class="mono muted">${p.row}</td>
+      <td class="strong">${p.en}</td>
+      <td class="mono small ${p.ph ? '' : 'muted'}">${p.ph || '—'}</td>
+      <td class="small">${p.pos}</td>
+      <td>${p.cn}</td>
+      <td class="small muted">${p.audio}</td>
+      <td>${p.ok ? '<span class="tag tag-green nodot">校验通过</span>'
+        : `<span class="tag tag-red nodot">${p.why}</span>`}</td>
+    </tr>`).join('');
+}
+
+function confirmImport() {
+  document.getElementById('stepPreview').classList.add('hidden');
+  document.getElementById('stepDone').classList.remove('hidden');
+  setFlow('done');
+  Proto.toast('导入完成：成功 8 条，失败 2 条', 'ok');
+}
+
+function resetFlow() {
+  document.getElementById('stepUpload').classList.remove('hidden');
+  document.getElementById('stepPreview').classList.add('hidden');
+  document.getElementById('stepDone').classList.add('hidden');
+  setFlow('upload');
+}
+</script>
+</body>
+</html>

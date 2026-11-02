@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>教师管理</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学管理<span class="sep">/</span>教师列表</div>
+          <h1 class="page-title">教师管理</h1>
+          <div class="page-sub">在职 4 人 · 停用 1 人 · 本月完成课程 77 节</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn" onclick="Proto.toast('已导出教师统计（示意）','ok')">导出</button>
+          <button class="btn btn-primary" onclick="Proto.toast('打开新增教师表单（示意）')">+ 新增教师</button>
+        </div>
+      </div>
+
+      <div class="card filter">
+        <div class="field"><label>姓名 / 手机号</label><input class="input" id="kw" placeholder="输入姓名或手机号" oninput="render()"></div>
+        <div class="field"><label>擅长年级</label>
+          <select class="select" id="grade" onchange="render()">
+            <option value="">全部</option><option>三年级</option><option>四年级</option><option>五年级</option>
+            <option>六年级</option><option>七年级</option><option>八年级</option><option>九年级</option>
+          </select></div>
+        <div class="field"><label>教师状态</label>
+          <select class="select" id="st" onchange="render()">
+            <option value="">全部</option><option>在职</option><option>停用</option>
+          </select></div>
+        <div class="field"><label>当前学员数</label>
+          <select class="select" onchange="render()"><option value="">不限</option><option>0 人（可分配）</option><option>≥ 6 人</option></select></div>
+        <div class="filter-actions"><button class="btn btn-primary" onclick="render()">查询</button>
+          <button class="btn" onclick="document.getElementById('kw').value='';document.getElementById('grade').value='';document.getElementById('st').value='';render()">重置</button></div>
+      </div>
+
+      <div class="card mt16">
+        <div class="card-head"><div class="card-title">教师列表</div>
+          <span class="small muted">停用教师前系统会检查未来有效预约</span></div>
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th style="width:78px">编号</th><th>姓名</th><th>手机号</th><th style="width:48px">性别</th>
+                  <th>学校 / 专业</th><th>擅长年级</th><th class="right">当前学员</th>
+                  <th class="right">本月课程</th><th class="right">本月课时</th><th>状态</th><th>入职</th><th style="width:190px">操作</th></tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 5 条</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- 停用受阻 -->
+<div class="mask" id="blockModal">
+  <div class="modal wide">
+    <div class="modal-head">
+      <div class="modal-title">无法停用：存在未来有效预约</div>
+      <button class="modal-close" onclick="Proto.closeModal('blockModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-danger mb16"><span class="ico">!</span>
+        <div>教师 <b id="bk_name"></b> 还有 <b id="bk_count"></b> 个未来有效预约（含今日未完成课程）。
+        请先将预约<b>重新分配</b>给其他教师或<b>取消</b>，再执行停用。</div>
+      </div>
+      <div class="table-wrap">
+        <table class="table compact">
+          <thead><tr><th>课程编号</th><th>日期</th><th>时间</th><th>学员</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody id="bk_rows"></tbody>
+        </table>
+      </div>
+      <div class="alert alert-info mt16"><span class="ico">i</span>
+        <div>若直接停用，这些课程将出现「无有效授课教师」异常，且家长端仍会显示原教师，因此系统强制拦截。</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('blockModal')">知道了</button>
+      <a class="btn btn-primary" href="schedule-calendar.html">前往排课调整</a>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'teacher-list' });
+
+function render() {
+  const kw = document.getElementById('kw').value.trim();
+  const grade = document.getElementById('grade').value;
+  const st = document.getElementById('st').value;
+  const rows = DB.teachers.filter(t => {
+    if (kw && !(t.name.includes(kw) || t.phone.includes(kw))) return false;
+    if (grade && !t.grades.includes(grade)) return false;
+    if (st && t.status !== st) return false;
+    return true;
+  });
+
+  Proto.renderRows('rows', rows, t => `
+    <tr>
+      <td class="mono small">${t.id}</td>
+      <td class="strong"><a href="teacher-detail.html">${t.name}</a></td>
+      <td class="mono">${t.phone}</td>
+      <td>${t.gender}</td>
+      <td class="small">${t.school}<br><span class="muted">${t.major}</span></td>
+      <td class="small">${t.grades}</td>
+      <td class="right mono">${t.students}</td>
+      <td class="right mono">${t.monthCourses}</td>
+      <td class="right mono">${t.monthHours}</td>
+      <td>${t.status === '在职' ? '<span class="tag tag-green">在职</span>' : '<span class="tag tag-slate">停用</span>'}</td>
+      <td class="small muted">${t.join}</td>
+      <td class="ops">
+        <a class="btn-link" href="teacher-detail.html">详情</a>
+        <button class="btn-link" onclick="Proto.toast('打开编辑表单（示意）')">编辑</button>
+        <button class="btn-link" onclick="Proto.toast('前往学员分配（示意）')">分配学员</button>
+        ${t.status === '在职'
+          ? `<button class="btn-link danger" onclick="tryDisable('${t.name}')">停用</button>`
+          : `<button class="btn-link" onclick="Proto.toast('已恢复在职（示意）','ok')">启用</button>`}
+      </td>
+    </tr>`, 12, '没有符合条件的教师');
+}
+
+/* 关键规则：停用前检查未来有效预约 */
+function tryDisable(name) {
+  const future = DB.courses.filter(c => c.teacher === name && c.date >= DB.today && c.status !== '已取消');
+  if (future.length) {
+    document.getElementById('bk_name').textContent = name;
+    document.getElementById('bk_count').textContent = future.length;
+    Proto.renderRows('bk_rows', future, c => `
+      <tr><td class="mono small">${c.id}</td><td>${c.date}</td>
+        <td class="mono">${c.start}-${c.end}</td><td>${c.student}</td>
+        <td><span class="tag tag-blue">${c.status}</span></td>
+        <td><button class="btn-link" onclick="Proto.toast('换教师需在排课页操作','warn')">重新分配</button></td></tr>`, 6);
+    Proto.openModal('blockModal');
+    return;
+  }
+  Proto.confirmBox('停用教师', `教师 <b>${name}</b> 无未来有效预约，可以停用。<br><br>
+    停用后该教师无法登录工作台，历史课程与教学记录全部保留。`, '确认停用',
+    () => Proto.toast('教师已停用', 'ok'));
+}
+
+render();
+</script>
+</body>
+</html>

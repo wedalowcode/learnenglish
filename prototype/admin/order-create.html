@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>创建订单</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">商品订单<span class="sep">/</span><a href="order-list.html">订单管理</a><span class="sep">/</span>创建订单</div>
+          <h1 class="page-title">创建订单</h1>
+          <div class="page-sub">订单与实收分开保存 · 生效后才生成课时账户与流水</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="order-list.html">取消</a>
+        </div>
+      </div>
+
+      <div class="card mb16" style="padding:16px 20px">
+        <div class="steps" id="steps">
+          <div class="step on" data-step="1"><span class="dot">1</span>选择客户</div>
+          <div class="step-line"></div>
+          <div class="step" data-step="2"><span class="dot">2</span>选择商品</div>
+          <div class="step-line"></div>
+          <div class="step" data-step="3"><span class="dot">3</span>金额信息</div>
+          <div class="step-line"></div>
+          <div class="step" data-step="4"><span class="dot">4</span>归属信息</div>
+        </div>
+      </div>
+
+      <div class="grid g-2-1" style="align-items:start">
+        <div class="card">
+          <div class="card-body">
+
+            <!-- Step 1 -->
+            <div class="step-pane" id="s1">
+              <div class="section-title">第一步：选择客户</div>
+              <div class="form-grid">
+                <div class="field"><label>选择家长 <span class="req">*</span></label>
+                  <select class="select" id="c_parent" onchange="fillStudents()">
+                    <option value="">请选择家长</option>
+                    <option value="陈志强">陈志强 · 13901112222（2 个孩子）</option>
+                    <option value="林慧">林慧 · 13902223333（2 个孩子）</option>
+                    <option value="赵明">赵明 · 13903334444（1 个孩子）</option>
+                    <option value="孙巧云">孙巧云 · 13904445555（2 个孩子）</option>
+                  </select></div>
+                <div class="field"><label>选择学员 <span class="req">*</span></label>
+                  <select class="select" id="c_student" onchange="checkStudent()">
+                    <option value="">请先选择家长</option>
+                  </select>
+                  <div class="err" id="e_student">请选择学员</div>
+                </div>
+              </div>
+              <div class="alert alert-info mt16"><span class="ico">i</span>
+                <div>学员不存在？ <a href="student-form.html">跳转新增学员</a> 后再回来创建订单。新学员不会自动获得课时。</div></div>
+            </div>
+
+            <!-- Step 2 -->
+            <div class="step-pane hidden" id="s2">
+              <div class="section-title">第二步：选择商品</div>
+              <div class="form-grid">
+                <div class="field full"><label>课程商品 <span class="req">*</span></label>
+                  <select class="select" id="c_product" onchange="fillProduct()">
+                    <option value="">请选择课程商品</option>
+                    <option value="60">60 课时包（一对一）· 60 课时 · ¥6,980</option>
+                    <option value="30">30 课时包（一对一）· 30 课时 · ¥3,680</option>
+                    <option value="20">20 课时包（一对一）· 20 课时 · ¥2,580</option>
+                  </select>
+                  <div class="err" id="e_product">请选择课程商品</div>
+                  <div class="tip">仅展示「在售」商品；停用商品不可下单</div>
+                </div>
+                <div class="field"><label>购买课时</label><input class="input" id="c_buy" disabled value="—"></div>
+                <div class="field"><label>赠送课时 <span class="tag tag-amber nodot" style="font-size:10px;margin-left:4px">需权限</span></label>
+                  <input class="input" id="c_gift" type="number" value="0" min="0" oninput="updateSummary()">
+                  <div class="tip">赠送课时单独生成「赠送入账」流水，不计入实收</div></div>
+                <div class="field"><label>有效期</label><input class="input" id="c_valid" disabled value="—"></div>
+              </div>
+            </div>
+
+            <!-- Step 3 -->
+            <div class="step-pane hidden" id="s3">
+              <div class="section-title">第三步：金额信息</div>
+              <div class="form-grid">
+                <div class="field"><label>商品价格</label><input class="input" id="c_price" disabled value="—"></div>
+                <div class="field"><label>优惠金额</label>
+                  <input class="input" id="c_off" type="number" value="0" min="0" oninput="updateSummary()"></div>
+                <div class="field"><label>应收金额</label>
+                  <input class="input" id="c_due" disabled value="—"
+                    style="font-weight:600;color:var(--primary)"></div>
+                <div class="field"><label>实收金额 <span class="req">*</span></label>
+                  <input class="input" id="c_paid" type="number" value="0" oninput="updateSummary()">
+                  <div class="err" id="e_paid">实收金额不能大于应收金额</div></div>
+                <div class="field"><label>支付方式</label>
+                  <select class="select"><option>微信</option><option>支付宝</option><option>银行转账</option><option>现金</option></select></div>
+                <div class="field"><label>收款时间</label>
+                  <input class="input" type="datetime-local" value="2026-11-02T09:30"></div>
+                <div class="field full"><label>收款凭证</label>
+                  <input class="input" type="file" style="padding:5px 8px;height:auto"></div>
+              </div>
+              <div class="alert alert-warn mt16" id="payWarn" style="display:none"><span class="ico">!</span>
+                <div>实收小于应收，订单将保存为「<b>部分付款</b>」。部分付款订单需收齐后确认，<b>未付款不增加可用课时</b>。</div></div>
+            </div>
+
+            <!-- Step 4 -->
+            <div class="step-pane hidden" id="s4">
+              <div class="section-title">第四步：归属信息</div>
+              <div class="form-grid">
+                <div class="field"><label>代理</label>
+                  <select class="select"><option value="">无（自然到访）</option>
+                    <option>王磊（A001 · 成交额 8%）</option><option>刘倩（A002 · 成交额 10%）</option><option>赵勇（A003 · 固定 300 元/单）</option></select>
+                  <div class="tip">代理归属来自线索，若为客户报备则不可随意变更</div></div>
+                <div class="field"><label>销售负责人</label>
+                  <select class="select"><option>张敏</option><option>教务处-小陈</option></select></div>
+                <div class="field full"><label>备注</label><textarea class="textarea" placeholder="优惠原因、付款约定等"></textarea></div>
+              </div>
+              <div class="alert alert-info mt16"><span class="ico">i</span>
+                <div>提交后订单状态为「已付款」或「部分付款」；勾选下方选项可立即确认生效并生成课时账户。</div></div>
+              <div class="field mt12">
+                <label class="check"><input type="checkbox" id="c_activate" checked>
+                  提交后立即确认订单生效（生成课时账户与入账流水）</label>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+            <div class="flex jcb">
+              <button class="btn" id="btnPrev" onclick="go(-1)" style="visibility:hidden">上一步</button>
+              <div class="flex gap8">
+                <a class="btn" href="order-list.html">取消</a>
+                <button class="btn btn-primary" id="btnNext" onclick="go(1)">下一步</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- 汇总 -->
+        <div>
+          <div class="card" style="position:sticky;top:76px">
+            <div class="card-head"><div class="card-title">订单汇总</div>
+              <span class="tag tag-slate nodot" id="sum_state">草稿</span></div>
+            <div class="card-body">
+              <div class="m-row"><span class="k">家长</span><span id="sum_parent" class="small">—</span></div>
+              <div class="m-row"><span class="k">学员</span><span id="sum_student" class="small">—</span></div>
+              <div class="m-row"><span class="k">课程商品</span><span id="sum_product" class="small">—</span></div>
+              <div class="m-row"><span class="k">购买 / 赠送</span><span id="sum_hours" class="small mono">—</span></div>
+              <div class="m-row"><span class="k">商品价格</span><span id="sum_price" class="small mono">—</span></div>
+              <div class="m-row"><span class="k">优惠</span><span id="sum_off" class="small mono">—</span></div>
+              <div class="m-row" style="border-bottom:none"><span class="k">应收</span>
+                <b id="sum_due" class="mono" style="color:var(--primary);font-size:15px">—</b></div>
+              <div class="m-row" style="border-bottom:none"><span class="k">实收</span>
+                <b id="sum_paid" class="mono" style="font-size:15px">—</b></div>
+              <div class="alert alert-info mt12"><span class="ico">i</span>
+                <div class="small">订单生效后：购买课时生成「购买入账」流水，赠送课时生成「赠送入账」流水。</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'order-list' });
+
+const PRODUCTS = {
+  '60': { name: '60 课时包（一对一）', hours: 60, price: 6980, valid: '12 个月' },
+  '30': { name: '30 课时包（一对一）', hours: 30, price: 3680, valid: '6 个月' },
+  '20': { name: '20 课时包（一对一）', hours: 20, price: 2580, valid: '6 个月' },
+};
+const KIDS = {
+  '陈志强': ['陈可欣 · S2026001 · 七年级', '付嘉禾 · S2026008 · 七年级'],
+  '林慧': ['林子轩 · S2026002 · 五年级', '林雨萱 · S2026007 · 二年级'],
+  '赵明': ['赵一诺 · S2026003 · 八年级'],
+  '孙巧云': ['孙浩宇 · S2026004 · 六年级', '孙雨桐 · S2026005 · 三年级'],
+};
+
+let step = 1;
+
+function fillStudents() {
+  const p = document.getElementById('c_parent').value;
+  const sel = document.getElementById('c_student');
+  sel.innerHTML = '<option value="">请选择学员</option>' +
+    (KIDS[p] || []).map(k => `<option>${k}</option>`).join('');
+  updateSummary();
+  checkStudent();
+}
+
+function fillProduct() {
+  const p = PRODUCTS[document.getElementById('c_product').value];
+  if (!p) return;
+  document.getElementById('c_buy').value = p.hours + ' 课时';
+  document.getElementById('c_valid').value = p.valid;
+  document.getElementById('c_price').value = Proto.money(p.price);
+  document.getElementById('c_paid').value = p.price;
+  Proto.markInvalid('e_product', false);
+  document.getElementById('s2').classList.remove('has-err');
+  updateSummary();
+}
+
+function checkStudent() {
+  const ok = !!document.getElementById('c_student').value;
+  Proto.markInvalid('e_student', false);
+  const f = document.getElementById('e_student').parentElement;
+  if (ok) f.classList.remove('invalid');
+  updateSummary();
+  return ok;
+}
+
+function updateSummary() {
+  const parent = document.getElementById('c_parent').value;
+  const student = document.getElementById('c_student').value;
+  const pk = document.getElementById('c_product').value;
+  const p = PRODUCTS[pk];
+  const gift = Number(document.getElementById('c_gift').value || 0);
+  const off = Number(document.getElementById('c_off').value || 0);
+  const paid = Number(document.getElementById('c_paid').value || 0);
+  const due = p ? Math.max(0, p.price - off) : 0;
+
+  document.getElementById('sum_parent').textContent = parent || '—';
+  document.getElementById('sum_student').textContent = student ? student.split(' · ')[0] : '—';
+  document.getElementById('sum_product').textContent = p ? p.name : '—';
+  document.getElementById('sum_hours').textContent = p ? `${p.hours} / +${gift}` : '—';
+  document.getElementById('sum_price').textContent = p ? Proto.money(p.price) : '—';
+  document.getElementById('sum_off').textContent = off ? '−' + Proto.money(off) : '—';
+  document.getElementById('sum_due').textContent = p ? Proto.money(due) : '—';
+  document.getElementById('sum_paid').textContent = p ? Proto.money(paid) : '—';
+  document.getElementById('c_due').value = p ? Proto.money(due) : '—';
+
+  const state = document.getElementById('sum_state');
+  if (!p) { state.textContent = '草稿'; state.className = 'tag tag-slate nodot'; }
+  else if (paid <= 0) { state.textContent = '待付款'; state.className = 'tag tag-amber nodot'; }
+  else if (paid < due) { state.textContent = '部分付款'; state.className = 'tag tag-amber nodot'; }
+  else { state.textContent = '已付款'; state.className = 'tag tag-cyan nodot'; }
+
+  document.getElementById('payWarn').style.display = (p && paid > 0 && paid < due) ? 'flex' : 'none';
+  return { due, paid };
+}
+
+function go(dir) {
+  if (dir > 0) {
+    if (step === 1 && !document.getElementById('c_student').value) {
+      document.getElementById('e_student').parentElement.classList.add('invalid');
+      Proto.toast('请先选择家长与学员', 'err'); return;
+    }
+    if (step === 2 && !document.getElementById('c_product').value) {
+      document.getElementById('e_product').parentElement.classList.add('invalid');
+      Proto.toast('请选择课程商品', 'err'); return;
+    }
+    if (step === 3) {
+      const { due, paid } = updateSummary();
+      if (paid > due) {
+        document.getElementById('e_paid').parentElement.classList.add('invalid');
+        Proto.toast('实收金额不能大于应收金额', 'err'); return;
+      }
+      document.getElementById('e_paid').parentElement.classList.remove('invalid');
+    }
+    if (step === 4) { submit(); return; }
+  }
+  step = Math.min(4, Math.max(1, step + dir));
+  renderStep();
+}
+
+function renderStep() {
+  [1, 2, 3, 4].forEach(i => document.getElementById('s' + i).classList.toggle('hidden', i !== step));
+  document.querySelectorAll('.step').forEach((el, i) => {
+    const n = i + 1;
+    el.classList.toggle('on', n === step);
+    el.classList.toggle('done', n < step);
+  });
+  document.getElementById('btnPrev').style.visibility = step === 1 ? 'hidden' : 'visible';
+  document.getElementById('btnNext').textContent = step === 4 ? '提交订单' : '下一步';
+  updateSummary();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function submit() {
+  const { due, paid } = updateSummary();
+  const activate = document.getElementById('c_activate').checked;
+  const status = paid <= 0 ? '待付款' : paid < due ? '部分付款' : '已付款';
+
+  if (status === '待付款' && activate) {
+    Proto.toast('未付款订单不能直接生效并增加课时', 'err');
+    return;
+  }
+  Proto.confirmBox('提交订单',
+    `订单状态：<b>${status}</b><br>
+     应收 <b>${Proto.money(due)}</b> · 实收 <b>${Proto.money(paid)}</b><br><br>
+     ${activate && status !== '待付款'
+       ? '订单将立即确认生效，为学员生成课时账户并写入入账流水。'
+       : '订单保存后需在订单列表中「确认生效」，课时才会入账。'}`,
+    '提交', () => {
+      Proto.toast('订单已创建' + (activate && status !== '待付款' ? '，课时已入账' : ''), 'ok');
+      setTimeout(() => location.href = 'order-list.html', 900);
+    });
+}
+
+renderStep();
+</script>
+</body>
+</html>

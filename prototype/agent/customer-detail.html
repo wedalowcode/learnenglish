@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>客户详情</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">客户管理<span class="sep">/</span><a href="my-customers.html">我的客户</a><span class="sep">/</span>客户详情</div>
+          <h1 class="page-title">黄女士 <span class="tag tag-blue" style="font-size:12px;vertical-align:middle">跟进中</span></h1>
+          <div class="page-sub">L2026051 · 13611112222 · 学生 黄子豪 · 四年级 · 意向 30 课时包</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="my-customers.html">返回</a>
+          <button class="btn btn-primary" onclick="Proto.openModal('followModal')">+ 记录跟进</button>
+        </div>
+      </div>
+
+      <div class="grid g-2-1" style="align-items:start">
+        <div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">客户信息</div></div>
+            <div class="card-body">
+              <div class="desc g3">
+                <div class="desc-item"><span class="k">家长姓名</span><span class="v">黄女士</span></div>
+                <div class="desc-item"><span class="k">联系电话</span><span class="v mono">13611112222</span></div>
+                <div class="desc-item"><span class="k">学生姓名</span><span class="v">黄子豪</span></div>
+                <div class="desc-item"><span class="k">学生年级</span><span class="v">四年级</span></div>
+                <div class="desc-item"><span class="k">意向教材</span><span class="v">人教版</span></div>
+                <div class="desc-item"><span class="k">意向课程</span><span class="v">30 课时包（一对一）</span></div>
+                <div class="desc-item"><span class="k">来源渠道</span><span class="v">公众号</span></div>
+                <div class="desc-item"><span class="k">报备时间</span><span class="v">2026-10-20 14:10</span></div>
+                <div class="desc-item"><span class="k">当前跟进人</span><span class="v">张敏（教务）</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">跟进时间轴<span class="hint">代理本人记录</span></div>
+              <button class="btn btn-sm" onclick="Proto.openModal('followModal')">+ 记录</button></div>
+            <div class="card-body">
+              <div class="timeline">
+                <div class="tl-item on">
+                  <div class="tl-head"><b>微信</b><span class="tag tag-amber nodot" style="font-size:11px">意向 中</span>
+                    <span class="tl-time">2026-11-01 15:20 · 王磊</span></div>
+                  <div class="tl-body">家长询问上课形式与教师安排，已说明可固定主负责教师。
+                    <div class="box">下次跟进：2026-11-04 · 发送四年级学员案例</div></div>
+                </div>
+                <div class="tl-item">
+                  <div class="tl-head"><b>电话</b><span class="tag tag-amber nodot" style="font-size:11px">意向 中</span>
+                    <span class="tl-time">2026-10-27 10:05 · 王磊</span></div>
+                  <div class="tl-body">首次沟通，家长关注孩子词汇基础薄弱问题，介绍单词训练与复习体系后表示愿意了解课程包价格。</div>
+                </div>
+                <div class="tl-item">
+                  <div class="tl-head"><b>报备</b><span class="tl-time">2026-10-20 14:10 · 王磊</span></div>
+                  <div class="tl-body">公众号留言后主动联系，来源为朋友圈推广。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">成交订单</div></div>
+            <div class="card-body">
+              <div class="empty" style="padding:24px 8px">
+                <div class="e-ico">▤</div>
+                <p>暂未成交</p>
+                <p class="small">成交后订单自动关联本线索，并保留你的代理归属</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">跟进提醒</div></div>
+            <div class="card-body">
+              <div class="m-row"><span class="k">下次跟进</span>
+                <b style="color:var(--danger)">2026-11-04</b></div>
+              <div class="m-row"><span class="k">距上次跟进</span><span>1 天</span></div>
+              <div class="m-row" style="border-bottom:none"><span class="k">意向等级</span>
+                <span class="tag tag-amber nodot">中</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">报价参考</div></div>
+            <div class="card-body">
+              <div class="m-row"><span class="k">30 课时包</span><b class="mono">¥ 3,680</b></div>
+              <div class="m-row"><span class="k">课时单价</span><span class="mono">¥ 122.67</span></div>
+              <div class="m-row" style="border-bottom:none"><span class="k">赠送课时</span><span>2 课时</span></div>
+              <div class="small muted mt12">最终价格以机构报价为准，代理不得自行承诺优惠。</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">后续动作</div></div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
+              <button class="btn btn-block btn-primary" onclick="Proto.openModal('followModal')">记录本次跟进</button>
+              <button class="btn btn-block" onclick="Proto.toast('已通知教务跟进（示意）','ok')">通知教务跟进</button>
+              <button class="btn btn-block" onclick="Proto.toast('打开归属审核记录（示意）')">查看归属记录</button>
+            </div>
+          </div>
+
+          <div class="alert alert-info mt16"><span class="ico">i</span>
+            <div>代理只能查看与跟进本人客户；成交与佣金由机构确认，代理不可修改客户归属。</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="mask" id="followModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">记录跟进</div>
+      <button class="modal-close" onclick="Proto.closeModal('followModal')">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field"><label>跟进时间 <span class="req">*</span></label>
+          <input class="input" type="datetime-local" value="2026-11-02T10:00"></div>
+        <div class="field"><label>跟进方式 <span class="req">*</span></label>
+          <select class="select"><option>电话</option><option>微信</option><option>面谈</option><option>其他</option></select></div>
+        <div class="field full"><label>沟通内容 <span class="req">*</span></label>
+          <textarea class="textarea" placeholder="必填"></textarea></div>
+        <div class="field"><label>客户意向</label>
+          <div class="radio-row">
+            <label class="radio"><input type="radio" name="lv">高</label>
+            <label class="radio"><input type="radio" name="lv" checked>中</label>
+            <label class="radio"><input type="radio" name="lv">低</label>
+          </div></div>
+        <div class="field"><label>下次跟进时间</label>
+          <input class="input" type="datetime-local" value="2026-11-06T10:00"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('followModal')">取消</button>
+      <button class="btn btn-primary" onclick="Proto.closeModal('followModal');Proto.toast('跟进已记录','ok')">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>Proto.shell({ role: 'agent', active: 'agent-customers' });</script>
+</body>
+</html>

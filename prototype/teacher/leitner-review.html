@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>莱特纳复习执行</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body class="focus-page">
+
+<div class="focus-top">
+  <a class="btn btn-sm" href="leitner.html">← 退出复习</a>
+  <div>
+    <div class="ft-title">莱特纳复习 · 陈可欣</div>
+    <div class="ft-sub">复习体系：莱特纳（红黄绿盒） · 来源盒子：红盒子 + 黄盒 1</div>
+  </div>
+  <div class="grow"></div>
+  <div class="text-r" style="margin-right:12px">
+    <div class="small muted">复习进度</div>
+    <div style="font-size:15px;font-weight:600" id="prog">1 / 10</div>
+  </div>
+  <button class="btn btn-sm" onclick="Proto.confirmBox('结束复习','已完成的结果会保留，未复习的单词仍留在原盒子。','结束',()=>location.href='leitner.html')">结束</button>
+</div>
+
+<div class="focus-main">
+  <div class="focus-wrap" id="stage"></div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+const LIST = [
+  ...DB.leitner.red.slice(0, 6).map(w => ({ ...w, box: '红盒子' })),
+  { en: 'class', ph: '/klɑːs/', cn: '班级；课', box: '黄盒 1', lastResult: '认识' },
+  { en: 'look', ph: '/lʊk/', cn: '看；看起来', box: '黄盒 1', lastResult: '认识' },
+  { en: 'first', ph: '/fɜːst/', cn: '第一的；首先', box: '黄盒 1', lastResult: '暂不确定' },
+  { en: 'last', ph: '/lɑːst/', cn: '最后的；持续', box: '黄盒 1', lastResult: '不认识' },
+];
+
+const S = { i: 0, revealed: false, ans: {}, stage: 'run' };
+const el = () => document.getElementById('stage');
+
+function render() {
+  document.getElementById('prog').textContent = `${Math.min(S.i + 1, LIST.length)} / ${LIST.length}`;
+  if (S.stage === 'done') { renderDone(); return; }
+
+  const w = LIST[S.i];
+  el().innerHTML = `
+    <div class="bar mb16"><i style="width:${(S.i / LIST.length * 100).toFixed(1)}%"></i></div>
+
+    <div class="flex jcb aic mb12">
+      <span class="tag tag-red nodot">来源：${w.box}</span>
+      <span class="small muted">上次结果：${w.lastResult || '—'}</span>
+    </div>
+
+    <div class="word-card">
+      <div class="wc-en">${w.en}</div>
+      <div class="wc-ph">${w.ph}</div>
+      ${S.revealed ? `<div class="wc-cn">${w.cn}</div>`
+        : `<div class="wc-cn muted" style="font-size:14px">（点击「显示答案」查看中文释义）</div>`}
+      <div class="mt12">
+        <button class="audio-btn" data-label="▶ 播放发音" onclick="Proto.playAudio(this,'${w.en}')">▶ 播放发音</button>
+        ${S.revealed ? '' : `<button class="btn btn-sm" style="margin-left:8px" onclick="reveal()">显示答案</button>`}
+      </div>
+    </div>
+
+    <div class="judge-row">
+      <button class="judge no" onclick="ans('no')">不认识 <kbd>1</kbd></button>
+      <button class="judge yes" onclick="ans('yes')">认识 <kbd>2</kbd></button>
+    </div>
+
+    <div class="flex jcb mt12">
+      <button class="btn btn-ghost btn-sm" onclick="prev()">← 上一个</button>
+      <div class="small muted">每个单词的结果单独保存，生成独立复习记录</div>
+      <button class="btn btn-ghost btn-sm" onclick="next()">下一个 →</button>
+    </div>`;
+}
+
+function reveal() { S.revealed = true; render(); }
+function prev() { if (S.i > 0) { S.i--; S.revealed = false; render(); } }
+function next() { if (S.i < LIST.length - 1) { S.i++; S.revealed = false; render(); } }
+
+function ans(v) {
+  S.ans[S.i] = v;
+  const w = LIST[S.i];
+  const dest = v === 'yes' ? '按配置移入下一盒' : '按配置留在/回到红盒';
+  Proto.toast(`${w.en}：${v === 'yes' ? '认识' : '不认识'} · ${dest}`);
+
+  if (S.i < LIST.length - 1) {
+    S.i++;
+    S.revealed = false;
+    render();
+  } else {
+    S.stage = 'done';
+    render();
+  }
+}
+
+function renderDone() {
+  const yes = Object.values(S.ans).filter(v => v === 'yes').length;
+  const no = Object.values(S.ans).filter(v => v === 'no').length;
+  el().innerHTML = `
+    <div class="card">
+      <div class="card-head"><div class="card-title">本轮复习完成</div>
+        <span class="tag tag-green nodot">${LIST.length} 个单词</span></div>
+      <div class="card-body">
+        <div class="grid g3 mb16">
+          <div class="card stat"><div class="stat-label">复习单词</div><div class="stat-value">${LIST.length}</div></div>
+          <div class="card stat"><div class="stat-label">认识</div>
+            <div class="stat-value" style="color:var(--success)">${yes}</div></div>
+          <div class="card stat"><div class="stat-label">不认识</div>
+            <div class="stat-value" style="color:var(--danger)">${no}</div></div>
+        </div>
+
+        <div class="alert alert-info mb12"><span class="ico">i</span>
+          <div><b>单词去向由盒子配置决定</b>（如：答对进入下一黄盒、答错回到红盒、是否重置间隔），
+            原型不预设具体算法。本次结果已生成独立复习记录。</div></div>
+        <div class="alert alert-warn mb12"><span class="ico">!</span>
+          <div>莱特纳复习结果<b>只改变莱特纳体系内的复习计划</b>，<b>不影响</b> 21 天记忆复习体系的计划与任务。</div></div>
+
+        <div class="table-wrap mb16">
+          <table class="table compact">
+            <thead><tr><th>单词</th><th>来源盒子</th><th>本次结果</th><th>记录时间</th><th>复习教师</th></tr></thead>
+            <tbody>
+              ${LIST.map((w, i) => `<tr><td class="strong">${w.en}</td><td class="small">${w.box}</td>
+                <td>${S.ans[i] === 'yes' ? '<span class="tag tag-green nodot">认识</span>'
+                  : '<span class="tag tag-red nodot">不认识</span>'}</td>
+                <td class="small muted">2026-11-02 10:12</td><td>李婉</td></tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="flex gap8" style="justify-content:flex-end">
+          <a class="btn" href="leitner.html">返回盒子</a>
+          <a class="btn btn-primary" href="student-profile.html">返回学习档案</a>
+        </div>
+      </div>
+    </div>`;
+}
+
+document.addEventListener('keydown', e => {
+  if (S.stage !== 'run') return;
+  if (e.key === '1') ans('no');
+  if (e.key === '2') ans('yes');
+});
+
+render();
+</script>
+</body>
+</html>

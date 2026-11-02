@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>课程商品</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">商品订单<span class="sep">/</span>课程商品</div>
+          <h1 class="page-title">课程商品</h1>
+          <div class="page-sub">在售 3 个 · 停用 1 个 · 停用商品不可新建订单，历史订单保留商品快照</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-primary" onclick="openForm()">+ 新增商品</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th style="width:82px">商品编号</th><th>商品名称</th><th class="right">课时数量</th>
+                  <th class="right">商品价格</th><th class="right">单课时价格</th><th>有效期</th>
+                  <th>赠送课时</th><th>销售状态</th><th>创建时间</th><th style="width:170px">操作</th></tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 4 条</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="alert alert-info mt16"><span class="ico">i</span>
+        <div>商品价格与课时数<b>修改后不影响已生成的历史订单</b>，历史订单保存下单时的商品快照；停用商品不可创建新订单。</div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<div class="mask" id="formModal">
+  <div class="modal wide">
+    <div class="modal-head"><div class="modal-title" id="ftitle">新增课程商品</div>
+      <button class="modal-close" onclick="Proto.closeModal('formModal')">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field"><label>商品名称 <span class="req">*</span></label><input class="input" id="p_name" placeholder="如 60 课时包（一对一）"></div>
+        <div class="field"><label>课时数量 <span class="req">*</span></label><input class="input" id="p_hours" type="number" value="60" oninput="calcUnit()"></div>
+        <div class="field"><label>销售价格（元）<span class="req">*</span></label><input class="input" id="p_price" type="number" value="6980" oninput="calcUnit()"></div>
+        <div class="field"><label>单课时价格</label>
+          <input class="input" id="p_unit" value="¥ 116.33" disabled>
+          <div class="tip">自动计算，不可手动修改</div></div>
+        <div class="field"><label>有效期</label>
+          <select class="select"><option>12 个月</option><option>6 个月</option><option>3 个月</option><option>不限制</option></select></div>
+        <div class="field"><label>是否允许赠送课时</label>
+          <div class="switch" style="margin-top:6px"><input type="checkbox" id="p_gift"><span></span></div>
+          <div class="tip">开启后创建订单时可按权限填写赠送课时</div></div>
+        <div class="field"><label>商品状态</label>
+          <select class="select"><option>在售</option><option>停用</option></select></div>
+        <div class="field"><label>排序</label><input class="input" type="number" value="10"></div>
+        <div class="field full"><label>商品说明</label><textarea class="textarea" placeholder="适用人群、包含服务、退费说明等"></textarea></div>
+        <div class="field full"><label>备注</label><textarea class="textarea"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('formModal')">取消</button>
+      <button class="btn btn-primary" onclick="Proto.closeModal('formModal');Proto.toast('商品已保存','ok')">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'product-list' });
+
+Proto.renderRows('rows', DB.products, p => `
+  <tr>
+    <td class="mono small">${p.id}</td>
+    <td class="strong">${p.name}<div class="small muted" style="font-weight:400">${p.desc}</div></td>
+    <td class="right mono">${p.hours}</td>
+    <td class="right mono">${Proto.money(p.price)}</td>
+    <td class="right mono muted">¥ ${p.unit.toFixed(2)}</td>
+    <td>${p.valid}</td>
+    <td>${p.gift ? `<span class="tag tag-blue nodot">+${p.gift} 课时</span>` : '<span class="muted small">不支持</span>'}</td>
+    <td>${p.status === '在售' ? '<span class="tag tag-green">在售</span>' : '<span class="tag tag-slate">停用</span>'}</td>
+    <td class="small muted">${p.created}</td>
+    <td class="ops">
+      <button class="btn-link" onclick="openForm('${p.name}')">编辑</button>
+      <a class="btn-link" href="order-create.html">下单</a>
+      ${p.status === '在售'
+        ? `<button class="btn-link danger" onclick="disable('${p.name}')">停用</button>`
+        : `<button class="btn-link" onclick="Proto.toast('商品已启用（示意）','ok')">启用</button>`}
+    </td>
+  </tr>`, 10, '暂无课程商品');
+
+function openForm(name) {
+  document.getElementById('ftitle').textContent = name ? '编辑商品 · ' + name : '新增课程商品';
+  Proto.openModal('formModal');
+}
+
+function calcUnit() {
+  const h = Number(document.getElementById('p_hours').value || 0);
+  const p = Number(document.getElementById('p_price').value || 0);
+  document.getElementById('p_unit').value = h ? '¥ ' + (p / h).toFixed(2) : '—';
+}
+
+function disable(name) {
+  Proto.confirmBox('停用商品', `确认停用 <b>${name}</b> 吗？<br><br>
+    停用后：<br>
+    · <b>不可再创建新订单</b><br>
+    · 已有历史订单保留原商品快照（价格、课时数不变）<br>
+    · 已售出的课时账户不受影响`, '确认停用',
+    () => Proto.toast('商品已停用', 'ok'));
+}
+</script>
+</body>
+</html>

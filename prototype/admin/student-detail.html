@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>学员详情</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学管理<span class="sep">/</span><a href="student-list.html">学员管理</a><span class="sep">/</span>学员详情</div>
+          <h1 class="page-title">陈可欣 <span class="tag tag-green" style="font-size:12px;vertical-align:middle">在读</span></h1>
+          <div class="page-sub">S2026001 · 七年级 · 人教版 · 负责教师 李婉 · 入学 2026-03-12</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn" onclick="history.back()">返回</button>
+          <a class="btn" href="student-form.html">编辑资料</a>
+          <button class="btn" onclick="Proto.openDrawer('assign2')">分配教师</button>
+          <a class="btn btn-primary" href="../teacher/student-profile.html">查看学习档案</a>
+        </div>
+      </div>
+
+      <div class="grid g4 mb16">
+        <div class="card stat"><div class="stat-label">剩余课时</div>
+          <div class="stat-value" style="color:var(--success)">42<small>课时</small></div>
+          <div class="stat-foot">来源：ACC-2026-0001</div></div>
+        <div class="card stat"><div class="stat-label">累计训练单词</div>
+          <div class="stat-value">186<small>个</small></div>
+          <div class="stat-foot">口径：有过训练记录的单词数</div></div>
+        <div class="card stat"><div class="stat-label">待复习单词</div>
+          <div class="stat-value" style="color:var(--warning)">34<small>个</small></div>
+          <div class="stat-foot">莱特纳 22 · 21 天 12（有重叠）</div></div>
+        <div class="card stat"><div class="stat-label">已完成课程</div>
+          <div class="stat-value">18<small>节</small></div>
+          <div class="stat-foot">最近上课 2026-10-31</div></div>
+      </div>
+
+      <div class="card">
+        <div class="tabs" id="dtabs">
+          <button class="tab active" data-pane="p1">基础资料</button>
+          <button class="tab" data-pane="p2">课程记录<span class="count">18</span></button>
+          <button class="tab" data-pane="p3">学习档案</button>
+          <button class="tab" data-pane="p4">课时账户</button>
+          <button class="tab" data-pane="p5">学习报告<span class="count">3</span></button>
+          <button class="tab" data-pane="p6">操作日志</button>
+        </div>
+
+        <!-- 1 基础资料 -->
+        <div class="tab-pane active" id="p1">
+          <div class="grid g2" style="gap:20px">
+            <div>
+              <div class="section-title">学员信息</div>
+              <div class="desc g1">
+                <div class="desc-item"><span class="k">学员编号</span><span class="v mono">S2026001</span></div>
+                <div class="desc-item"><span class="k">姓名</span><span class="v">陈可欣</span></div>
+                <div class="desc-item"><span class="k">性别</span><span class="v">女</span></div>
+                <div class="desc-item"><span class="k">出生日期</span><span class="v">2013-06-18（13 岁）</span></div>
+                <div class="desc-item"><span class="k">当前年级</span><span class="v">七年级</span></div>
+                <div class="desc-item"><span class="k">学校</span><span class="v">城东实验中学</span></div>
+                <div class="desc-item"><span class="k">教材版本</span><span class="v">人教版</span></div>
+                <div class="desc-item"><span class="k">学员来源</span><span class="v">转介绍（代理 王磊）</span></div>
+                <div class="desc-item"><span class="k">入学日期</span><span class="v">2026-03-12</span></div>
+              </div>
+            </div>
+            <div>
+              <div class="section-title">家长与教学归属</div>
+              <div class="desc g1">
+                <div class="desc-item"><span class="k">所属家长</span><span class="v">陈志强（父亲，主要联系人）</span></div>
+                <div class="desc-item"><span class="k">联系电话</span><span class="v mono">13901112222</span></div>
+                <div class="desc-item"><span class="k">其他孩子</span><span class="v">付嘉禾（S2026008）</span></div>
+                <div class="desc-item"><span class="k">当前教师</span><span class="v">李婉（T001）</span></div>
+                <div class="desc-item"><span class="k">课程商品</span><span class="v">60 课时包（一对一）</span></div>
+                <div class="desc-item"><span class="k">学员状态</span><span class="v"><span class="tag tag-green">在读</span></span></div>
+                <div class="desc-item"><span class="k">创建时间</span><span class="v">2026-03-12 10:22</span></div>
+                <div class="desc-item"><span class="k">最近更新</span><span class="v">2026-10-31 20:15（李婉）</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="section-title">学习备注</div>
+          <div class="box" style="background:var(--bg);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--text-2)">
+            入学时词汇量约 300，听说较弱。<br>
+            10 月起加入莱特纳复习，红盒每日到期量控制在 12 个以内。<br>
+            家长希望每周至少 2 次课，关注口语与发音。
+          </div>
+          <div class="mt16 flex gap8">
+            <button class="btn" onclick="Proto.toast('已生成家长邀请（示意）','ok')">发送家长账号邀请</button>
+            <button class="btn btn-danger" onclick="Proto.confirmBox('关闭学员档案','关闭后学员不再参与排课，历史课程、订单、课时流水全部保留且可追溯。<br><br>确认关闭？','确认关闭',()=>Proto.toast('档案已关闭','ok'))">关闭学员档案</button>
+          </div>
+        </div>
+
+        <!-- 2 课程记录 -->
+        <div class="tab-pane" id="p2">
+          <div class="flex jcb mb12">
+            <div class="pill-tabs">
+              <button class="pill-tab on">全部</button><button class="pill-tab">已完成</button>
+              <button class="pill-tab">待上课</button><button class="pill-tab">异常</button>
+            </div>
+            <a class="btn btn-sm" href="schedule-calendar.html">去排课</a>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>日期</th><th>时间</th><th>教师</th><th>课程类型</th><th>课程状态</th><th>扣课状态</th><th>教学主题</th><th>报告</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr><td>2026-11-02</td><td class="mono">09:00-10:00</td><td>李婉</td><td>一对一</td>
+                  <td><span class="tag tag-green">已完成</span></td><td><span class="tag tag-green nodot">已扣课</span></td>
+                  <td>Unit 1 词汇强化</td><td><span class="tag tag-green">已提交</span></td>
+                  <td class="ops"><a class="btn-link" href="course-detail.html">详情</a></td></tr>
+                <tr><td>2026-10-31</td><td class="mono">19:00-20:00</td><td>李婉</td><td>一对一</td>
+                  <td><span class="tag tag-green">已完成</span></td><td><span class="tag tag-green nodot">已扣课</span></td>
+                  <td>Unit 3 词汇强化 + 短文听读</td><td><span class="tag tag-green">已提交</span></td>
+                  <td class="ops"><a class="btn-link" href="course-detail.html">详情</a></td></tr>
+                <tr><td>2026-10-28</td><td class="mono">19:00-20:00</td><td>李婉</td><td>一对一</td>
+                  <td><span class="tag tag-green">已完成</span></td><td><span class="tag tag-green nodot">已扣课</span></td>
+                  <td>Unit 2 词汇复习 + 21 天节点</td><td><span class="tag tag-green">已提交</span></td>
+                  <td class="ops"><a class="btn-link" href="course-detail.html">详情</a></td></tr>
+                <tr><td>2026-10-26</td><td class="mono">20:00-21:00</td><td>李婉</td><td>一对一</td>
+                  <td><span class="tag tag-green">已完成</span></td><td><span class="tag tag-green nodot">已扣课</span></td>
+                  <td>Unit 2 词汇首次训练</td><td><span class="tag tag-amber">已撤回</span></td>
+                  <td class="ops"><a class="btn-link" href="course-detail.html">详情</a></td></tr>
+                <tr><td>2026-10-24</td><td class="mono">19:00-20:00</td><td>李婉</td><td>一对一</td>
+                  <td><span class="tag tag-slate">已取消</span></td><td><span class="tag tag-slate nodot">未扣课</span></td>
+                  <td>—</td><td>—</td>
+                  <td class="ops"><a class="btn-link" href="course-detail.html">详情</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 18 条</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg">2</button><button class="pg">›</button></div>
+          </div>
+        </div>
+
+        <!-- 3 学习档案 -->
+        <div class="tab-pane" id="p3">
+          <div class="alert alert-info mb16"><span class="ico">i</span>
+            <div>「训练过的单词数」与「已确认掌握数」是两个不同口径，不可混用。掌握状态由教师在课堂中确认。</div></div>
+          <div class="grid g3 mb16">
+            <div class="card stat"><div class="stat-label">累计训练单词</div><div class="stat-value">186</div>
+              <div class="stat-foot">有训练记录的去重单词数</div></div>
+            <div class="card stat"><div class="stat-label">已确认掌握</div><div class="stat-value" style="color:var(--success)">132</div>
+              <div class="stat-foot">教师确认通过，非预筛结果</div></div>
+            <div class="card stat"><div class="stat-label">待复习</div><div class="stat-value" style="color:var(--warning)">34</div>
+              <div class="stat-foot">含暂不确定 7 个</div></div>
+          </div>
+
+          <div class="grid g2">
+            <div class="card">
+              <div class="card-head"><div class="card-title">莱特纳体系</div>
+                <a class="btn btn-sm" href="../teacher/leitner.html">进入复习</a></div>
+              <div class="card-body">
+                <div class="flex gap8 mb12" style="flex-wrap:wrap">
+                  <span class="kv-pill"><span class="box-dot dot-red"></span>红盒 6</span>
+                  <span class="kv-pill"><span class="box-dot dot-amber"></span>黄盒 23</span>
+                  <span class="kv-pill"><span class="box-dot dot-green"></span>绿盒 4</span>
+                </div>
+                <div class="bar-row mb8"><span class="small" style="width:56px">今日到期</span>
+                  <div class="bar amber"><i style="width:50%"></i></div><span class="val">6 / 12</span></div>
+                <div class="small muted">最近复习：2026-10-31 · 结果 认识 4 / 不认识 2</div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><div class="card-title">21 天记忆体系</div>
+                <a class="btn btn-sm" href="../teacher/memory21.html">查看计划</a></div>
+              <div class="card-body">
+                <div class="row small mb8">计划：11 月记忆强化计划 · 第 10 / 21 天</div>
+                <div class="bar-row mb8"><span class="small" style="width:56px">整体进度</span>
+                  <div class="bar green"><i style="width:48%"></i></div><span class="val">48%</span></div>
+                <div class="small muted">今日待复习 12 个 · 昨日已完成 14 / 14</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card mt16">
+            <div class="card-head"><div class="card-title">最近训练记录</div>
+              <span class="small muted">同一单词的多次训练全部保留</span></div>
+            <div class="card-body tight">
+              <table class="table compact">
+                <thead><tr><th>日期</th><th>类型</th><th>词库 / 文章</th><th>数量</th><th>结果</th><th>教师</th></tr></thead>
+                <tbody>
+                  <tr><td>2026-11-02</td><td>单词训练</td><td>人教版七上 Unit 1</td><td class="mono">23</td>
+                    <td><span class="tag tag-green nodot">通过 16</span> <span class="tag tag-amber nodot">待复习 7</span></td><td>李婉</td></tr>
+                  <tr><td>2026-10-31</td><td>单词训练</td><td>人教版七上 Unit 3</td><td class="mono">23</td>
+                    <td><span class="tag tag-green nodot">通过 16</span> <span class="tag tag-amber nodot">待复习 7</span></td><td>李婉</td></tr>
+                  <tr><td>2026-10-31</td><td>文章训练</td><td>A Trip to the Library</td><td class="mono">8 句</td>
+                    <td><span class="tag tag-green nodot">完成 8/8</span></td><td>李婉</td></tr>
+                  <tr><td>2026-10-30</td><td>莱特纳复习</td><td>红盒 + 黄盒 1</td><td class="mono">12</td>
+                    <td><span class="tag tag-green nodot">认识 9</span> <span class="tag tag-amber nodot">不确定 1</span></td><td>李婉</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 课时账户 -->
+        <div class="tab-pane" id="p4">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>账户编号</th><th>课程商品</th><th class="right">购买</th><th class="right">赠送</th><th class="right">已消耗</th><th class="right">已调整</th><th class="right">当前余额</th><th>有效期</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr><td class="mono small">ACC-2026-0001</td><td>60 课时包（一对一）</td>
+                  <td class="right mono">60</td><td class="right mono">0</td><td class="right mono">18</td>
+                  <td class="right mono">0</td><td class="right mono strong" style="color:var(--success)">42</td>
+                  <td>2027-09-11</td><td><span class="tag tag-green">正常</span></td>
+                  <td class="ops"><a class="btn-link" href="hour-account.html">查看流水</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="alert alert-info mt12"><span class="ico">i</span>
+            <div>可用余额 = 已入账 − 已扣除 + 已补入 − 已冲减。所有变化必须通过课时流水记录，<b>禁止直接修改余额字段</b>。</div></div>
+          <div class="section-title mt16">最近课时流水</div>
+          <div class="table-wrap">
+            <table class="table compact">
+              <thead><tr><th>流水编号</th><th>类型</th><th class="right">变动</th><th class="right">变动前</th><th class="right">变动后</th><th>关联业务</th><th>操作人</th><th>时间</th></tr></thead>
+              <tbody>
+                <tr><td class="mono small">FL20261102001</td><td>正常扣课</td><td class="right mono" style="color:var(--danger)">−1</td>
+                  <td class="right mono">43</td><td class="right mono">42</td><td class="small">C20261102001 课程完成</td><td>系统</td><td class="small">2026-11-02 10:35</td></tr>
+                <tr><td class="mono small">FL20261026008</td><td>正常扣课</td><td class="right mono" style="color:var(--danger)">−1</td>
+                  <td class="right mono">44</td><td class="right mono">43</td><td class="small">C20261026002 课程完成</td><td>系统</td><td class="small">2026-10-26 20:00</td></tr>
+                <tr><td class="mono small">FL20260912001</td><td>购买入账</td><td class="right mono" style="color:var(--success)">+60</td>
+                  <td class="right mono">0</td><td class="right mono">60</td><td class="small">OD20260912001 订单生效</td><td>张敏</td><td class="small">2026-09-12 10:30</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 5 学习报告 -->
+        <div class="tab-pane" id="p5">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>课程日期</th><th>教学主题</th><th class="right">训练单词</th><th class="right">通过</th><th class="right">待复习</th><th>报告状态</th><th>教师</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr><td>2026-10-31</td><td>Unit 3 词汇强化 + 短文听读</td><td class="right mono">23</td>
+                  <td class="right mono">16</td><td class="right mono">7</td>
+                  <td><span class="tag tag-green">已提交</span></td><td>李婉</td>
+                  <td class="ops"><a class="btn-link" href="../parent/report.html">查看报告</a></td></tr>
+                <tr><td>2026-10-28</td><td>Unit 2 词汇复习 + 21 天节点</td><td class="right mono">18</td>
+                  <td class="right mono">14</td><td class="right mono">4</td>
+                  <td><span class="tag tag-green">已提交</span></td><td>李婉</td>
+                  <td class="ops"><a class="btn-link" href="../parent/report.html">查看报告</a></td></tr>
+                <tr><td>2026-10-26</td><td>Unit 2 词汇首次训练</td><td class="right mono">28</td>
+                  <td class="right mono">20</td><td class="right mono">8</td>
+                  <td><span class="tag tag-amber">已撤回</span></td><td>李婉</td>
+                  <td class="ops"><a class="btn-link" href="../teacher/teaching-record.html">去修订</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 6 操作日志 -->
+        <div class="tab-pane" id="p6">
+          <div class="timeline">
+            <div class="tl-item on">
+              <div class="tl-head"><b>教师分配变更</b><span class="tl-time">2026-10-08 09:12 · 张敏</span></div>
+              <div class="tl-body">负责教师 周雅 → 李婉；原因：教学方向调整（词汇强化）。历史课程授课教师保持原值。</div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-head"><b>学员资料编辑</b><span class="tl-time">2026-09-20 15:40 · 教务处-小陈</span></div>
+              <div class="tl-body">更新字段：学校（城东实验小学 → 城东实验中学）、年级（六年级 → 七年级）。</div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-head"><b>课时账户入账</b><span class="tl-time">2026-09-12 10:30 · 张敏</span></div>
+              <div class="tl-body">订单 OD20260912001 生效，账户 ACC-2026-0001 入账 60 课时。</div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-head"><b>创建学员档案</b><span class="tl-time">2026-03-12 10:22 · 教务处-小陈</span></div>
+              <div class="tl-body">来源：转介绍（代理 王磊）；家长 陈志强（父亲，主要联系人）。</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="drawer-mask" id="assign2-mask" onclick="Proto.closeDrawer('assign2')"></div>
+<div class="drawer" id="assign2">
+  <div class="modal-head"><div class="modal-title">分配负责教师</div>
+    <button class="modal-close" onclick="Proto.closeDrawer('assign2')">×</button></div>
+  <div class="modal-body">
+    <div class="alert alert-warn mb16"><span class="ico">!</span><div>调整后历史课程仍保留原授课教师。</div></div>
+    <div class="field mb12"><label>学员</label><input class="input" value="陈可欣" disabled></div>
+    <div class="field mb12"><label>当前教师</label><input class="input" value="李婉" disabled></div>
+    <div class="field mb12"><label>新负责教师 <span class="req">*</span></label>
+      <select class="select"><option value="">请选择</option><option>周雅</option><option>何俊</option><option>沈心怡</option></select></div>
+    <div class="field"><label>调整原因</label><textarea class="textarea" placeholder="必填，记入操作日志"></textarea></div>
+  </div>
+  <div class="modal-foot"><button class="btn" onclick="Proto.closeDrawer('assign2')">取消</button>
+    <button class="btn btn-primary" onclick="Proto.closeDrawer('assign2');Proto.toast('教师归属已调整','ok')">确认</button></div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>Proto.shell({ role: 'admin', active: 'student-list' });</script>
+</body>
+</html>

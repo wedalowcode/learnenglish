@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>原型导航 · 英语一对一辅导教学运营平台</title>
+<link rel="stylesheet" href="assets/css/common.css">
+<style>
+  .landing { padding-top: 32px; }
+  .badge-role { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-2);
+    background:#fff; border:1px solid var(--border); border-radius:20px; padding:4px 12px; }
+  .mod-head { display:flex; align-items:center; gap:10px; }
+  .mod-no { width:22px; height:22px; border-radius:5px; background:var(--sidebar); color:#fff;
+    font-size:11px; display:flex; align-items:center; justify-content:center; font-weight:600; flex:0 0 auto; }
+  .note-list { font-size:12.5px; color:var(--text-2); line-height:1.85; }
+  .note-list li { padding-left:0; }
+  .note-list b { color:var(--text); font-weight:600; }
+</style>
+</head>
+<body>
+<div class="landing">
+
+  <div class="landing-head">
+    <div class="crumb">PRD V1.0 · 高保真交互原型</div>
+    <h1>英语一对一辅导教学运营平台</h1>
+    <p>多机构英语一对一教学运营 SaaS。以真实教学过程为核心，把单词训练、文章训练、莱特纳复习与 21 天记忆复习沉淀为标准化教学能力；所有关键业务规则（满员/冲突/扣课/状态流转）均可在原型中点验。</p>
+    <div class="landing-meta">
+      <span class="badge-role">6 个业务模块</span>
+      <span class="badge-role">48 个页面</span>
+      <span class="badge-role">5 类终端角色</span>
+      <span class="badge-role">纯 HTML5 / CSS3 / ES6</span>
+      <span class="badge-role">模拟数据：2026-11-02</span>
+    </div>
+  </div>
+
+  <div class="grid g3">
+
+    <!-- A -->
+    <div class="card module-card">
+      <div class="mod-head"><div class="mod-no">A</div><h3>机构经营管理</h3>
+        <span class="tag tag-blue nodot" style="margin-left:auto">PC 后台</span></div>
+      <div class="m-desc">老板 / 教务视角：经营概览、学员与教师、招生线索、订单与课时账务、排课与课程记录。</div>
+      <div class="page-links">
+        <a href="admin/dashboard.html">经营概览 <span class="code">admin/dashboard</span></a>
+        <a href="admin/student-list.html">学员管理（列表）<span class="code">admin/student-list</span></a>
+        <a href="admin/student-detail.html">学员详情（6 Tab）<span class="code">admin/student-detail</span></a>
+        <a href="admin/student-form.html">新增 / 编辑学员<span class="code">admin/student-form</span></a>
+        <a href="admin/parent-list.html">家长管理<span class="code">admin/parent-list</span></a>
+        <a href="admin/teacher-list.html">教师管理<span class="code">admin/teacher-list</span></a>
+        <a href="admin/teacher-detail.html">教师详情<span class="code">admin/teacher-detail</span></a>
+        <a href="admin/lead-list.html">客户线索<span class="code">admin/lead-list</span></a>
+        <a href="admin/lead-detail.html">线索详情 / 转学员<span class="code">admin/lead-detail</span></a>
+        <a href="admin/agent-list.html">代理管理<span class="code">admin/agent-list</span></a>
+        <a href="admin/product-list.html">课程商品<span class="code">admin/product-list</span></a>
+        <a href="admin/order-list.html">订单管理<span class="code">admin/order-list</span></a>
+        <a href="admin/order-create.html">创建订单（4 步）<span class="code">admin/order-create</span></a>
+        <a href="admin/order-detail.html">订单详情<span class="code">admin/order-detail</span></a>
+        <a href="admin/hour-account.html">课时账户<span class="code">admin/hour-account</span></a>
+        <a href="admin/hour-flow.html">课时流水 / 冲正<span class="code">admin/hour-flow</span></a>
+        <a href="admin/schedule-calendar.html">课程日历 / 排课冲突校验<span class="code">admin/schedule-calendar</span></a>
+        <a href="admin/course-list.html">课程记录<span class="code">admin/course-list</span></a>
+        <a href="admin/course-detail.html">课程详情 / 提交结果<span class="code">admin/course-detail</span></a>
+        <a href="admin/system.html">用户 · 角色 · 权限 · 日志<span class="code">admin/system</span></a>
+      </div>
+    </div>
+
+    <!-- B -->
+    <div class="card module-card">
+      <div class="mod-head"><div class="mod-no">B</div><h3>教学资源中心</h3>
+        <span class="tag tag-blue nodot" style="margin-left:auto">PC 后台</span></div>
+      <div class="m-desc">教材版本 → 年级 → 学期 → 单元 → 词库 / 文章。结构可扩展，不写死教材体系。</div>
+      <div class="page-links">
+        <a href="resource/material-list.html">教材结构与单元<span class="code">resource/material-list</span></a>
+        <a href="resource/wordbook-list.html">词库管理<span class="code">resource/wordbook-list</span></a>
+        <a href="resource/wordbook-detail.html">词库详情 / 单词多释义<span class="code">resource/wordbook-detail</span></a>
+        <a href="resource/article-list.html">文章管理<span class="code">resource/article-list</span></a>
+        <a href="resource/article-detail.html">文章详情 / 句子拆分<span class="code">resource/article-detail</span></a>
+        <a href="resource/import.html">资源导入（9 步）<span class="code">resource/import</span></a>
+      </div>
+      <div class="divider"></div>
+      <div class="m-desc" style="margin-bottom:0">
+        <b style="color:var(--text)">关键点：</b>一个基础单词可有多个中文释义；词库与单词多对多并保存库内排序；导入失败不破坏既有资源。
+      </div>
+    </div>
+
+    <!-- C -->
+    <div class="card module-card">
+      <div class="mod-head"><div class="mod-no">C</div><h3>教师教学工作台</h3>
+        <span class="tag tag-green nodot" style="margin-left:auto">教师 PC</span></div>
+      <div class="m-desc">今日课程、我的学员、学习档案、单词训练引擎、文章训练、两套独立复习体系、教学记录与报告。</div>
+      <div class="page-links">
+        <a href="teacher/workbench.html">今日工作台<span class="code">teacher/workbench</span></a>
+        <a href="teacher/my-students.html">我的学员<span class="code">teacher/my-students</span></a>
+        <a href="teacher/student-profile.html">学员学习档案（7 Tab）<span class="code">teacher/student-profile</span></a>
+        <a href="teacher/word-training-setup.html">① 单词训练 · 选词库<span class="code">word-training-setup</span></a>
+        <a href="teacher/word-training-prescreen.html">② 预筛选（认识/不认识）<span class="code">prescreen</span></a>
+        <a href="teacher/word-training.html">③ 分组训练 · 最后复习 · 结果<span class="code">word-training</span></a>
+        <a href="teacher/leitner.html">莱特纳复习 · 红黄绿盒<span class="code">teacher/leitner</span></a>
+        <a href="teacher/leitner-review.html">莱特纳复习执行<span class="code">leitner-review</span></a>
+        <a href="teacher/memory21.html">21 天记忆复习计划<span class="code">teacher/memory21</span></a>
+        <a href="teacher/memory21-review.html">21 天复习执行<span class="code">memory21-review</span></a>
+        <a href="teacher/article-training.html">文章训练（三阶段）<span class="code">article-training</span></a>
+        <a href="teacher/teaching-record.html">教学记录 / 报告表单<span class="code">teaching-record</span></a>
+      </div>
+    </div>
+
+    <!-- D -->
+    <div class="card module-card">
+      <div class="mod-head"><div class="mod-no">D</div><h3>家长服务中心</h3>
+        <span class="tag tag-purple nodot" style="margin-left:auto">移动端</span></div>
+      <div class="m-desc">家长只看被授权的孩子、课程记录、教师确认后的学习报告、待复习单词打印与课时余额。</div>
+      <div class="page-links">
+        <a href="parent/home.html">首页 · 孩子概览<span class="code">parent/home</span></a>
+        <a href="parent/course-records.html">课程记录<span class="code">parent/course-records</span></a>
+        <a href="parent/report.html">每节课学习报告<span class="code">parent/report</span></a>
+        <a href="parent/review-words.html">待复习单词（A4 打印）<span class="code">parent/review-words</span></a>
+        <a href="parent/hours.html">课时余额<span class="code">parent/hours</span></a>
+      </div>
+      <div class="divider"></div>
+      <div class="m-desc" style="margin-bottom:0">
+        <b style="color:var(--text)">边界：</b>家长不可训练、不可改正式掌握状态、不可调整课时；家庭勾选仅作辅助记录。
+      </div>
+    </div>
+
+    <!-- E -->
+    <div class="card module-card">
+      <div class="mod-head"><div class="mod-no">E</div><h3>招生代理中心</h3>
+        <span class="tag tag-amber nodot" style="margin-left:auto">移动 / PC</span></div>
+      <div class="m-desc">代理报备客户、跟进记录、成交订单与佣金。重复手机号进入归属审核，不以最后报备者判定归属。</div>
+      <div class="page-links">
+        <a href="agent/workbench.html">业绩概览<span class="code">agent/workbench</span></a>
+        <a href="agent/my-customers.html">我的客户<span class="code">agent/my-customers</span></a>
+        <a href="agent/customer-create.html">客户报备（重复检测）<span class="code">customer-create</span></a>
+        <a href="agent/customer-detail.html">客户详情 / 跟进<span class="code">customer-detail</span></a>
+        <a href="agent/commission.html">佣金记录<span class="code">agent/commission</span></a>
+      </div>
+    </div>
+
+    <!-- F -->
+    <div class="card module-card">
+      <div class="mod-head"><div class="mod-no">F</div><h3>可点验的业务规则</h3>
+        <span class="tag tag-red nodot" style="margin-left:auto">重点</span></div>
+      <div class="m-desc">以下规则不是文案展示，而是用 JS 模拟了判断与状态流转，可实际点击触发。</div>
+      <div class="page-links">
+        <a href="admin/schedule-calendar.html">教师 / 学员时间冲突 → 提交即拦截 <span class="tag tag-red nodot" style="font-size:10px">冲突</span></a>
+        <a href="admin/order-create.html">订单生效才生成课时账户与流水 <span class="tag tag-red nodot" style="font-size:10px">账务</span></a>
+        <a href="admin/hour-account.html">余额不足 → 课程进「待处理」，不产生负数 <span class="tag tag-red nodot" style="font-size:10px">扣课</span></a>
+        <a href="admin/hour-flow.html">误扣只能冲正，原流水不可删 <span class="tag tag-red nodot" style="font-size:10px">幂等</span></a>
+        <a href="admin/teacher-list.html">停用教师先检查未来预约 <span class="tag tag-red nodot" style="font-size:10px">校验</span></a>
+        <a href="teacher/word-training-prescreen.html">超过 45 个只取前 45，其余保留待训练 <span class="tag tag-red nodot" style="font-size:10px">引擎</span></a>
+        <a href="teacher/word-training.html">暂不确定 ≠ 掌握；两套复习体系不强绑 <span class="tag tag-red nodot" style="font-size:10px">算法</span></a>
+        <a href="agent/customer-create.html">重复手机号 → 归属审核提示 <span class="tag tag-red nodot" style="font-size:10px">归属</span></a>
+        <a href="parent/report.html">家长只读，报告须教师提交后可见 <span class="tag tag-red nodot" style="font-size:10px">权限</span></a>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head"><div class="card-title">设计假设与待确认项<span class="hint">PRD 未明确处，原型按下列假设实现，并显式标注</span></div></div>
+    <div class="card-body">
+      <ul class="note-list">
+        <li><b>1. 莱特纳算法参数（黄盒数量、间隔天数、答对/答错去向）</b> — PRD 明确要求配置化、不写死。原型在「莱特纳复习」页提供「盒子配置」抽屉，展示为可配置项，未预设某套固定算法；复习执行页只记录结果并提示去向由配置决定。</li>
+        <li><b>2. 21 天节点与每日上限</b> — PRD 列为待确认。原型时间轴展示 21 天节点与每日任务量，标注「按机构配置生成」，未固化具体节点规则。</li>
+        <li><b>3. 两套复习体系是否默认同时加入</b> — 训练结果页提供两个互相独立的勾选项（默认均不勾选），并提示「是否默认同时加入由机构配置决定」。</li>
+        <li><b>4. 佣金规则（比例 / 固定金额、确认时点、退款冲回、结算周期）</b> — 列为待业务确认。代理详情与佣金页展示「规则待确认」状态标签，不做自动计算假设。</li>
+        <li><b>5. 未付款订单是否可赊销加课时</b> — 原型按「不可」实现：订单状态为待付款时，课时账户不增加，并给出提示。</li>
+        <li><b>6. 迟到 / 临时取消 / 缺课责任划分</b> — 待机构确认。课程状态含「未上课」，扣课状态独立展示，不自动扣课。</li>
+        <li><b>7. 角色与权限</b> — 原型以三套菜单体现老板/教务、教师、代理，家长为移动端；权限点（如赠送课时、退款、冲正）在界面以「权限控制」标签标注，未实现完整 RBAC 配置矩阵。</li>
+        <li><b>8. 腾讯会议链接</b> — 原型以「已生成 / 未生成」状态字段模拟，未接入真实 API。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head"><div class="card-title">数据口径对照<span class="hint">对应 PRD 5.1 与 7.5</span></div></div>
+    <div class="card-body">
+      <div class="grid g2" style="gap:10px 24px;font-size:12.5px;color:var(--text-2);line-height:1.8">
+        <div><b style="color:var(--text)">新增学员</b>：按首次创建学员档案时间统计，不按首次上课时间。</div>
+        <div><b style="color:var(--text)">在读学员</b>：状态为在读且服务关系未关闭（暂停/关闭不计入）。</div>
+        <div><b style="color:var(--text)">课程完成数</b>：按实际上课并提交完成结果的课程记录统计。</div>
+        <div><b style="color:var(--text)">课时消耗</b>：按已确认扣课流水汇总，冲正不计入消耗。</div>
+        <div><b style="color:var(--text)">订单金额</b>：订单应收金额合计，与实收分开统计。</div>
+        <div><b style="color:var(--text)">实际收款</b>：按已登记收款记录统计，不得用订单金额替代。</div>
+        <div><b style="color:var(--text)">可用余额</b>：已入账 − 已扣除 + 已补入 − 已冲减，只能由流水驱动。</div>
+        <div><b style="color:var(--text)">训练数量 ≠ 掌握数量</b>：学习档案中两个指标分列并注明口径。</div>
+      </div>
+    </div>
+  </div>
+
+  <p class="small muted" style="text-align:center;margin-top:24px">点击任意页面左上角「← 原型导航总览」可返回本页 · 顶栏「切换角色」可跳转其他角色入口</p>
+</div>
+</body>
+</html>

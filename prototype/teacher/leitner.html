@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>莱特纳复习</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学管理<span class="sep">/</span>莱特纳复习</div>
+          <h1 class="page-title">莱特纳复习</h1>
+          <div class="page-sub">红 / 黄 / 绿盒子体系 · 盒子数量与间隔天数由机构配置，不写死固定算法</div>
+        </div>
+        <div class="page-actions">
+          <select class="select" style="width:170px"><option>陈可欣 · 七年级</option><option>付嘉禾 · 七年级</option></select>
+          <button class="btn" onclick="Proto.openDrawer('cfg')">盒子配置</button>
+          <button class="btn btn-primary" onclick="recommend()">系统推荐复习</button>
+        </div>
+      </div>
+
+      <div class="grid g4 mb16">
+        <div class="card stat"><div class="stat-label">今日待复习总数</div><div class="stat-value">11<small>个</small></div>
+          <div class="stat-foot">红盒 6 + 黄盒到期 5</div></div>
+        <div class="card stat"><div class="stat-label">今日已完成</div><div class="stat-value" style="color:var(--success)">0<small>个</small></div></div>
+        <div class="card stat"><div class="stat-label">体系内单词记录</div><div class="stat-value">33<small>条</small></div>
+          <div class="stat-foot">红 6 · 黄 23 · 绿 4（含重复）</div></div>
+        <div class="card stat"><div class="stat-label">最近复习</div><div class="stat-value" style="font-size:16px">10-31 19:40</div>
+          <div class="stat-foot">认识 9 · 不认识 2</div></div>
+      </div>
+
+      <!-- 红盒子 -->
+      <div class="card mb16">
+        <div class="card-head">
+          <div class="card-title" style="display:flex;align-items:center;gap:8px">
+            <span class="box-dot dot-red"></span>红盒子<span class="hint">今天需要复习的单词</span>
+          </div>
+          <div class="flex gap8">
+            <button class="btn btn-sm" onclick="openWords('red')">查看单词</button>
+            <a class="btn btn-sm btn-primary" href="leitner-review.html">进入复习</a>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="grid g3 mb16">
+            <div>
+              <div class="stat-label">单词数量</div>
+              <div class="bc-num">6 <small>个</small></div>
+            </div>
+            <div>
+              <div class="stat-label">到期单词</div>
+              <div class="bc-num" style="color:var(--danger)">6 <small>个</small></div>
+            </div>
+            <div>
+              <div class="stat-label">最近复习时间</div>
+              <div style="font-size:15px;font-weight:600;margin-top:6px">2026-10-31 19:40</div>
+            </div>
+          </div>
+          <div class="mini-words" style="justify-content:flex-start" id="redWords"></div>
+          <div class="alert alert-info mt16"><span class="ico">i</span>
+            <div>进入红盒条件：按当前配置的复习规则到期，<b>或</b>教师手动将单词加入今日复习。红盒内单词可直接移入绿盒（需确认）。</div></div>
+        </div>
+      </div>
+
+      <!-- 黄盒子 -->
+      <div class="card mb16">
+        <div class="card-head">
+          <div class="card-title" style="display:flex;align-items:center;gap:8px">
+            <span class="box-dot dot-amber"></span>黄盒子组<span class="hint">按配置的时间间隔管理</span>
+          </div>
+          <span class="small muted">间隔天数、进入条件、答对/答错去向均为可配置项</span>
+        </div>
+        <div class="card-body">
+          <div class="grid g3" id="yellowBoxes"></div>
+          <div class="alert alert-warn mt16"><span class="ico">!</span>
+            <div><b>算法待业务确认：</b>黄盒子数量、每盒间隔天数、答对后进入哪个盒子、答错后是否回到红盒，
+              均由机构配置决定。原型仅展示配置项与到期待办，不预设某套固定算法。</div></div>
+        </div>
+      </div>
+
+      <!-- 绿盒子 -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title" style="display:flex;align-items:center;gap:8px">
+            <span class="box-dot dot-green"></span>绿盒子<span class="hint">教师自主决定加入，不按固定间隔自动移动</span>
+          </div>
+          <div class="flex gap8">
+            <button class="btn btn-sm" onclick="openWords('green')">查看单词</button>
+            <a class="btn btn-sm btn-primary" href="leitner-review.html">进入复习</a>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="grid g3 mb16">
+            <div><div class="stat-label">单词数量</div><div class="bc-num">4 <small>个</small></div></div>
+            <div><div class="stat-label">今日建议复习</div><div class="bc-num" style="color:var(--warning)">4 <small>个</small></div></div>
+            <div><div class="stat-label">最近复习时间</div>
+              <div style="font-size:15px;font-weight:600;margin-top:6px">2026-10-30 19:35</div></div>
+          </div>
+          <div class="mini-words" style="justify-content:flex-start" id="greenWords"></div>
+          <div class="small muted mt12">加入方式：学员单词档案 / 红盒 / 黄盒 / 训练过程中，均可加入绿盒；手动移动会记录操作人、时间与原因。</div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- 盒子单词 -->
+<div class="mask" id="wordsModal">
+  <div class="modal wide">
+    <div class="modal-head"><div class="modal-title" id="wmTitle">红盒子单词</div>
+      <button class="modal-close" onclick="Proto.closeModal('wordsModal')">×</button></div>
+    <div class="modal-body">
+      <div class="table-wrap">
+        <table class="table compact">
+          <thead><tr><th>单词</th><th>音标</th><th>中文释义</th><th>来源词库</th><th>加入时间</th>
+            <th>到期时间</th><th>最近复习</th><th>最近结果</th><th>操作</th></tr></thead>
+          <tbody id="wmRows"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('wordsModal')">关闭</button>
+      <a class="btn btn-primary" href="leitner-review.html">开始复习</a>
+    </div>
+  </div>
+</div>
+
+<!-- 盒子配置 -->
+<div class="drawer-mask" id="cfg-mask" onclick="Proto.closeDrawer('cfg')"></div>
+<div class="drawer" id="cfg" style="width:520px">
+  <div class="modal-head"><div class="modal-title">莱特纳盒子配置</div>
+    <button class="modal-close" onclick="Proto.closeDrawer('cfg')">×</button></div>
+  <div class="modal-body">
+    <div class="alert alert-warn mb16"><span class="ico">!</span>
+      <div>以下参数<b>待业务确认</b>，保存后只影响之后产生的复习任务，<b>不篡改历史复习记录</b>。</div></div>
+    <div class="table-wrap">
+      <table class="table compact">
+        <thead><tr><th>盒子</th><th>序号</th><th>间隔天数</th><th>答对后</th><th>答错后</th><th>启用</th></tr></thead>
+        <tbody>
+          <tr><td>红盒子</td><td>0</td><td>当日</td><td>黄盒 1</td><td>留在红盒</td>
+            <td><span class="switch"><input type="checkbox" checked><span></span></span></td></tr>
+          <tr><td>黄盒 1</td><td>1</td><td><input class="input" value="2" style="height:26px;width:52px;padding:0 6px"></td>
+            <td>黄盒 2</td><td>红盒子</td>
+            <td><span class="switch"><input type="checkbox" checked><span></span></span></td></tr>
+          <tr><td>黄盒 2</td><td>2</td><td><input class="input" value="5" style="height:26px;width:52px;padding:0 6px"></td>
+            <td>黄盒 3</td><td>红盒子</td>
+            <td><span class="switch"><input type="checkbox" checked><span></span></span></td></tr>
+          <tr><td>黄盒 3</td><td>3</td><td><input class="input" value="10" style="height:26px;width:52px;padding:0 6px"></td>
+            <td>毕业</td><td>红盒子</td>
+            <td><span class="switch"><input type="checkbox" checked><span></span></span></td></tr>
+          <tr><td>绿盒子</td><td>—</td><td>手动</td><td>手动</td><td>手动</td>
+            <td><span class="switch"><input type="checkbox" checked><span></span></span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="field mt16"><label>新增黄盒子</label>
+      <div class="flex gap8"><input class="input" placeholder="盒子名称，如 黄盒 4"><input class="input" placeholder="间隔天数" style="width:110px">
+        <button class="btn">添加</button></div></div>
+    <div class="field mt12"><label>到期判定时间</label>
+      <select class="select"><option>每日 00:00 统一判定</option><option>按上次复习时间实时计算</option></select></div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn" onclick="Proto.closeDrawer('cfg')">取消</button>
+    <button class="btn btn-primary" onclick="Proto.closeDrawer('cfg');Proto.toast('配置已保存，历史记录不受影响','ok')">保存配置</button>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'teacher', active: 'leitner' });
+
+document.getElementById('redWords').innerHTML =
+  DB.leitner.red.map(w => `<span class="mini-word no">${w.en}</span>`).join('');
+document.getElementById('greenWords').innerHTML =
+  DB.leitner.green.map(w => `<span class="mini-word">${w.en}</span>`).join('');
+
+document.getElementById('yellowBoxes').innerHTML = DB.leitner.yellow.map(b => `
+  <div class="box-card" onclick="Proto.toast('进入 ${b.name} 复习','ok')">
+    <div class="bc-top">
+      <div class="bc-name"><span class="box-dot dot-amber"></span>${b.name}</div>
+      <span class="tag ${b.due > 0 ? 'tag-red' : 'tag-slate'} nodot">${b.due > 0 ? '到期 ' + b.due : '无到期'}</span>
+    </div>
+    <div class="bc-num">${b.count}<small>个单词</small></div>
+    <div class="small muted">复习间隔：${b.interval} · 最近复习 ${b.last}</div>
+    <div class="flex gap8 mt12">
+      <button class="btn btn-sm grow" onclick="event.stopPropagation();openWords('yellow','${b.name}')">查看单词</button>
+      <button class="btn btn-sm grow btn-primary" onclick="event.stopPropagation();Proto.toast('进入 ${b.name} 复习','ok')">进入复习</button>
+    </div>
+  </div>`).join('');
+
+function openWords(type, name) {
+  const title = document.getElementById('wmTitle');
+  if (type === 'red') {
+    title.textContent = '红盒子单词 · 今日 6 个到期';
+    Proto.renderRows('wmRows', DB.leitner.red, w => `
+      <tr><td class="strong">${w.en}</td><td class="mono small">${w.ph}</td><td>${w.cn}</td>
+        <td class="small">${w.from}</td><td class="small muted">${w.added}</td><td>${w.due}</td>
+        <td class="small muted">${w.lastReview}</td>
+        <td>${w.lastResult === '认识' ? '<span class="tag tag-green nodot">认识</span>'
+          : w.lastResult === '暂不确定' ? '<span class="tag tag-amber nodot">暂不确定</span>'
+          : '<span class="tag tag-red nodot">不认识</span>'}</td>
+        <td class="ops"><button class="btn-link" onclick="Proto.toast('已移入绿盒，需权限确认','ok')">移入绿盒</button></td></tr>`, 9);
+  } else if (type === 'green') {
+    title.textContent = '绿盒子单词 · 教师自主复习';
+    Proto.renderRows('wmRows', DB.leitner.green, w => `
+      <tr><td class="strong">${w.en}</td><td class="mono small">${w.ph}</td><td>${w.cn}</td>
+        <td class="small">${w.reason}</td><td class="small">${w.by}</td><td>${w.added}</td>
+        <td class="small muted">${w.lastReview}</td><td>—</td>
+        <td class="ops"><button class="btn-link" onclick="Proto.toast('查看复习历史（示意）')">历史</button></td></tr>`, 9);
+  } else {
+    title.textContent = name + ' · 单词列表';
+    Proto.renderRows('wmRows', DB.leitner.red.slice(0, 4), w => `
+      <tr><td class="strong">${w.en}</td><td class="mono small">${w.ph}</td><td>${w.cn}</td>
+        <td class="small">${w.from}</td><td class="small muted">${w.added}</td><td>${w.due}</td>
+        <td class="small muted">${w.lastReview}</td>
+        <td><span class="tag tag-green nodot">${w.lastResult}</span></td>
+        <td class="ops"><button class="btn-link" onclick="Proto.toast('查看历史（示意）')">历史</button></td></tr>`, 9);
+  }
+  Proto.openModal('wordsModal');
+}
+
+function recommend() {
+  Proto.confirmBox('系统推荐复习',
+    `系统按当前配置推荐本次复习内容：<br><br>
+     · 红盒子到期 <b>6</b> 个<br>
+     · 黄盒 1 到期 <b>3</b> 个<br>
+     · 黄盒 3 到期 <b>2</b> 个<br>
+     · 绿盒建议 <b>4</b> 个<br><br>
+     合计 <b>15</b> 个，预计 8–10 分钟。`,
+    '开始复习', () => location.href = 'leitner-review.html');
+}
+</script>
+</body>
+</html>

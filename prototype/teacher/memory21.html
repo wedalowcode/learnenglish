@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>21 天记忆复习</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学管理<span class="sep">/</span>21 天记忆复习</div>
+          <h1 class="page-title">21 天记忆复习</h1>
+          <div class="page-sub">独立于莱特纳体系 · 不使用红黄绿盒 · 任务独立记录</div>
+        </div>
+        <div class="page-actions">
+          <select class="select" style="width:170px"><option>陈可欣 · 七年级</option><option>付嘉禾 · 七年级</option></select>
+          <button class="btn" onclick="Proto.openModal('planModal')">+ 创建新计划</button>
+          <a class="btn btn-primary" href="memory21-review.html">进入今日复习</a>
+        </div>
+      </div>
+
+      <div class="grid g6 mb16">
+        <div class="card stat"><div class="stat-label">计划状态</div>
+          <div class="stat-value" style="font-size:16px;color:var(--primary)">进行中</div></div>
+        <div class="card stat"><div class="stat-label">开始日期</div>
+          <div class="stat-value" style="font-size:16px">10-24</div></div>
+        <div class="card stat"><div class="stat-label">当前进度</div>
+          <div class="stat-value">10<small>/ 21 天</small></div></div>
+        <div class="card stat"><div class="stat-label">今日待复习</div>
+          <div class="stat-value" style="color:var(--warning)">12<small>个</small></div></div>
+        <div class="card stat"><div class="stat-label">今日已完成</div>
+          <div class="stat-value">0<small>个</small></div></div>
+        <div class="card stat"><div class="stat-label">整体完成率</div>
+          <div class="stat-value">48<small>%</small></div>
+          <div class="stat-foot">含 1 天逾期 3 个</div></div>
+      </div>
+
+      <div class="card mb16">
+        <div class="card-head">
+          <div class="card-title">21 天计划时间轴<span class="hint">11 月记忆强化计划 · 参与单词 23 个</span></div>
+          <div class="flex gap8 small aic">
+            <span class="tag tag-green nodot">已完成</span>
+            <span class="tag tag-blue nodot">今日</span>
+            <span class="tag tag-red nodot">逾期</span>
+            <span class="tag tag-slate nodot">计划 / 休息</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="d21" id="days"></div>
+          <div class="alert alert-warn mt16"><span class="ico">!</span>
+            <div><b>待确认配置：</b>21 天内的具体复习日期节点、每日复习数量上限、答错是否追加复习、中断后是否顺延、
+              21 天结束后是否自动归档 —— 均由机构配置，原型不擅自设定为固定规则。</div></div>
+        </div>
+      </div>
+
+      <div class="grid g-2-1" style="align-items:start">
+        <div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">今日复习任务<span class="hint">第 10 天 · 2026-11-02</span></div>
+              <a class="btn btn-sm btn-primary" href="memory21-review.html">开始复习</a></div>
+            <div class="card-body tight">
+              <table class="table compact">
+                <thead><tr><th>单词</th><th>音标</th><th>中文释义</th><th>加入日期</th><th>上次复习</th><th>上次结果</th></tr></thead>
+                <tbody id="todayWords"></tbody>
+              </table>
+            </div>
+            <div class="card-foot"><span class="small muted">共 12 个单词，预计 6–8 分钟</span>
+              <a class="btn btn-sm btn-primary" href="memory21-review.html">开始复习</a></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">历史复习记录</div>
+              <span class="small muted">每次复习生成独立任务记录</span></div>
+            <div class="card-body tight">
+              <table class="table compact">
+                <thead><tr><th>日期</th><th>节点</th><th class="right">单词数</th><th class="right">完成</th>
+                  <th>完成率</th><th>状态</th><th>教师</th></tr></thead>
+                <tbody>
+                  <tr><td>2026-10-31</td><td>第 8 天</td><td class="right mono">14</td><td class="right mono">14</td>
+                    <td><span class="bar-row" style="width:90px"><span class="bar green" style="flex:1"><i style="width:100%"></i></span><span class="val">100%</span></span></td>
+                    <td><span class="tag tag-green">已完成</span></td><td>李婉</td></tr>
+                  <tr><td>2026-10-30</td><td>第 7 天</td><td class="right mono">14</td><td class="right mono">11</td>
+                    <td><span class="bar-row" style="width:90px"><span class="bar amber" style="flex:1"><i style="width:79%"></i></span><span class="val">79%</span></span></td>
+                    <td><span class="tag tag-red">已逾期</span></td><td>李婉</td></tr>
+                  <tr><td>2026-10-28</td><td>第 5 天</td><td class="right mono">16</td><td class="right mono">16</td>
+                    <td><span class="bar-row" style="width:90px"><span class="bar green" style="flex:1"><i style="width:100%"></i></span><span class="val">100%</span></span></td>
+                    <td><span class="tag tag-green">已完成</span></td><td>李婉</td></tr>
+                  <tr><td>2026-10-26</td><td>第 3 天</td><td class="right mono">18</td><td class="right mono">18</td>
+                    <td><span class="bar-row" style="width:90px"><span class="bar green" style="flex:1"><i style="width:100%"></i></span><span class="val">100%</span></span></td>
+                    <td><span class="tag tag-green">已完成</span></td><td>李婉</td></tr>
+                  <tr><td>2026-10-25</td><td>第 2 天</td><td class="right mono">23</td><td class="right mono">23</td>
+                    <td><span class="bar-row" style="width:90px"><span class="bar green" style="flex:1"><i style="width:100%"></i></span><span class="val">100%</span></span></td>
+                    <td><span class="tag tag-green">已完成</span></td><td>李婉</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">计划详情</div>
+              <button class="btn btn-sm" onclick="Proto.toast('打开编辑计划（示意）')">编辑</button></div>
+            <div class="card-body">
+              <div class="desc g1">
+                <div class="desc-item"><span class="k">计划名称</span><span class="v">11 月记忆强化计划</span></div>
+                <div class="desc-item"><span class="k">学员</span><span class="v">陈可欣</span></div>
+                <div class="desc-item"><span class="k">开始日期</span><span class="v">2026-10-24</span></div>
+                <div class="desc-item"><span class="k">参与单词</span><span class="v mono">23 个</span></div>
+                <div class="desc-item"><span class="k">单词范围</span><span class="v small">人教版七上 Unit 1（待复习单词）</span></div>
+                <div class="desc-item"><span class="k">复习策略</span><span class="v small">按机构默认 21 天策略</span></div>
+                <div class="desc-item"><span class="k">创建人</span><span class="v">李婉 · 2026-10-24</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">与莱特纳的关系</div></div>
+            <div class="card-body">
+              <div class="alert alert-info mb12"><span class="ico">i</span>
+                <div>同一单词可以<b>同时</b>出现在莱特纳和 21 天体系中，两套体系独立生成任务、独立记录结果。</div></div>
+              <div class="m-row"><span class="k">同时在莱特纳体系</span><span class="mono">18 个</span></div>
+              <div class="m-row"><span class="k">仅在 21 天体系</span><span class="mono">5 个</span></div>
+              <div class="m-row" style="border-bottom:none"><span class="k">两体系结果相互覆盖</span>
+                <span class="tag tag-red nodot">否</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">创建入口</div></div>
+            <div class="card-body" style="font-size:12.5px;color:var(--text-2);line-height:1.85">
+              · 单词训练完成后，由教师选择加入<br>
+              · 教师在学员档案中手动创建<br>
+              · 未来支持批量选择历史训练单词
+              <button class="btn btn-block mt12" onclick="Proto.openModal('planModal')">创建新计划</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 创建计划 -->
+<div class="mask" id="planModal">
+  <div class="modal wide">
+    <div class="modal-head"><div class="modal-title">创建 21 天复习计划</div>
+      <button class="modal-close" onclick="Proto.closeModal('planModal')">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid g2">
+        <div class="field"><label>学员 <span class="req">*</span></label>
+          <select class="select"><option>陈可欣</option><option>付嘉禾</option></select></div>
+        <div class="field"><label>计划名称 <span class="req">*</span></label>
+          <input class="input" value="11 月记忆强化计划"></div>
+        <div class="field"><label>计划开始日期 <span class="req">*</span></label>
+          <input class="input" type="date" value="2026-11-02"></div>
+        <div class="field"><label>复习策略</label>
+          <select class="select"><option>机构默认 21 天策略</option><option>自定义（待配置）</option></select></div>
+        <div class="field full"><label>选择单词范围</label>
+          <div class="radio-row">
+            <label class="radio"><input type="radio" name="scope" checked>本次训练的待复习单词（7 个）</label>
+            <label class="radio"><input type="radio" name="scope">指定词库中的单词</label>
+            <label class="radio"><input type="radio" name="scope">手动勾选</label>
+          </div></div>
+        <div class="field full"><label>备注</label><textarea class="textarea" placeholder="选填"></textarea></div>
+      </div>
+      <div class="alert alert-warn mt16"><span class="ico">!</span>
+        <div>系统将按机构配置生成 21 天复习时间表。具体节点、每日上限、中断顺延等规则为<b>待确认配置项</b>。</div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('planModal')">取消</button>
+      <button class="btn btn-primary" onclick="Proto.closeModal('planModal');Proto.toast('21 天计划已创建','ok')">创建计划</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'teacher', active: 'memory21' });
+
+document.getElementById('days').innerHTML = DB.plan21.nodes.map(n => {
+  const cls = n.state === 'done' ? 'done' : n.state === 'today' ? 'today'
+    : n.state === 'miss' ? 'miss' : n.state === 'rest' ? '' : 'plan';
+  return `<div class="day ${cls}" onclick="Proto.toast('第 ${n.day} 天 · ${n.date}${n.count ? ' · ' + n.done + '/' + n.count : ' · 休息'}')">
+    <b>第 ${n.day} 天</b>${n.date.slice(5)}
+    <div>${n.count ? `${n.done} / ${n.count}` : '休息'}</div>
+  </div>`;
+}).join('');
+
+const today = DB.leitner.red.slice(0, 6).concat([
+  { en: 'class', ph: '/klɑːs/', cn: '班级；课', added: '2026-10-24', lastReview: '2026-10-31', lastResult: '认识' },
+  { en: 'look', ph: '/lʊk/', cn: '看；看起来', added: '2026-10-24', lastReview: '2026-10-31', lastResult: '认识' },
+  { en: 'first', ph: '/fɜːst/', cn: '第一的；首先', added: '2026-10-24', lastReview: '2026-10-31', lastResult: '暂不确定' },
+  { en: 'last', ph: '/lɑːst/', cn: '最后的；持续', added: '2026-10-24', lastReview: '2026-10-30', lastResult: '不认识' },
+  { en: 'happy', ph: '/ˈhæpi/', cn: '高兴的', added: '2026-10-24', lastReview: '2026-10-30', lastResult: '认识' },
+  { en: 'name', ph: '/neɪm/', cn: '名字；命名', added: '2026-10-24', lastReview: '2026-10-30', lastResult: '认识' },
+]);
+
+Proto.renderRows('todayWords', today, w => `
+  <tr>
+    <td class="strong">${w.en}</td>
+    <td class="mono small muted">${w.ph}</td>
+    <td>${w.cn || (w.mean ? w.mean.map(m => m.cn).join('；') : '')}</td>
+    <td class="small muted">${w.added || '2026-10-24'}</td>
+    <td class="small muted">${w.lastReview}</td>
+    <td>${w.lastResult === '认识' ? '<span class="tag tag-green nodot">认识</span>'
+      : w.lastResult === '暂不确定' ? '<span class="tag tag-amber nodot">暂不确定</span>'
+      : '<span class="tag tag-red nodot">不认识</span>'}</td>
+  </tr>`, 6);
+</script>
+</body>
+</html>

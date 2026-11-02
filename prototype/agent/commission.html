@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>佣金记录</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">佣金管理<span class="sep">/</span>佣金记录</div>
+          <h1 class="page-title">佣金记录</h1>
+          <div class="page-sub">王磊 · 规则 成交额 8% · 确认时点与结算周期待业务确认</div>
+        </div>
+        <div class="page-actions">
+          <select class="select" style="width:140px">
+            <option>全部状态</option><option>待确认</option><option>待结算</option>
+            <option>已结算</option><option>已冲回</option>
+          </select>
+          <button class="btn" onclick="Proto.toast('导出佣金明细（示意）','ok')">导出</button>
+        </div>
+      </div>
+
+      <div class="grid g4 mb16">
+        <div class="card stat"><div class="stat-label">累计成交金额</div><div class="stat-value">¥ 41,260</div>
+          <div class="stat-foot">6 笔订单</div></div>
+        <div class="card stat"><div class="stat-label">已结算佣金</div>
+          <div class="stat-value" style="color:var(--text-2)">¥ 1,460</div></div>
+        <div class="card stat"><div class="stat-label">待结算佣金</div>
+          <div class="stat-value" style="color:var(--warning)">¥ 1,840</div></div>
+        <div class="card stat"><div class="stat-label">待确认佣金</div>
+          <div class="stat-value" style="color:var(--info)">¥ 360</div></div>
+      </div>
+
+      <div class="alert alert-warn mb16"><span class="ico">!</span>
+        <div><b>佣金规则为待确认项：</b>比例或固定金额、确认时点（订单确认 / 收款完成）、退款如何冲回、结算周期，
+          均由机构配置。<b>页面金额为示意，不作为结算依据</b>；「已冲回」记录代表订单退款后的佣金冲减，原记录不删除。</div></div>
+
+      <div class="card">
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th style="width:120px">佣金编号</th><th>客户</th><th style="width:126px">订单编号</th>
+                <th class="right">订单金额</th><th>佣金规则</th><th class="right">佣金金额</th>
+                <th>佣金状态</th><th>结算时间</th><th style="width:90px">操作</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 6 条</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt16">
+        <div class="card-head"><div class="card-title">佣金状态说明</div></div>
+        <div class="card-body" style="font-size:12.5px;color:var(--text-2);line-height:1.9">
+          <b style="color:var(--text)">待确认</b> → 订单已创建但尚未满足机构的确认条件（如未收齐款）；
+          <b style="color:var(--text)">待结算</b> → 已确认，等待按结算周期打款；
+          <b style="color:var(--text)">已结算</b> → 已完成打款，记录结算时间；
+          <b style="color:var(--text)">已冲回</b> → 订单退款或取消，佣金冲减，原记录保留可追溯。
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'agent', active: 'agent-commission' });
+
+const CS = { '待确认': 'tag-blue', '待结算': 'tag-amber', '已结算': 'tag-green', '已冲回': 'tag-red' };
+const DATA = [
+  { id: 'CM20261018001', cust: '郑先生', order: 'OD20261018003', amount: 3680, rule: '成交额 8%', fee: 294.4, st: '待结算', time: '—' },
+  { id: 'CM20261008002', cust: '黄女士', order: 'OD20261008002', amount: 6980, rule: '成交额 8%', fee: 558.4, st: '待确认', time: '—' },
+  { id: 'CM20260912003', cust: '陈志强', order: 'OD20260912001', amount: 6980, rule: '成交额 8%', fee: 558.4, st: '已结算', time: '2026-10-15' },
+  { id: 'CM20260920004', cust: '罗先生', order: 'OD20260920004', amount: 3680, rule: '成交额 8%', fee: 294.4, st: '已结算', time: '2026-10-15' },
+  { id: 'CM20260815005', cust: '许先生', order: 'OD20260815005', amount: 2580, rule: '成交额 8%', fee: 206.4, st: '已结算', time: '2026-09-15' },
+  { id: 'CM20260710006', cust: '邓女士', order: 'OD20260710006', amount: 1280, rule: '成交额 8%', fee: 102.4, st: '已冲回', time: '2026-08-20 冲回' },
+];
+
+Proto.renderRows('rows', DATA, c => `
+  <tr>
+    <td class="mono small">${c.id}</td>
+    <td class="strong">${c.cust}</td>
+    <td class="mono small">${c.order}</td>
+    <td class="right mono">${Proto.money(c.amount)}</td>
+    <td class="small">${c.rule}</td>
+    <td class="right mono strong">${Proto.money(c.fee)}</td>
+    <td><span class="tag ${CS[c.st]}">${c.st}</span></td>
+    <td class="small muted">${c.time}</td>
+    <td class="ops"><button class="btn-link" onclick="Proto.toast('查看佣金明细（示意）')">明细</button></td>
+  </tr>`, 9);
+</script>
+</body>
+</html>

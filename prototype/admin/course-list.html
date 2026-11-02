@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>课程记录</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学管理<span class="sep">/</span>课程记录</div>
+          <h1 class="page-title">课程记录</h1>
+          <div class="page-sub">已完成、已取消、未上课与待处理课程 · 扣课状态独立于课程状态</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn" onclick="Proto.toast('导出课程记录（示意）','ok')">导出</button>
+          <a class="btn" href="schedule-calendar.html">去排课</a>
+        </div>
+      </div>
+
+      <div class="grid g4 mb16">
+        <div class="card stat"><div class="stat-label">本月已完成</div><div class="stat-value">218<small>节</small></div></div>
+        <div class="card stat"><div class="stat-label">本月未上课</div><div class="stat-value" style="color:var(--text-2)">12<small>节</small></div>
+          <div class="stat-foot">不扣课时</div></div>
+        <div class="card stat"><div class="stat-label">本月已取消</div><div class="stat-value" style="color:var(--text-2)">6<small>节</small></div>
+          <div class="stat-foot">不扣课时</div></div>
+        <div class="card stat"><div class="stat-label">待处理异常</div><div class="stat-value" style="color:var(--danger)">1<small>节</small></div>
+          <div class="stat-foot">赵一诺 · 课时不足</div></div>
+      </div>
+
+      <div class="card filter">
+        <div class="field"><label>课程编号</label><input class="input" id="kw" placeholder="C 开头" oninput="render()"></div>
+        <div class="field"><label>学员</label><input class="input" id="stu" placeholder="学员姓名" oninput="render()"></div>
+        <div class="field"><label>教师</label>
+          <select class="select" id="tc" onchange="render()"><option value="">全部</option>
+            <option>李婉</option><option>周雅</option><option>何俊</option><option>沈心怡</option></select></div>
+        <div class="field"><label>课程状态</label>
+          <select class="select" id="st" onchange="render()">
+            <option value="">全部</option><option>待上课</option><option>已开始</option><option>已完成</option>
+            <option>已取消</option><option>未上课</option><option>待处理</option>
+          </select></div>
+        <div class="field"><label>扣课状态</label>
+          <select class="select" id="dd" onchange="render()">
+            <option value="">全部</option><option>已扣课</option><option>未扣课</option><option>扣课异常</option>
+          </select></div>
+        <div class="field"><label>日期</label>
+          <div class="flex gap8">
+            <input class="input" type="date" value="2026-10-01" style="max-width:150px">
+            <input class="input" type="date" value="2026-11-02" style="max-width:150px">
+          </div></div>
+        <div class="filter-actions"><button class="btn btn-primary" onclick="render()">查询</button>
+          <button class="btn" onclick="reset()">重置</button></div>
+      </div>
+
+      <div class="card mt16">
+        <div class="card-head"><div class="card-title">课程列表<span class="hint" id="cnt"></span></div>
+          <div class="small muted">「已开始」不等于实际完成</div></div>
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th style="width:112px">课程编号</th><th>日期</th><th>开始</th><th>结束</th><th>学员</th><th>教师</th>
+                  <th>课程类型</th><th>腾讯会议</th><th>课程状态</th><th>扣课状态</th><th>创建人</th><th style="width:190px">操作</th></tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 <b id="total">14</b> 条</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="alert alert-info mt16"><span class="ico">i</span>
+        <div>「已开始」只表示教师进入了课堂，<b>不能代表实际上课完成</b>；只有教师提交课程结果后课程才变为「已完成」，并在余额充足时生成扣课流水。</div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'course-list' });
+
+const CST = { '已完成': 'tag-green', '待上课': 'tag-blue', '已开始': 'tag-cyan', '待处理': 'tag-amber', '未上课': 'tag-slate', '已取消': 'tag-slate' };
+const DST = { '已扣课': 'tag-green nodot', '未扣课': 'tag-slate nodot', '扣课异常': 'tag-red nodot' };
+
+function render() {
+  const kw = document.getElementById('kw').value.trim();
+  const stu = document.getElementById('stu').value.trim();
+  const tc = document.getElementById('tc').value;
+  const st = document.getElementById('st').value;
+  const dd = document.getElementById('dd').value;
+
+  const rows = DB.courses.filter(c => {
+    if (kw && !c.id.toLowerCase().includes(kw.toLowerCase())) return false;
+    if (stu && !c.student.includes(stu)) return false;
+    if (tc && c.teacher !== tc) return false;
+    if (st && c.status !== st) return false;
+    if (dd && c.deduct !== dd) return false;
+    return true;
+  }).sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
+
+  document.getElementById('cnt').textContent = `筛选结果 ${rows.length} 条`;
+  document.getElementById('total').textContent = rows.length;
+
+  Proto.renderRows('rows', rows, c => `
+    <tr>
+      <td class="mono small">${c.id}</td>
+      <td>${c.date}</td>
+      <td class="mono">${c.start}</td>
+      <td class="mono">${c.end}</td>
+      <td class="strong">${c.student}</td>
+      <td>${c.teacher}</td>
+      <td class="small">${c.type}</td>
+      <td>${c.meeting === '已生成'
+        ? '<span class="tag tag-green nodot">已生成</span>'
+        : '<span class="tag tag-slate nodot">未生成</span>'}</td>
+      <td><span class="tag ${CST[c.status]}">${c.status}</span></td>
+      <td><span class="tag ${DST[c.deduct]}">${c.deduct}</span></td>
+      <td class="small muted">${c.creator}</td>
+      <td class="ops">
+        <a class="btn-link" href="course-detail.html">详情</a>
+        ${['待上课', '已开始'].includes(c.status)
+          ? `<button class="btn-link" onclick="Proto.toast('打开调整预约（示意）')">调整</button>
+             <button class="btn-link danger" onclick="cancel('${c.student}')">取消</button>`
+          : `<a class="btn-link" href="hour-flow.html">扣课流水</a>`}
+      </td>
+    </tr>`, 12, '没有符合条件的课程');
+}
+
+function reset() {
+  document.getElementById('kw').value = '';
+  document.getElementById('stu').value = '';
+  ['tc', 'st', 'dd'].forEach(id => document.getElementById(id).value = '');
+  render();
+}
+
+function cancel(name) {
+  Proto.confirmBox('取消课程',
+    `确认取消 <b>${name}</b> 的这节课程吗？<br><br>取消课程不扣课时；如已误扣，需通过冲正流水修复。`,
+    '确认取消', () => Proto.toast('课程已取消', 'ok'));
+}
+
+render();
+</script>
+</body>
+</html>

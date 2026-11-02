@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>家长端 · 首页</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body class="mobile-bg">
+<div class="m-frame">
+  <div class="m-status"><span>9:41</span><span>5G ▮▮▮</span></div>
+
+  <div class="m-head">
+    <div class="grow">
+      <div class="m-title" style="font-size:15px">陈志强，您好</div>
+      <div class="small muted">启航英语 · 城东校区</div>
+    </div>
+    <div class="avatar">陈</div>
+  </div>
+
+  <div class="m-body">
+
+    <!-- 孩子切换 -->
+    <div class="m-seg" id="kidSeg">
+      <div class="on" onclick="switchKid(this,'陈可欣','七年级',42)">陈可欣</div>
+      <div onclick="switchKid(this,'付嘉禾','七年级',28)">付嘉禾</div>
+    </div>
+
+    <!-- 课时 -->
+    <div class="m-hero">
+      <div class="flex jcb aic">
+        <div>
+          <div class="t">当前可用课时</div>
+          <div class="n" id="heroHours">42</div>
+          <div class="s">60 课时包 · 有效期至 2027-09-11</div>
+        </div>
+        <span class="m-chip">在读</span>
+      </div>
+      <div class="flex gap8 mt12">
+        <a href="hours.html" style="flex:1;background:rgba(255,255,255,.18);color:#fff;text-align:center;
+          padding:7px 0;border-radius:8px;font-size:12px">课时明细</a>
+        <a href="course-records.html" style="flex:1;background:rgba(255,255,255,.18);color:#fff;text-align:center;
+          padding:7px 0;border-radius:8px;font-size:12px">课程记录</a>
+      </div>
+    </div>
+
+    <!-- 最近课程 -->
+    <div class="m-card">
+      <div class="m-card-title">最近一次课程
+        <a href="course-records.html" class="small" style="font-weight:400">全部</a></div>
+      <div class="m-row"><span class="k">上课时间</span><span>11-02 09:00-10:05</span></div>
+      <div class="m-row"><span class="k">授课教师</span><span>李婉</span></div>
+      <div class="m-row"><span class="k">课程主题</span><span style="max-width:170px;text-align:right">Unit 1 词汇强化</span></div>
+      <div class="m-row"><span class="k">课程状态</span><span class="tag tag-green">已完成</span></div>
+      <div class="m-row"><span class="k">学习报告</span>
+        <span><span class="tag tag-amber">教师撰写中</span></span></div>
+    </div>
+
+    <!-- 最近报告 -->
+    <div class="m-card">
+      <div class="m-card-title">最近学习报告
+        <a href="report.html" class="small" style="font-weight:400">查看</a></div>
+      <div class="small muted mb8">10-31 · Unit 3 词汇强化 + 短文听读</div>
+      <div class="m-stat" style="margin-bottom:10px">
+        <div><div class="v">23</div><div class="k">训练单词</div></div>
+        <div><div class="v" style="color:var(--success)">16</div><div class="k">本次通过</div></div>
+        <div><div class="v" style="color:var(--warning)">7</div><div class="k">待复习</div></div>
+      </div>
+      <div style="background:var(--bg);border-radius:8px;padding:9px 11px;font-size:12.5px;color:var(--text-2);line-height:1.7">
+        本次课听读流畅，能在提示下完成整篇短文跟读。7 个单词进入复习体系，请协助每日朗读 5 分钟。
+      </div>
+      <a class="btn btn-block btn-primary mt12" href="report.html">查看完整报告</a>
+    </div>
+
+    <!-- 待复习 -->
+    <div class="m-card">
+      <div class="m-card-title">待复习单词
+        <a href="review-words.html" class="small" style="font-weight:400">查看 / 打印</a></div>
+      <div class="m-stat">
+        <div><div class="v" style="color:var(--warning)">34</div><div class="k">待复习</div></div>
+        <div><div class="v">18</div><div class="k">今日到期</div></div>
+        <div><div class="v" style="color:var(--success)">132</div><div class="k">已掌握</div></div>
+      </div>
+      <div class="small muted mt8">家庭勾选仅作辅助记录，不会改变孩子的正式学习状态。</div>
+    </div>
+
+  </div>
+
+  <div class="m-tabbar">
+    <a class="m-tab on" href="home.html"><span class="ic">⌂</span>首页</a>
+    <a class="m-tab" href="course-records.html"><span class="ic">▤</span>课程</a>
+    <a class="m-tab" href="report.html"><span class="ic">✎</span>报告</a>
+    <a class="m-tab" href="review-words.html"><span class="ic">A</span>单词表</a>
+    <a class="m-tab" href="hours.html"><span class="ic">◷</span>课时</a>
+  </div>
+</div>
+
+<script>
+function switchKid(el, name, grade, hours) {
+  document.querySelectorAll('#kidSeg > *').forEach(x => x.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('heroHours').textContent = hours;
+  document.querySelector('.m-hero .s').textContent =
+    (name === '陈可欣' ? '60 课时包 · 有效期至 2027-09-11' : '30 课时包 · 有效期至 2027-04-17');
+}
+</script>
+<script src="../assets/js/common.js"></script>
+</body>
+</html>

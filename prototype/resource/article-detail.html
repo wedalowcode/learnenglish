@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文章详情</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">资源中心<span class="sep">/</span><a href="article-list.html">文章管理</a><span class="sep">/</span>文章详情</div>
+          <h1 class="page-title">My First Day at School</h1>
+          <div class="page-sub">AR001 · 人教版 / 七年级 / 上学期 / Unit 1 · 8 句 · 音频已就绪</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="article-list.html">返回</a>
+          <button class="btn" onclick="Proto.toast('已重新自动拆句，共 8 句','ok')">重新拆句</button>
+          <button class="btn" onclick="Proto.toast('音频生成任务已提交','ok')">生成全部音频</button>
+          <button class="btn btn-primary" onclick="Proto.toast('已保存','ok')">保存</button>
+        </div>
+      </div>
+
+      <div class="grid g-2-1" style="align-items:start">
+        <div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">文章正文</div>
+              <div class="flex gap8">
+                <button class="pill-tab on">英文</button>
+                <button class="pill-tab">中文</button>
+                <button class="pill-tab">对照</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div style="font-size:15px;line-height:2;color:var(--text);font-family:Georgia,'Times New Roman',serif">
+                Today is my first day at school. I meet my new teacher in the classroom.
+                She is very nice and her name is Miss Li. I sit with a boy, and his name is Tom.
+                We look at the questions on the blackboard. I know the first answer, and Tom knows the last one.
+                We are happy to be friends. I love my new class and my new family.
+              </div>
+              <div class="divider"></div>
+              <div style="font-size:13.5px;line-height:2;color:var(--text-2)">
+                今天是我上学的第一天。我在教室里见到了我的新老师。
+                她非常友好，她的名字是李老师。我和一个男孩坐在一起，他的名字是汤姆。
+                我们看着黑板上的问题。我知道第一个答案，汤姆知道最后一个。
+                我们很高兴成为朋友。我喜欢我的新班级和新的大家庭。
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">句子列表<span class="hint">顺序稳定，训练按此顺序逐句进行</span></div>
+              <div class="flex gap8">
+                <button class="btn btn-sm" onclick="Proto.toast('打开批量补音频（示意）')">批量补音频</button>
+                <button class="btn btn-sm" onclick="Proto.toast('已在末尾新增空句（示意）')">+ 新增句子</button>
+              </div>
+            </div>
+            <div class="card-body tight">
+              <div class="table-wrap">
+                <table class="table">
+                  <thead><tr><th style="width:50px">#</th><th>英文句子</th><th>中文含义</th>
+                    <th style="width:96px">音频</th><th style="width:80px">状态</th><th style="width:110px">操作</th></tr></thead>
+                  <tbody id="sentRows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">基础信息</div></div>
+            <div class="card-body">
+              <div class="desc g1">
+                <div class="desc-item"><span class="k">文章编号</span><span class="v mono">AR001</span></div>
+                <div class="desc-item"><span class="k">教材版本</span><span class="v">人教版</span></div>
+                <div class="desc-item"><span class="k">年级 / 学期</span><span class="v">七年级 / 上学期</span></div>
+                <div class="desc-item"><span class="k">单元</span><span class="v">Unit 1</span></div>
+                <div class="desc-item"><span class="k">句子数量</span><span class="v mono">8</span></div>
+                <div class="desc-item"><span class="k">完整音频</span><span class="v"><span class="tag tag-green nodot">已就绪</span></span></div>
+                <div class="desc-item"><span class="k">状态</span><span class="v"><span class="tag tag-green">启用</span></span></div>
+                <div class="desc-item"><span class="k">更新时间</span><span class="v">2026-08-21 16:40</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">资源检查</div>
+              <span class="tag tag-green nodot">通过</span></div>
+            <div class="card-body">
+              <div class="flex jcb small mb8"><span>英文正文</span><span class="tag tag-green nodot">完整</span></div>
+              <div class="flex jcb small mb8"><span>中文翻译</span><span class="tag tag-green nodot">完整</span></div>
+              <div class="flex jcb small mb8"><span>句子拆分</span><span class="tag tag-green nodot">8 / 8</span></div>
+              <div class="flex jcb small mb8"><span>句子音频</span><span class="tag tag-green nodot">8 / 8</span></div>
+              <div class="flex jcb small"><span>完整音频</span><span class="tag tag-green nodot">已生成</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">训练使用情况</div></div>
+            <div class="card-body">
+              <div class="flex jcb small mb8"><span>累计训练人次</span><span class="mono">14 次</span></div>
+              <div class="flex jcb small mb8"><span>涉及学员</span><span class="mono">6 人</span></div>
+              <div class="flex jcb small mb8"><span>平均完成句数</span><span class="mono">7.4 / 8</span></div>
+              <div class="flex jcb small"><span>最近使用</span><span class="mono">2026-11-02</span></div>
+            </div>
+          </div>
+
+          <div class="alert alert-info mt16"><span class="ico">i</span>
+            <div>文章训练<b>不会直接改变单词掌握状态</b>，除非后续明确增加「从文章识别单词」的业务规则。</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'article-list' });
+
+Proto.renderRows('sentRows', DB.sentences, s => `
+  <tr>
+    <td class="mono muted">${s.i}</td>
+    <td style="font-family:Georgia,serif;font-size:13.5px;color:var(--text)">${s.en}</td>
+    <td class="small">${s.cn}</td>
+    <td><button class="audio-btn mini" data-label="▶ 播放" onclick="Proto.playAudio(this,'${s.en.replace(/'/g, '')}')">▶ 播放</button></td>
+    <td><span class="tag tag-green nodot">正常</span></td>
+    <td class="ops">
+      <button class="btn-link" onclick="Proto.toast('编辑句子（示意）')">编辑</button>
+      <button class="btn-link mute" onclick="Proto.toast('调整句子顺序（示意）')">↑↓</button>
+    </td>
+  </tr>`, 6);
+</script>
+</body>
+</html>

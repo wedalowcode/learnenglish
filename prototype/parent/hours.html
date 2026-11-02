@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>家长端 · 课时余额</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body class="mobile-bg">
+<div class="m-frame">
+  <div class="m-status"><span>9:41</span><span>5G ▮▮▮</span></div>
+
+  <div class="m-head">
+    <a class="back" href="home.html">‹</a>
+    <div class="m-title">课时余额</div>
+    <div class="grow"></div>
+    <span class="small muted">陈可欣</span>
+  </div>
+
+  <div class="m-body">
+
+    <div class="m-hero">
+      <div class="t">当前可用课时</div>
+      <div class="n">42</div>
+      <div class="s">来源：60 课时包（一对一）· 有效期至 2027-09-11</div>
+    </div>
+
+    <div class="m-card">
+      <div class="m-card-title">课时汇总</div>
+      <div class="m-stat">
+        <div><div class="v">60</div><div class="k">累计购买</div></div>
+        <div><div class="v" style="color:var(--danger)">18</div><div class="k">累计消耗</div></div>
+        <div><div class="v" style="color:var(--success)">42</div><div class="k">当前余额</div></div>
+      </div>
+      <div class="divider" style="margin:12px 0"></div>
+      <div class="small muted" style="line-height:1.75">
+        课时只在课程实际上课并完成扣课后扣除；预约、进入课堂、开始训练都不会扣课时。
+      </div>
+    </div>
+
+    <div class="m-card" style="padding:0">
+      <div class="m-card-title" style="padding:12px 14px 4px">最近课时变化</div>
+      <div class="m-row" style="padding:10px 14px">
+        <div>
+          <div style="font-size:13px">正常扣课</div>
+          <div class="small muted">11-02 10:35 · C20261102001</div>
+        </div>
+        <span class="mono" style="color:var(--danger);font-weight:600">−1</span>
+      </div>
+      <div class="m-row" style="padding:10px 14px">
+        <div>
+          <div style="font-size:13px">正常扣课</div>
+          <div class="small muted">10-31 20:10 · C20261031001</div>
+        </div>
+        <span class="mono" style="color:var(--danger);font-weight:600">−1</span>
+      </div>
+      <div class="m-row" style="padding:10px 14px">
+        <div>
+          <div style="font-size:13px">正常扣课</div>
+          <div class="small muted">10-28 20:05 · C20261028002</div>
+        </div>
+        <span class="mono" style="color:var(--danger);font-weight:600">−1</span>
+      </div>
+      <div class="m-row" style="padding:10px 14px;border-bottom:none">
+        <div>
+          <div style="font-size:13px">购买入账</div>
+          <div class="small muted">09-12 10:30 · 订单 OD20260912001</div>
+        </div>
+        <span class="mono" style="color:var(--success);font-weight:600">+60</span>
+      </div>
+    </div>
+
+    <div class="m-card">
+      <div class="m-card-title">续费与咨询</div>
+      <div class="small muted mb12">剩余课时低于 10 课时时，教务会主动联系您。</div>
+      <button class="btn btn-block btn-primary" onclick="Proto.toast('已向教务发送续费咨询（示意）','ok')">联系教务续费</button>
+      <div class="small muted mt8" style="text-align:center">家长端仅可查看，不能调整课时</div>
+    </div>
+
+  </div>
+
+  <div class="m-tabbar">
+    <a class="m-tab" href="home.html"><span class="ic">⌂</span>首页</a>
+    <a class="m-tab" href="course-records.html"><span class="ic">▤</span>课程</a>
+    <a class="m-tab" href="report.html"><span class="ic">✎</span>报告</a>
+    <a class="m-tab" href="review-words.html"><span class="ic">A</span>单词表</a>
+    <a class="m-tab on" href="hours.html"><span class="ic">◷</span>课时</a>
+  </div>
+</div>
+<script src="../assets/js/common.js"></script>
+</body>
+</html>

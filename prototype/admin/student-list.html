@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>学员管理</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学管理<span class="sep">/</span>学员列表</div>
+          <h1 class="page-title">学员管理</h1>
+          <div class="page-sub">共 8 名学员 · 在读 6 · 暂停 1 · 已关闭 1</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn" onclick="Proto.toast('已导出学员名单（示意）','ok')">导出</button>
+          <a class="btn btn-primary" href="student-form.html">+ 新增学员</a>
+        </div>
+      </div>
+
+      <div class="card filter">
+        <div class="field"><label>姓名 / 学员编号</label>
+          <input class="input" id="f_kw" placeholder="输入姓名或编号" oninput="applyFilter()"></div>
+        <div class="field"><label>家长手机号</label>
+          <input class="input" id="f_phone" placeholder="11 位手机号" oninput="applyFilter()"></div>
+        <div class="field"><label>年级</label>
+          <select class="select" id="f_grade" onchange="applyFilter()">
+            <option value="">全部年级</option>
+            <option>一年级</option><option>二年级</option><option>三年级</option><option>四年级</option>
+            <option>五年级</option><option>六年级</option><option>七年级</option><option>八年级</option><option>九年级</option>
+          </select></div>
+        <div class="field"><label>当前教师</label>
+          <select class="select" id="f_teacher" onchange="applyFilter()">
+            <option value="">全部教师</option>
+            <option>李婉</option><option>周雅</option><option>何俊</option><option>沈心怡</option><option>未分配</option>
+          </select></div>
+        <div class="field"><label>学员状态</label>
+          <select class="select" id="f_status" onchange="applyFilter()">
+            <option value="">全部状态</option>
+            <option>在读</option><option>暂停</option><option>已关闭</option>
+          </select></div>
+        <div class="field"><label>剩余课时</label>
+          <select class="select" id="f_remain" onchange="applyFilter()">
+            <option value="">不限</option>
+            <option value="low">低于 10 课时</option>
+            <option value="zero">0 课时</option>
+          </select></div>
+        <div class="field full"><label>创建时间范围</label>
+          <div class="flex gap8">
+            <input class="input" type="date" value="2026-01-01" style="max-width:160px">
+            <span class="muted" style="line-height:32px">至</span>
+            <input class="input" type="date" value="2026-11-02" style="max-width:160px">
+            <button class="btn btn-primary" onclick="applyFilter()">查询</button>
+            <button class="btn" onclick="resetFilter()">重置</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt16">
+        <div class="card-head">
+          <div class="card-title">学员列表<span class="hint" id="listCount"></span></div>
+          <div class="small muted">课时余额仅展示，调整须走课时流水</div>
+        </div>
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th style="width:96px">学员编号</th><th>姓名</th><th style="width:48px">性别</th><th>年级</th>
+                  <th>所属家长</th><th>联系电话</th><th>当前教师</th><th>课程商品</th>
+                  <th class="right">剩余课时</th><th>状态</th><th>创建时间</th><th style="width:170px">操作</th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <span>共 <b id="pgTotal">8</b> 条，每页 20 条</span>
+            <div class="pages">
+              <button class="pg" disabled>‹</button>
+              <button class="pg on">1</button>
+              <button class="pg" disabled>›</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="alert alert-info mt16">
+        <span class="ico">i</span>
+        <div>新增学员<b>不会自动生成课时</b>；课时必须来源于订单生效或有权限的调整流水。分配教师后，该学员会立即出现在对应教师的「我的学员」中。</div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- 分配教师抽屉 -->
+<div class="drawer-mask" id="assign-mask" onclick="Proto.closeDrawer('assign')"></div>
+<div class="drawer" id="assign">
+  <div class="modal-head">
+    <div class="modal-title">分配负责教师</div>
+    <button class="modal-close" onclick="Proto.closeDrawer('assign')">×</button>
+  </div>
+  <div class="modal-body">
+    <div class="alert alert-warn mb16"><span class="ico">!</span>
+      <div>调整教师归属后，<b>历史课程仍保留原授课教师</b>，不会被覆盖。</div></div>
+    <div class="field mb12"><label>学员</label><input class="input" id="as_student" disabled></div>
+    <div class="field mb12"><label>当前教师</label><input class="input" id="as_old" disabled></div>
+    <div class="field mb12"><label>新负责教师 <span class="req">*</span></label>
+      <select class="select" id="as_new">
+        <option value="">请选择教师</option>
+        <option>李婉</option><option>周雅</option><option>何俊</option><option>沈心怡</option>
+      </select>
+      <div class="tip">仅显示处于「在职」且可授课的教师</div>
+    </div>
+    <div class="field mb12"><label>生效时间</label><input class="input" type="date" value="2026-11-02"></div>
+    <div class="field"><label>调整原因</label><textarea class="textarea" placeholder="必填，将记入操作日志"></textarea></div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn" onclick="Proto.closeDrawer('assign')">取消</button>
+    <button class="btn btn-primary" onclick="doAssign()">确认分配</button>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'student-list' });
+
+const STATUS_TAG = { '在读': 'tag-green', '暂停': 'tag-amber', '已关闭': 'tag-slate' };
+
+function currentFilter() {
+  return {
+    kw: document.getElementById('f_kw').value.trim(),
+    phone: document.getElementById('f_phone').value.trim(),
+    grade: document.getElementById('f_grade').value,
+    teacher: document.getElementById('f_teacher').value,
+    status: document.getElementById('f_status').value,
+    remain: document.getElementById('f_remain').value,
+  };
+}
+
+function applyFilter() {
+  const f = currentFilter();
+  const rows = DB.students.filter(s => {
+    if (f.kw && !(s.name.includes(f.kw) || s.id.toLowerCase().includes(f.kw.toLowerCase()))) return false;
+    if (f.phone && !s.phone.includes(f.phone)) return false;
+    if (f.grade && s.grade !== f.grade) return false;
+    if (f.teacher && s.teacherName !== f.teacher) return false;
+    if (f.status && s.status !== f.status) return false;
+    if (f.remain === 'low' && !(s.remain < 10)) return false;
+    if (f.remain === 'zero' && s.remain !== 0) return false;
+    return true;
+  });
+
+  document.getElementById('listCount').textContent = `筛选结果 ${rows.length} 条`;
+  document.getElementById('pgTotal').textContent = rows.length;
+
+  Proto.renderRows('rows', rows, s => `
+    <tr>
+      <td class="mono small">${s.id}</td>
+      <td class="strong"><a href="student-detail.html">${s.name}</a></td>
+      <td>${s.gender}</td>
+      <td>${s.grade}</td>
+      <td>${s.parentName}</td>
+      <td class="mono">${s.phone}</td>
+      <td>${s.teacherName === '未分配'
+        ? '<span class="tag tag-amber">未分配</span>' : s.teacherName}</td>
+      <td class="small">${s.product}</td>
+      <td class="right mono" ${s.remain < 10 ? 'style="color:var(--danger);font-weight:600"' : ''}>${s.remain}</td>
+      <td><span class="tag ${STATUS_TAG[s.status]}">${s.status}</span></td>
+      <td class="small muted">${s.created}</td>
+      <td class="ops">
+        <a class="btn-link" href="student-detail.html">详情</a>
+        <a class="btn-link" href="student-form.html">编辑</a>
+        <button class="btn-link" onclick="openAssign('${s.name}','${s.teacherName}')">分配教师</button>
+        ${s.status === '在读'
+          ? `<button class="btn-link mute" onclick="pause('${s.name}')">暂停</button>`
+          : `<button class="btn-link mute" onclick="Proto.toast('已恢复服务（示意）','ok')">恢复</button>`}
+      </td>
+    </tr>`, 12, '没有符合条件的学员，请调整筛选条件');
+}
+
+function resetFilter() {
+  ['f_kw', 'f_phone'].forEach(id => document.getElementById(id).value = '');
+  ['f_grade', 'f_teacher', 'f_status', 'f_remain'].forEach(id => document.getElementById(id).value = '');
+  applyFilter();
+}
+
+function openAssign(name, teacher) {
+  document.getElementById('as_student').value = name;
+  document.getElementById('as_old').value = teacher;
+  Proto.openDrawer('assign');
+}
+
+function doAssign() {
+  const v = document.getElementById('as_new').value;
+  if (!v) { Proto.toast('请选择新的负责教师', 'err'); return; }
+  Proto.closeDrawer('assign');
+  Proto.toast('教师归属已调整，历史课程授课教师保持不变', 'ok');
+}
+
+function pause(name) {
+  Proto.confirmBox('暂停学员服务', `确认暂停 <b>${name}</b> 的服务吗？<br><br>
+    暂停后：学员状态变为「暂停」，不再出现在排课候选与教师今日课程中；<b>已产生的课程、订单、课时流水全部保留</b>，可随时恢复。`,
+    '确认暂停', () => Proto.toast('已暂停服务', 'ok'));
+}
+
+applyFilter();
+</script>
+</body>
+</html>

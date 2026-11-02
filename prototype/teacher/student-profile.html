@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>学员学习档案</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学管理<span class="sep">/</span><a href="my-students.html">我的学员</a><span class="sep">/</span>学习档案</div>
+          <h1 class="page-title">陈可欣</h1>
+          <div class="page-sub">七年级 · 人教版 · 当前教师 李婉 · 入学 2026-03-12 · 课时余额 42</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="my-students.html">返回</a>
+          <a class="btn" href="article-training.html">文章训练</a>
+          <a class="btn" href="leitner.html">莱特纳复习</a>
+          <a class="btn btn-primary" href="word-training-setup.html">单词训练</a>
+        </div>
+      </div>
+
+      <div class="grid g6 mb16">
+        <div class="card stat"><div class="stat-label">累计训练单词</div><div class="stat-value">186</div>
+          <div class="stat-foot">有训练记录的去重单词</div></div>
+        <div class="card stat"><div class="stat-label">已确认掌握</div><div class="stat-value" style="color:var(--success)">132</div>
+          <div class="stat-foot">教师课堂确认</div></div>
+        <div class="card stat"><div class="stat-label">当前待复习</div><div class="stat-value" style="color:var(--warning)">34</div>
+          <div class="stat-foot">莱特纳 22 · 21天 12</div></div>
+        <div class="card stat"><div class="stat-label">文章训练</div><div class="stat-value">7<small>篇</small></div>
+          <div class="stat-foot">累计 14 次</div></div>
+        <div class="card stat"><div class="stat-label">最近训练</div><div class="stat-value" style="font-size:16px">11-02 09:52</div>
+          <div class="stat-foot">Word · Unit 1</div></div>
+        <div class="card stat"><div class="stat-label">最近课程</div><div class="stat-value" style="font-size:16px">11-02 09:00</div>
+          <div class="stat-foot"><span class="tag tag-green nodot">已完成</span></div></div>
+      </div>
+
+      <div class="card">
+        <div class="tabs" id="ptabs">
+          <button class="tab active" data-pane="pp1">学习概览</button>
+          <button class="tab" data-pane="pp2">单词档案<span class="count">186</span></button>
+          <button class="tab" data-pane="pp3">莱特纳复习</button>
+          <button class="tab" data-pane="pp4">21 天复习</button>
+          <button class="tab" data-pane="pp5">文章训练</button>
+          <button class="tab" data-pane="pp6">课程历史</button>
+          <button class="tab" data-pane="pp7">学习报告</button>
+        </div>
+
+        <!-- 概览 -->
+        <div class="tab-pane active" id="pp1">
+          <div class="alert alert-info mb16"><span class="ico">i</span>
+            <div><b>口径说明：</b>「累计训练单词」= 有过训练记录的去重单词数，<b>不等于掌握数</b>；
+              「已确认掌握」= 教师在训练最后复习中确认通过的单词数；「待复习」= 进入复习体系的未通过单词数（两套体系可能存在重叠）。</div></div>
+
+          <div class="grid g2">
+            <div class="card">
+              <div class="card-head"><div class="card-title">单词学习漏斗</div></div>
+              <div class="card-body">
+                <div class="flex jcb small mb8"><span>累计训练</span><span class="mono">186</span></div>
+                <div class="bar mb16"><i style="width:100%"></i></div>
+                <div class="flex jcb small mb8"><span>初筛认识（未正式掌握）</span><span class="mono">54</span></div>
+                <div class="bar amber mb16"><i style="width:29%"></i></div>
+                <div class="flex jcb small mb8"><span>已确认掌握</span><span class="mono">132</span></div>
+                <div class="bar green mb16"><i style="width:71%"></i></div>
+                <div class="flex jcb small mb8"><span>待复习 / 暂不确定</span><span class="mono">34</span></div>
+                <div class="bar red"><i style="width:18%"></i></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><div class="card-title">近 6 次训练表现</div></div>
+              <div class="card-body">
+                <div class="bars">
+                  <div class="b"><i style="height:56%"></i><span>10-20</span></div>
+                  <div class="b"><i style="height:64%"></i><span>10-24</span></div>
+                  <div class="b"><i style="height:60%"></i><span>10-26</span></div>
+                  <div class="b"><i style="height:72%"></i><span>10-28</span></div>
+                  <div class="b"><i style="height:70%"></i><span>10-31</span></div>
+                  <div class="b"><i style="height:82%"></i><span>11-02</span></div>
+                </div>
+                <div class="small muted mt8">纵轴：最后一轮复习通过率（通过数 / 本次训练数）</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card mt16">
+            <div class="card-head"><div class="card-title">最近训练与复习记录</div>
+              <span class="small muted">同一单词的多次训练全部保留</span></div>
+            <div class="card-body tight">
+              <table class="table compact">
+                <thead><tr><th>时间</th><th>类型</th><th>内容</th><th class="right">数量</th><th>结果</th><th>教师</th></tr></thead>
+                <tbody>
+                  <tr><td class="small">11-02 09:20</td><td>单词训练</td><td>人教版七上 Unit 1</td><td class="right mono">23</td>
+                    <td><span class="tag tag-green nodot">通过 16</span> <span class="tag tag-amber nodot">待复习 7</span></td><td>李婉</td></tr>
+                  <tr><td class="small">11-02 09:52</td><td>文章训练</td><td>My First Day at School</td><td class="right mono">8 句</td>
+                    <td><span class="tag tag-green nodot">8/8 完成</span></td><td>李婉</td></tr>
+                  <tr><td class="small">10-31 19:40</td><td>莱特纳复习</td><td>红盒 6 + 黄盒1 6</td><td class="right mono">12</td>
+                    <td><span class="tag tag-green nodot">认识 9</span> <span class="tag tag-amber nodot">不确定 1</span></td><td>李婉</td></tr>
+                  <tr><td class="small">10-30 19:30</td><td>21 天复习</td><td>计划第 7 天</td><td class="right mono">14</td>
+                    <td><span class="tag tag-green nodot">完成 11</span> <span class="tag tag-red nodot">逾期 3</span></td><td>李婉</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 单词档案 -->
+        <div class="tab-pane" id="pp2">
+          <div class="flex jcb aic mb12">
+            <div class="flex gap8 aic" style="flex-wrap:wrap">
+              <input class="input" placeholder="搜索单词" style="width:160px" oninput="filterWordBank(this.value)">
+              <select class="select" style="width:150px" id="wf_status" onchange="filterWordBank(document.querySelector('#pp2 input').value, this.value)">
+                <option value="">全部状态</option>
+                <option>未训练</option><option>初筛认识</option><option>待强化训练</option>
+                <option>强化训练中</option><option>待最后复习</option><option>本次通过</option>
+                <option>待复习</option><option>暂不确定</option>
+              </select>
+            </div>
+            <div class="small muted">学员单词状态与训练任务状态分开保存</div>
+          </div>
+
+          <div class="flex gap8 mb12" style="flex-wrap:wrap">
+            <span class="kv-pill">未训练 0</span>
+            <span class="kv-pill">初筛认识 54</span>
+            <span class="kv-pill">待强化 12</span>
+            <span class="kv-pill">本次通过 132</span>
+            <span class="kv-pill" style="color:var(--warning)">待复习 27</span>
+            <span class="kv-pill" style="color:var(--warning)">暂不确定 7</span>
+          </div>
+
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>单词</th><th>音标</th><th>中文释义</th><th>来源词库</th><th>学员状态</th>
+                <th>莱特纳</th><th>21 天</th><th>最近训练</th><th style="width:120px">操作</th></tr></thead>
+              <tbody id="wordBank"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 186 条 · 每页 20 条</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg">2</button><button class="pg">3</button><button class="pg">›</button></div>
+          </div>
+        </div>
+
+        <!-- 莱特纳 -->
+        <div class="tab-pane" id="pp3">
+          <div class="flex jcb mb12">
+            <div class="small muted">红盒 <b>6</b> 个今日到期 · 黄盒 23 个 · 绿盒 4 个</div>
+            <a class="btn btn-sm btn-primary" href="leitner.html">进入莱特纳复习</a>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>单词</th><th>音标</th><th>中文释义</th><th>盒子</th><th>到期时间</th><th>最近复习</th><th>最近结果</th></tr></thead>
+              <tbody>
+                <tr><td class="strong">friend</td><td class="mono small">/frend/</td><td>朋友</td>
+                  <td><span class="tag tag-red nodot">红盒</span></td><td>2026-11-02</td><td class="small muted">10-28</td><td>不认识</td></tr>
+                <tr><td class="strong">question</td><td class="mono small">/ˈkwestʃən/</td><td>问题；询问</td>
+                  <td><span class="tag tag-red nodot">红盒</span></td><td>2026-11-02</td><td class="small muted">10-28</td><td>不认识</td></tr>
+                <tr><td class="strong">answer</td><td class="mono small">/ˈɑːnsə(r)/</td><td>回答；答案</td>
+                  <td><span class="tag tag-red nodot">红盒</span></td><td>2026-11-02</td><td class="small muted">10-28</td><td>暂不确定</td></tr>
+                <tr><td class="strong">library</td><td class="mono small">/ˈlaɪbrəri/</td><td>图书馆</td>
+                  <td><span class="tag tag-amber nodot">黄盒 1</span></td><td>2026-11-04</td><td class="small muted">10-30</td><td>认识</td></tr>
+                <tr><td class="strong">happy</td><td class="mono small">/ˈhæpi/</td><td>高兴的</td>
+                  <td><span class="tag tag-green nodot">绿盒</span></td><td>手动复习</td><td class="small muted">10-30</td><td>认识</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="alert alert-info mt12"><span class="ico">i</span>
+            <div>盒子数量、间隔天数、答对/答错后的去向均为<b>机构可配置项</b>，原型未预设固定算法。</div></div>
+        </div>
+
+        <!-- 21天 -->
+        <div class="tab-pane" id="pp4">
+          <div class="flex jcb aic mb12">
+            <div class="small muted">11 月记忆强化计划 · 第 10 / 21 天 · 参与单词 23 个</div>
+            <a class="btn btn-sm btn-primary" href="memory21.html">查看计划</a>
+          </div>
+          <div id="d21Wrap" class="mb16"></div>
+          <div class="table-wrap mt16">
+            <table class="table compact">
+              <thead><tr><th>节点</th><th>日期</th><th class="right">计划单词</th><th class="right">已完成</th><th>状态</th></tr></thead>
+              <tbody>
+                <tr><td>第 7 天</td><td>2026-10-30</td><td class="right mono">14</td><td class="right mono">11</td>
+                  <td><span class="tag tag-red">已逾期</span></td></tr>
+                <tr><td>第 8 天</td><td>2026-10-31</td><td class="right mono">14</td><td class="right mono">14</td>
+                  <td><span class="tag tag-green">已完成</span></td></tr>
+                <tr><td>第 10 天</td><td>2026-11-02</td><td class="right mono">12</td><td class="right mono">0</td>
+                  <td><span class="tag tag-blue">进行中</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 文章 -->
+        <div class="tab-pane" id="pp5">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>文章</th><th>教材 / 单元</th><th class="right">句子数</th><th class="right">训练次数</th>
+                <th>最近训练</th><th>完成情况</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr><td class="strong">My First Day at School</td><td class="small">人教版 / Unit 1</td>
+                  <td class="right mono">8</td><td class="right mono">4</td><td class="small">2026-11-02</td>
+                  <td><span class="tag tag-green nodot">8/8 完成</span></td>
+                  <td><a class="btn-link" href="article-training.html">再训练</a></td></tr>
+                <tr><td class="strong">A Trip to the Library</td><td class="small">人教版 / Unit 2</td>
+                  <td class="right mono">6</td><td class="right mono">3</td><td class="small">2026-10-30</td>
+                  <td><span class="tag tag-amber nodot">4/6 完成</span></td>
+                  <td><a class="btn-link" href="article-training.html">继续训练</a></td></tr>
+                <tr><td class="strong">The Four Seasons</td><td class="small">外研版 / Module 1</td>
+                  <td class="right mono">7</td><td class="right mono">2</td><td class="small">2026-10-18</td>
+                  <td><span class="tag tag-green nodot">7/7 完成</span></td>
+                  <td><a class="btn-link" href="article-training.html">再训练</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="alert alert-info mt12"><span class="ico">i</span>
+            <div>文章训练只记录听读完成情况，<b>不直接改变单词掌握状态</b>。</div></div>
+        </div>
+
+        <!-- 课程历史 -->
+        <div class="tab-pane" id="pp6">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>日期</th><th>时间</th><th>教师</th><th>课程状态</th><th>扣课状态</th><th>教学主题</th><th>报告</th></tr></thead>
+              <tbody>
+                <tr><td>2026-11-02</td><td class="mono">09:00-10:00</td><td>李婉</td>
+                  <td><span class="tag tag-green">已完成</span></td><td><span class="tag tag-green nodot">已扣课</span></td>
+                  <td>Unit 1 词汇强化</td><td><span class="tag tag-amber">草稿</span></td></tr>
+                <tr><td>2026-10-31</td><td class="mono">19:00-20:00</td><td>李婉</td>
+                  <td><span class="tag tag-green">已完成</span></td><td><span class="tag tag-green nodot">已扣课</span></td>
+                  <td>Unit 3 词汇 + 短文听读</td><td><span class="tag tag-green">已提交</span></td></tr>
+                <tr><td>2026-10-28</td><td class="mono">19:00-20:00</td><td>李婉</td>
+                  <td><span class="tag tag-green">已完成</span></td><td><span class="tag tag-green nodot">已扣课</span></td>
+                  <td>Unit 2 词汇复习 + 21 天节点</td><td><span class="tag tag-green">已提交</span></td></tr>
+                <tr><td>2026-10-24</td><td class="mono">19:00-20:00</td><td>李婉</td>
+                  <td><span class="tag tag-slate">已取消</span></td><td><span class="tag tag-slate nodot">未扣课</span></td>
+                  <td>—</td><td>—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 报告 -->
+        <div class="tab-pane" id="pp7">
+          <div class="flex jcb mb12">
+            <div class="small muted">报告提交后家长可见；修订会保留修改记录</div>
+            <a class="btn btn-sm btn-primary" href="teaching-record.html">去写报告</a>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>课程日期</th><th>教学主题</th><th class="right">单词</th><th class="right">通过</th>
+                <th class="right">待复习</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr><td>2026-11-02</td><td>Unit 1 词汇强化 + 短文听读</td><td class="right mono">23</td>
+                  <td class="right mono">16</td><td class="right mono">7</td>
+                  <td><span class="tag tag-amber">草稿</span></td>
+                  <td><a class="btn-link" href="teaching-record.html">编辑并提交</a></td></tr>
+                <tr><td>2026-10-31</td><td>Unit 3 词汇强化 + 短文听读</td><td class="right mono">23</td>
+                  <td class="right mono">16</td><td class="right mono">7</td>
+                  <td><span class="tag tag-green">已提交</span></td>
+                  <td><a class="btn-link" href="../parent/report.html">查看</a></td></tr>
+                <tr><td>2026-10-28</td><td>Unit 2 词汇复习</td><td class="right mono">18</td>
+                  <td class="right mono">14</td><td class="right mono">4</td>
+                  <td><span class="tag tag-green">已提交</span></td>
+                  <td><a class="btn-link" href="../parent/report.html">查看</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'teacher', active: 'student-profile' });
+
+/* 21 天节点网格 */
+document.getElementById('d21Wrap').innerHTML = `<div class="d21">
+  ${DB.plan21.nodes.slice(0, 14).map(n => {
+    const cls = n.state === 'done' ? 'done' : n.state === 'today' ? 'today'
+      : n.state === 'miss' ? 'miss' : n.state === 'rest' ? '' : 'plan';
+    return `<div class="day ${cls}"><b>D${n.day}</b>${n.date.slice(5)}
+      ${n.count ? `<div>${n.done}/${n.count}</div>` : '<div>休息</div>'}</div>`;
+  }).join('')}
+</div>`;
+
+/* 单词档案 */
+const STATUS_TAG = {
+  '本次通过': 'tag-green', '初筛认识': 'tag-blue', '待强化训练': 'tag-amber',
+  '强化训练中': 'tag-cyan', '待最后复习': 'tag-purple', '待复习': 'tag-red',
+  '暂不确定': 'tag-amber', '未训练': 'tag-slate',
+};
+const BANK = [
+  { en: 'friend', ph: '/frend/', cn: '朋友', from: 'WB001', st: '待复习', lt: '红盒', d21: '第 10 天', last: '11-02' },
+  { en: 'question', ph: '/ˈkwestʃən/', cn: '问题；询问', from: 'WB001', st: '待复习', lt: '红盒', d21: '第 10 天', last: '11-02' },
+  { en: 'answer', ph: '/ˈɑːnsə(r)/', cn: '回答；答案', from: 'WB001', st: '暂不确定', lt: '红盒', d21: '第 10 天', last: '11-02' },
+  { en: 'library', ph: '/ˈlaɪbrəri/', cn: '图书馆', from: 'WB001', st: '待复习', lt: '黄盒 1', d21: '第 12 天', last: '11-02' },
+  { en: 'classroom', ph: '/ˈklɑːsruːm/', cn: '教室', from: 'WB001', st: '本次通过', lt: '黄盒 2', d21: '—', last: '11-02' },
+  { en: 'family', ph: '/ˈfæməli/', cn: '家；家人', from: 'WB001', st: '暂不确定', lt: '红盒', d21: '第 10 天', last: '11-02' },
+  { en: 'happy', ph: '/ˈhæpi/', cn: '高兴的', from: 'WB001', st: '本次通过', lt: '绿盒', d21: '—', last: '11-02' },
+  { en: 'first', ph: '/fɜːst/', cn: '第一的；首先', from: 'WB001', st: '初筛认识', lt: '—', d21: '—', last: '11-02' },
+  { en: 'last', ph: '/lɑːst/', cn: '最后的；持续', from: 'WB001', st: '初筛认识', lt: '—', d21: '—', last: '11-02' },
+  { en: 'name', ph: '/neɪm/', cn: '名字；命名', from: 'WB001', st: '本次通过', lt: '黄盒 3', d21: '—', last: '10-31' },
+];
+
+function filterWordBank(kw = '', st = '') {
+  const rows = BANK.filter(w => (!kw || w.en.includes(kw) || w.cn.includes(kw)) && (!st || w.st === st));
+  Proto.renderRows('wordBank', rows, w => `
+    <tr>
+      <td class="strong">${w.en}</td>
+      <td class="mono small muted">${w.ph}</td>
+      <td>${w.cn}</td>
+      <td class="small">${w.from}</td>
+      <td><span class="tag ${STATUS_TAG[w.st]}">${w.st}</span></td>
+      <td class="small">${w.lt}</td>
+      <td class="small">${w.d21}</td>
+      <td class="small muted">${w.last}</td>
+      <td class="ops">
+        <button class="btn-link" onclick="Proto.toast('查看该单词的全部训练历史（示意）')">历史</button>
+        <button class="btn-link" onclick="Proto.toast('已加入绿盒子（需权限确认）','ok')">加绿盒</button>
+      </td>
+    </tr>`, 9, '没有匹配的单词');
+}
+filterWordBank();
+
+/* 切换 tab 时刷新表格 */
+document.getElementById('ptabs').addEventListener('click', () => setTimeout(() => {
+  const cur = document.querySelector('.tab.active');
+  if (cur && cur.dataset.pane === 'pp2') filterWordBank();
+}, 10));
+</script>
+</body>
+</html>

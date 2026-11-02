@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>业绩概览</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">工作台<span class="sep">/</span>业绩概览</div>
+          <h1 class="page-title">业绩概览</h1>
+          <div class="page-sub">王磊 · 个人代理 · 佣金规则 成交额 8%（规则待业务确认）</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="my-customers.html">我的客户</a>
+          <a class="btn btn-primary" href="customer-create.html">+ 客户报备</a>
+        </div>
+      </div>
+
+      <div class="grid g4 mb16">
+        <div class="card stat"><div class="stat-label">我的客户</div><div class="stat-value">12<small>人</small></div>
+          <div class="stat-foot">本月新增 4 人</div></div>
+        <div class="card stat"><div class="stat-label">成交客户</div><div class="stat-value" style="color:var(--success)">5<small>人</small></div>
+          <div class="stat-foot">成交率 41.7%</div></div>
+        <div class="card stat"><div class="stat-label">成交金额</div><div class="stat-value">¥ 41,260</div>
+          <div class="stat-foot">6 笔订单</div></div>
+        <div class="card stat"><div class="stat-label">待结算佣金</div><div class="stat-value" style="color:var(--warning)">¥ 1,840</div>
+          <div class="stat-foot">已结算 ¥1,460</div></div>
+      </div>
+
+      <div class="alert alert-warn mb16"><span class="ico">!</span>
+        <div><b>佣金规则待确认：</b>确认时点、退款冲回、结算周期由机构配置。当前展示的金额按「成交额 × 8%」估算，仅供参考，不作为结算依据。</div></div>
+
+      <div class="grid g-2-1" style="align-items:start">
+        <div class="card">
+          <div class="card-head"><div class="card-title">最近客户</div>
+            <a class="btn btn-sm" href="my-customers.html">全部客户</a></div>
+          <div class="card-body tight">
+            <table class="table compact">
+              <thead><tr><th>客户</th><th>学生年级</th><th>意向课程</th><th>状态</th><th>最近跟进</th><th style="width:80px">操作</th></tr></thead>
+              <tbody id="recent"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">待跟进提醒</div>
+              <span class="tag tag-red nodot">3</span></div>
+            <div class="card-body">
+              <div class="m-row"><span class="k">黄女士 · 四年级</span><span class="tag tag-amber nodot">今日</span></div>
+              <div class="m-row"><span class="k">郑先生 · 七年级</span><span class="tag tag-amber nodot">明日</span></div>
+              <div class="m-row" style="border-bottom:none"><span class="k">韩先生 · 一年级</span>
+                <span class="tag tag-red nodot">已超期 1 天</span></div>
+              <div class="small muted mt12">代理只能查看本人客户，不得查看其他代理的客户与订单。</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">近 6 个月成交</div></div>
+            <div class="card-body">
+              <div class="bars" style="height:140px">
+                <div class="b"><i style="height:20%"></i><span>6月</span></div>
+                <div class="b"><i style="height:35%"></i><span>7月</span></div>
+                <div class="b"><i style="height:15%"></i><span>8月</span></div>
+                <div class="b"><i style="height:60%"></i><span>9月</span></div>
+                <div class="b"><i style="height:80%"></i><span>10月</span></div>
+                <div class="b"><i style="height:45%"></i><span>11月</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'agent', active: 'agent-workbench' });
+
+const LST = { '新线索': 'tag-slate', '待联系': 'tag-amber', '跟进中': 'tag-blue', '意向明确': 'tag-purple', '已成交': 'tag-green', '无效': 'tag-slate', '已关闭': 'tag-slate' };
+Proto.renderRows('recent', DB.leads.slice(0, 6), l => `
+  <tr>
+    <td class="strong"><a href="customer-detail.html">${l.name}</a></td>
+    <td>${l.grade}</td>
+    <td class="small">${l.intent}</td>
+    <td><span class="tag ${LST[l.status]}">${l.status}</span></td>
+    <td class="small muted">${l.lastFollow.slice(5)}</td>
+    <td class="ops"><a class="btn-link" href="customer-detail.html">跟进</a></td>
+  </tr>`, 6);
+</script>
+</body>
+</html>

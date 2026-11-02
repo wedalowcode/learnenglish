@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>课时流水</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">财务管理<span class="sep">/</span>课时流水</div>
+          <h1 class="page-title">课时流水</h1>
+          <div class="page-sub">只追加、不修改 · 误扣通过冲正修复，原流水永久保留</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn" onclick="Proto.toast('导出流水（示意）','ok')">导出</button>
+          <button class="btn" onclick="Proto.toast('已切换为对账模式（示意）')">对账模式</button>
+        </div>
+      </div>
+
+      <div class="grid g6 mb16">
+        <div class="card stat"><div class="stat-label">本月入账</div><div class="stat-value" style="font-size:20px;color:var(--success)">+92</div></div>
+        <div class="card stat"><div class="stat-label">本月扣课</div><div class="stat-value" style="font-size:20px;color:var(--danger)">−196</div></div>
+        <div class="card stat"><div class="stat-label">补入</div><div class="stat-value" style="font-size:20px">+3</div></div>
+        <div class="card stat"><div class="stat-label">调整</div><div class="stat-value" style="font-size:20px">−1</div></div>
+        <div class="card stat"><div class="stat-label">冲正</div><div class="stat-value" style="font-size:20px">+2</div></div>
+        <div class="card stat"><div class="stat-label">净变动</div><div class="stat-value" style="font-size:20px">−100</div></div>
+      </div>
+
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div>
+          <b>扣课规则：</b>扣课必须关联已完成课程 · 同一课程只能成功扣课一次 · 未完成课程不得扣课 · 取消课程不得扣课 ·
+          误扣必须通过冲正流水修复，<b>不能删除原流水</b> · 余额不足时课程进入「待处理」，不允许产生负数余额。
+        </div>
+      </div>
+
+      <div class="card filter">
+        <div class="field"><label>流水编号</label><input class="input" id="kw" placeholder="FL 开头" oninput="render()"></div>
+        <div class="field"><label>学员姓名</label><input class="input" id="stu" placeholder="学员姓名" oninput="render()"></div>
+        <div class="field"><label>业务类型</label>
+          <select class="select" id="tp" onchange="render()">
+            <option value="">全部</option>
+            <option>购买入账</option><option>赠送入账</option><option>正常扣课</option>
+            <option>课时补入</option><option>课时调整</option><option>扣课冲正</option><option>退款冲减</option>
+          </select></div>
+        <div class="field"><label>关联业务</label>
+          <select class="select"><option value="">全部</option><option>订单</option><option>课程</option><option>人工调整</option></select></div>
+        <div class="field"><label>发生时间</label>
+          <div class="flex gap8">
+            <input class="input" type="date" value="2026-10-01" style="max-width:150px">
+            <input class="input" type="date" value="2026-11-02" style="max-width:150px">
+          </div></div>
+        <div class="filter-actions"><button class="btn btn-primary" onclick="render()">查询</button>
+          <button class="btn" onclick="reset()">重置</button></div>
+      </div>
+
+      <div class="card mt16">
+        <div class="card-head"><div class="card-title">流水列表<span class="hint" id="cnt"></span></div>
+          <div class="small muted">变动前后余额均留痕，可逐笔核对</div></div>
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th style="width:126px">流水编号</th><th>学员</th><th style="width:124px">课时账户</th><th>业务类型</th>
+                  <th class="right">变动课时</th><th class="right">变动前</th><th class="right">变动后</th>
+                  <th>关联订单 / 课程</th><th>操作人</th><th>发生时间</th><th>备注</th><th style="width:80px">操作</th></tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 <b id="total">10</b> 条</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- 冲正 -->
+<div class="mask" id="revModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">扣课冲正</div>
+      <button class="modal-close" onclick="Proto.closeModal('revModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-danger mb16"><span class="ico">!</span>
+        <div>冲正<b>不会删除或修改原流水</b>，而是新增一条方向相反的流水，两条记录同时保留，可完整追溯。</div></div>
+      <div class="desc g2 mb16">
+        <div class="desc-item"><span class="k">原流水</span><span class="v mono" id="rv_no">FL20261029006</span></div>
+        <div class="desc-item"><span class="k">学员</span><span class="v" id="rv_stu">孙浩宇</span></div>
+        <div class="desc-item"><span class="k">原变动</span><span class="v mono" style="color:var(--danger)" id="rv_delta">−1</span></div>
+        <div class="desc-item"><span class="k">关联业务</span><span class="v small" id="rv_ref">C20261029005 课程完成</span></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>冲正课时数 <span class="req">*</span></label><input class="input" type="number" value="1"></div>
+        <div class="field"><label>冲正原因 <span class="req">*</span></label>
+          <select class="select"><option>课程取消</option><option>重复扣课</option><option>学员误判出勤</option><option>系统异常</option><option>其他</option></select></div>
+        <div class="field full"><label>原因说明 <span class="req">*</span></label>
+          <textarea class="textarea" placeholder="必填，例如：课程 C20261029005 实际未上课，需冲回 1 课时"></textarea>
+          <div class="tip">说明将展示在流水备注中，并写入操作日志</div></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('revModal')">取消</button>
+      <button class="btn btn-danger" onclick="doRev()">确认冲正</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'hour-flow' });
+
+const TYPE_TAG = {
+  '购买入账': 'tag-green', '赠送入账': 'tag-blue', '正常扣课': 'tag-slate',
+  '课时补入': 'tag-cyan', '课时调整': 'tag-amber', '扣课冲正': 'tag-purple', '退款冲减': 'tag-red',
+};
+
+function render() {
+  const kw = document.getElementById('kw').value.trim();
+  const stu = document.getElementById('stu').value.trim();
+  const tp = document.getElementById('tp').value;
+
+  const rows = DB.flows.filter(f => {
+    if (kw && !f.id.toLowerCase().includes(kw.toLowerCase())) return false;
+    if (stu && !f.student.includes(stu)) return false;
+    if (tp && f.type !== tp) return false;
+    return true;
+  });
+  document.getElementById('cnt').textContent = `筛选结果 ${rows.length} 条`;
+  document.getElementById('total').textContent = rows.length;
+
+  Proto.renderRows('rows', rows, f => `
+    <tr>
+      <td class="mono small">${f.id}</td>
+      <td class="strong">${f.student}</td>
+      <td class="mono small muted">${f.account}</td>
+      <td><span class="tag ${TYPE_TAG[f.type] || 'tag-slate'} nodot">${f.type}</span></td>
+      <td class="right mono" style="color:${f.delta > 0 ? 'var(--success)' : 'var(--danger)'};font-weight:600">
+        ${f.delta > 0 ? '+' : ''}${f.delta}</td>
+      <td class="right mono muted">${f.before}</td>
+      <td class="right mono">${f.after}</td>
+      <td class="small">${f.ref}</td>
+      <td class="small">${f.op}</td>
+      <td class="small muted">${f.time}</td>
+      <td class="small muted" style="max-width:180px">${f.note || '—'}</td>
+      <td class="ops">
+        ${f.type === '正常扣课'
+          ? `<button class="btn-link danger" onclick="openRev('${f.id}','${f.student}','${f.delta}','${f.ref}')">冲正</button>`
+          : `<button class="btn-link mute" onclick="Proto.toast('该类型流水无需冲正')">—</button>`}
+      </td>
+    </tr>`, 12, '没有符合条件的流水记录');
+}
+
+function reset() {
+  document.getElementById('kw').value = '';
+  document.getElementById('stu').value = '';
+  document.getElementById('tp').value = '';
+  render();
+}
+
+function openRev(no, stu, delta, ref) {
+  document.getElementById('rv_no').textContent = no;
+  document.getElementById('rv_stu').textContent = stu;
+  document.getElementById('rv_delta').textContent = delta;
+  document.getElementById('rv_ref').textContent = ref;
+  Proto.openModal('revModal');
+}
+
+function doRev() {
+  Proto.closeModal('revModal');
+  Proto.toast('冲正流水已生成，原流水保留', 'ok');
+}
+
+render();
+</script>
+</body>
+</html>

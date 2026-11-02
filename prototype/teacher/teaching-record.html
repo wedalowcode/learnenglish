@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>教学记录</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学工作台<span class="sep">/</span>教学记录</div>
+          <h1 class="page-title">教学记录</h1>
+          <div class="page-sub">每节课的训练结果与家长报告 · 报告提交后家长可见</div>
+        </div>
+        <div class="page-actions">
+          <select class="select" style="width:150px"><option>全部学员</option><option>陈可欣</option><option>付嘉禾</option></select>
+          <select class="select" style="width:140px"><option>全部状态</option><option>未生成</option><option>草稿</option><option>已提交</option><option>已撤回</option></select>
+        </div>
+      </div>
+
+      <div class="grid g4 mb16">
+        <div class="card stat"><div class="stat-label">本月教学记录</div><div class="stat-value">26<small>份</small></div></div>
+        <div class="card stat"><div class="stat-label">待提交报告</div>
+          <div class="stat-value" style="color:var(--warning)">2<small>份</small></div></div>
+        <div class="card stat"><div class="stat-label">平均提交时长</div><div class="stat-value">3.2<small>小时</small></div>
+          <div class="stat-foot">课程结束后至提交</div></div>
+        <div class="card stat"><div class="stat-label">家长已读率</div><div class="stat-value">92<small>%</small></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div class="card-title">教学记录列表</div>
+          <span class="small muted">报告修订会保留修改记录，不能无痕覆盖已发布内容</span></div>
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>课程日期</th><th>学员</th><th>课程主题</th><th class="right">单词训练</th>
+                <th class="right">文章训练</th><th>完成状态</th><th>报告状态</th><th style="width:210px">操作</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 4 条</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt16">
+        <div class="card-head"><div class="card-title">报告状态说明</div></div>
+        <div class="card-body" style="font-size:12.5px;color:var(--text-2);line-height:1.9">
+          <b style="color:var(--text)">未生成</b> → 课程已完成但尚未撰写；<b style="color:var(--text)">草稿</b> → 仅教师可见，可继续编辑；
+          <b style="color:var(--text)">已提交</b> → 家长可见，教师修订会保留修改记录；
+          <b style="color:var(--text)">已撤回</b> → 仅管理员或有权限教师可操作，撤回后家长不可见，历史版本保留。
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- 报告表单 -->
+<div class="mask" id="reportModal">
+  <div class="modal wide">
+    <div class="modal-head">
+      <div class="modal-title" id="rpTitle">学习报告 · 陈可欣 · 11-02</div>
+      <button class="modal-close" onclick="Proto.closeModal('reportModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div>训练数据由系统自动带入，教师只需补充教学主题、课堂表现与建议。报告<b>提交后家长可见</b>。</div></div>
+
+      <div class="form-section">
+        <div class="section-title">基本信息</div>
+        <div class="desc g3">
+          <div class="desc-item"><span class="k">学员</span><span class="v">陈可欣</span></div>
+          <div class="desc-item"><span class="k">课程</span><span class="v mono">C20261102001</span></div>
+          <div class="desc-item"><span class="k">授课教师</span><span class="v">李婉</span></div>
+          <div class="desc-item"><span class="k">授课时间</span><span class="v">2026-11-02 09:00-10:05</span></div>
+          <div class="desc-item"><span class="k">课程时长</span><span class="v">65 分钟</span></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="section-title">本节课内容</div>
+        <div class="form-grid">
+          <div class="field full"><label>教学主题</label>
+            <input class="input" value="Unit 1 词汇强化 + 短文听读"></div>
+          <div class="field"><label>教材 / 词库</label>
+            <input class="input" value="人教版七上 Unit 1（23 词）"></div>
+          <div class="field"><label>训练单词数量</label>
+            <input class="input" value="23" disabled></div>
+          <div class="field"><label>本次通过</label><input class="input" value="16" disabled></div>
+          <div class="field"><label>待复习</label><input class="input" value="7" disabled></div>
+          <div class="field"><label>文章训练内容</label><input class="input" value="My First Day at School"></div>
+          <div class="field"><label>文章完成情况</label><input class="input" value="8 / 8 句" disabled></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="section-title">课堂表现</div>
+        <div class="form-grid">
+          <div class="field"><label>学习专注度</label>
+            <select class="select"><option>高</option><option>中</option><option>低</option></select></div>
+          <div class="field"><label>参与情况</label>
+            <select class="select"><option>主动参与</option><option>一般</option><option>需引导</option></select></div>
+          <div class="field"><label>掌握情况</label>
+            <select class="select"><option>良好</option><option>一般</option><option>需加强</option></select></div>
+          <div class="field"><label>存在问题</label>
+            <input class="input" placeholder="如：th 发音不稳、易混淆 first/last"></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="section-title">课后反馈</div>
+        <div class="form-grid g1">
+          <div class="field"><label>本节课总结</label>
+            <textarea class="textarea">本次完成 Unit 1 全部 23 个单词的强化训练，最后复习通过 16 个，7 个进入待复习。
+短文听读流畅，能跟读整篇。</textarea></div>
+          <div class="field"><label>需要复习的内容</label>
+            <textarea class="textarea">friend、question、answer、library 等 7 个单词已加入复习体系，请家长协助每日朗读 5 分钟。</textarea></div>
+          <div class="field"><label>家庭辅助建议</label>
+            <textarea class="textarea">建议使用「待复习单词表」打印版，每晚抽查 5 个，勾选栏仅作家庭记录。</textarea></div>
+          <div class="field"><label>下节课建议</label>
+            <textarea class="textarea">先用 10 分钟复习红盒到期单词，再进入 Unit 2 新词预筛。</textarea></div>
+        </div>
+      </div>
+
+      <div class="alert alert-warn mt16"><span class="ico">!</span>
+        <div>提交后家长端立即可见；如后续需要修改，将生成新的版本并保留修改记录，<b>不会无痕覆盖</b>。</div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('reportModal')">关闭</button>
+      <button class="btn" onclick="saveDraft()">保存草稿</button>
+      <button class="btn btn-primary" onclick="submitReport()">提交给家长</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'teacher', active: 'teaching-record' });
+
+const RST = { '已提交': 'tag-green', '草稿': 'tag-amber', '未生成': 'tag-slate', '已撤回': 'tag-red' };
+
+Proto.renderRows('rows', DB.reports, r => `
+  <tr>
+    <td>${r.date}</td>
+    <td class="strong">${r.student}</td>
+    <td>${r.topic}</td>
+    <td class="right mono">${r.words}</td>
+    <td class="right mono">${r.article === '—' ? '—' : '1 篇'}</td>
+    <td><span class="tag tag-green nodot">已完成</span></td>
+    <td><span class="tag ${RST[r.status]}">${r.status}</span></td>
+    <td class="ops">
+      <button class="btn-link" onclick="openReport('${r.student}','${r.date}')">
+        ${r.status === '已提交' ? '查看 / 修订' : '撰写报告'}</button>
+      ${r.status === '已提交' ? '<a class="btn-link" href="../parent/report.html">家长视角</a>' : ''}
+      ${r.status === '已提交' ? '<button class="btn-link danger" onclick="withdraw()">撤回</button>' : ''}
+    </td>
+  </tr>`, 8, '暂无教学记录');
+
+function openReport(stu, date) {
+  document.getElementById('rpTitle').textContent = `学习报告 · ${stu} · ${date.slice(5)}`;
+  Proto.openModal('reportModal');
+}
+function saveDraft() {
+  Proto.closeModal('reportModal');
+  Proto.toast('已保存为草稿，家长暂不可见', 'ok');
+}
+function submitReport() {
+  Proto.closeModal('reportModal');
+  Proto.confirmBox('提交报告',
+    `提交后 <b>家长端立即可见</b>本报告，教师不可无痕修改已发布内容。<br><br>确认提交？`,
+    '确认提交', () => Proto.toast('报告已提交，家长可见', 'ok'));
+}
+function withdraw() {
+  Proto.confirmBox('撤回报告',
+    `撤回后家长端将<b>不可见</b>该报告，历史版本保留。<br><br>仅管理员或有权限教师可撤回。`,
+    '确认撤回', () => Proto.toast('报告已撤回', 'warn'));
+}
+</script>
+</body>
+</html>

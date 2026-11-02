@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>单词训练 · 选择词库</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学管理<span class="sep">/</span><a href="student-profile.html">学员学习档案</a><span class="sep">/</span>单词训练</div>
+          <h1 class="page-title">词库选择</h1>
+          <div class="page-sub">陈可欣 · 七年级 · 人教版 · 当前负责教师 李婉</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="student-profile.html">返回档案</a>
+        </div>
+      </div>
+
+      <div class="card mb16" style="padding:14px 20px">
+        <div class="steps">
+          <div class="step on"><span class="dot">1</span>词库选择</div>
+          <div class="step-line"></div>
+          <div class="step"><span class="dot">2</span>单词预筛选</div>
+          <div class="step-line"></div>
+          <div class="step"><span class="dot">3</span>分组训练（每组 5 个）</div>
+          <div class="step-line"></div>
+          <div class="step"><span class="dot">4</span>最后一轮复习</div>
+        </div>
+      </div>
+
+      <div class="card filter mb16">
+        <div class="field"><label>教材版本</label>
+          <select class="select"><option>人教版</option><option>外研版</option></select></div>
+        <div class="field"><label>年级</label>
+          <select class="select"><option>七年级</option><option>八年级</option><option>九年级</option></select></div>
+        <div class="field"><label>学期</label>
+          <select class="select"><option>上学期</option><option>下学期</option></select></div>
+        <div class="field"><label>单元</label>
+          <select class="select"><option>Unit 1</option><option>Unit 2</option><option>Unit 3</option></select></div>
+        <div class="filter-actions"><button class="btn btn-primary">查询</button></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div class="card-title">选择本次训练词库</div>
+          <span class="small muted">学员历史数据用于参考，不代表本次必须训练全部单词</span></div>
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th style="width:40px"></th><th>词库名称</th><th>单元</th><th class="right">单词数量</th>
+                  <th class="right">学员已训练</th><th class="right">已掌握</th><th class="right">待复习</th><th>状态</th></tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card-foot" style="justify-content:space-between">
+          <span class="small muted" id="selInfo">未选择词库</span>
+          <button class="btn btn-primary" id="startBtn" onclick="start()" disabled>开始预筛选</button>
+        </div>
+      </div>
+
+      <div class="grid g2 mt16">
+        <div class="alert alert-info"><span class="ico">i</span>
+          <div><b>训练容量上限：</b>每次训练最多处理 <b>45 个</b>待训练单词。预筛后不认识的单词超过 45 个时，
+            系统按词库顺序取前 45 个，其余保留待训练状态，<b>不会丢失</b>，可在后续训练中继续选择。</div></div>
+        <div class="alert alert-warn"><span class="ico">!</span>
+          <div><b>教学自主：</b>使用哪个词库、训练哪些单词由教师决定，教务不强制改变教学进度与教材顺序。</div></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'teacher', active: 'word-setup' });
+
+/* 学员历史数据（模拟） */
+const HISTORY = {
+  WB001: { trained: 23, mastered: 16, review: 7 },
+  WB002: { trained: 0, mastered: 0, review: 0 },
+  WB003: { trained: 0, mastered: 0, review: 0 },
+  WB004: { trained: 0, mastered: 0, review: 0 },
+  WB005: { trained: 0, mastered: 0, review: 0 },
+};
+let selected = null;
+
+function render() {
+  const rows = DB.books.filter(b => b.book === '人教版' && b.status === '启用' || b.id === 'WB001');
+  Proto.renderRows('rows', rows, b => {
+    const h = HISTORY[b.id] || { trained: 0, mastered: 0, review: 0 };
+    return `<tr onclick="pick('${b.id}','${b.name}',${b.count})" style="cursor:pointer">
+      <td><input type="radio" name="book" ${selected === b.id ? 'checked' : ''} onclick="event.stopPropagation();pick('${b.id}','${b.name}',${b.count})"></td>
+      <td class="strong">${b.name}</td>
+      <td>${b.unit}</td>
+      <td class="right mono">${b.count}</td>
+      <td class="right mono">${h.trained}</td>
+      <td class="right mono" style="color:var(--success)">${h.mastered}</td>
+      <td class="right mono" style="color:var(--warning)">${h.review}</td>
+      <td><span class="tag tag-green">启用</span></td>
+    </tr>`;
+  }, 8);
+
+  if (selected) {
+    const b = DB.books.find(x => x.id === selected);
+    const h = HISTORY[selected] || { trained: 0 };
+    const remain = b.count - h.trained;
+    document.getElementById('selInfo').innerHTML =
+      `已选择 <b style="color:var(--text)">${b.name}</b> · 共 ${b.count} 词 · 已训练 ${h.trained} · 剩余未训练 ${remain}`;
+    document.getElementById('startBtn').disabled = false;
+  }
+}
+
+function pick(id, name, count) {
+  selected = id;
+  render();
+  document.getElementById('selInfo').innerHTML =
+    `已选择 <b style="color:var(--text)">${name}</b> · 共 ${count} 词`;
+  document.getElementById('startBtn').disabled = false;
+}
+
+function start() {
+  if (!selected) return;
+  sessionStorage.removeItem('proto_train_queue');
+  location.href = 'word-training-prescreen.html';
+}
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>单词训练</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body class="focus-page">
+
+<div class="focus-top">
+  <a class="btn btn-sm" href="student-profile.html">← 退出</a>
+  <div>
+    <div class="ft-title" id="topTitle">单词训练 · 陈可欣</div>
+    <div class="ft-sub" id="topSub">人教版 七年级上 Unit 1 词汇</div>
+  </div>
+  <div class="grow"></div>
+  <div class="text-r" style="margin-right:12px">
+    <div class="small muted">整体进度</div>
+    <div style="font-size:15px;font-weight:600" id="topProg">0 / 23</div>
+  </div>
+  <button class="btn btn-sm" onclick="openPause()">暂停训练</button>
+</div>
+
+<div class="focus-main">
+  <div class="focus-wrap" id="stage"></div>
+</div>
+
+<!-- 暂停 -->
+<div class="mask" id="pauseModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">暂停训练</div>
+      <button class="modal-close" onclick="Proto.closeModal('pauseModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div>训练任务会保存为<b>未完成</b>状态，已产生的每个单词判断结果都已记录，返回后可继续。</div></div>
+      <div class="desc g1">
+        <div class="desc-item"><span class="k">本次训练</span><span class="v">23 个单词 / 5 组</span></div>
+        <div class="desc-item"><span class="k">已完成</span><span class="v" id="pauseDone">0 个</span></div>
+        <div class="desc-item"><span class="k">恢复方式</span><span class="v">从「我的学员 → 单词训练」继续本次任务</span></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('pauseModal')">继续训练</button>
+      <a class="btn btn-primary" href="student-profile.html">保存并退出</a>
+    </div>
+  </div>
+</div>
+
+<!-- 提前结束 -->
+<div class="mask" id="endModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">结束本次训练</div>
+      <button class="modal-close" onclick="Proto.closeModal('endModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-warn mb16"><span class="ico">!</span>
+        <div>结束原因<b>必填</b>。未完成的单词保留为「待训练」状态，不会静默跳过，可在后续训练中继续。</div></div>
+      <div class="form-grid g1">
+        <div class="field"><label>结束原因 <span class="req">*</span></label>
+          <select class="select" id="endReason">
+            <option value="">请选择</option>
+            <option>课堂时间不足</option>
+            <option>学员状态不佳</option>
+            <option>临时调整教学内容</option>
+            <option>其他</option>
+          </select></div>
+        <div class="field"><label>补充说明</label><textarea class="textarea" placeholder="选填"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('endModal')">取消</button>
+      <button class="btn btn-danger" onclick="doEnd()">确认结束</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+/* ========== 状态 ========== */
+const WORDS = (() => {
+  try {
+    const s = sessionStorage.getItem('proto_train_words');
+    if (s) { const a = JSON.parse(s); if (Array.isArray(a) && a.length) return a; }
+  } catch (e) {}
+  return DB.words;
+})();
+
+const GROUP_SIZE = 5;
+const groups = [];
+for (let i = 0; i < WORDS.length; i += GROUP_SIZE) groups.push(WORDS.slice(i, i + GROUP_SIZE));
+
+const S = {
+  gi: 0, wi: 0,
+  mode: 'en2cn',
+  revealed: false,
+  answers: {},        // "gi_wi" -> 'yes' | 'no'
+  stage: 'group',     // group | groupDone | final | summary
+  fi: 0,              // 最后复习索引
+  finalAns: {},       // 索引 -> 'yes' | 'no' | 'mid'
+  finalRevealed: false,
+};
+
+const stageEl = () => document.getElementById('stage');
+const keyOf = (gi, wi) => gi + '_' + wi;
+const total = WORDS.length;
+let answeredTotal = 0;
+
+/* ========== 顶栏 ========== */
+function updateTop() {
+  const done = Object.keys(S.answers).length;
+  if (S.stage === 'final' || S.stage === 'summary') {
+    document.getElementById('topTitle').textContent = '最后一轮复习 · 陈可欣';
+    document.getElementById('topSub').textContent = '本次共 ' + total + ' 个单词 · 不显示答案，由教师观察判断';
+    document.getElementById('topProg').textContent = Object.keys(S.finalAns).length + ' / ' + total;
+  } else {
+    document.getElementById('topTitle').textContent = '单词训练 · 陈可欣';
+    document.getElementById('topSub').textContent = '人教版 七年级上 Unit 1 词汇 · 第 ' + (S.gi + 1) + ' / ' + groups.length + ' 组';
+    document.getElementById('topProg').textContent = done + ' / ' + total;
+  }
+  document.getElementById('pauseDone').textContent = done + ' 个';
+}
+
+/* ========== 渲染 ========== */
+function render() {
+  updateTop();
+  if (S.stage === 'group') renderGroup();
+  else if (S.stage === 'groupDone') renderGroupDone();
+  else if (S.stage === 'final') renderFinal();
+  else renderSummary();
+}
+
+function dotsHtml() {
+  return groups.map((g, i) => {
+    const done = g.every((_, wi) => S.answers[keyOf(i, wi)]);
+    const cls = done ? 'done' : i === S.gi ? 'cur' : '';
+    return `<span class="gdot ${cls}">${i + 1}</span>`;
+  }).join('');
+}
+
+function meanHtml(w) {
+  return w.mean.map(m => `<div><span class="pos">${m.pos}</span> ${m.cn}</div>`).join('');
+}
+
+function renderGroup() {
+  const g = groups[S.gi];
+  const w = g[S.wi];
+  const inGroupDone = g.filter((_, i) => S.answers[keyOf(S.gi, i)]).length;
+
+  let front, back;
+  if (S.mode === 'en2cn') {
+    front = `<div class="wc-en">${w.en}</div><div class="wc-ph">${w.ph}</div>`;
+    back = S.revealed
+      ? `<div class="wc-cn">${meanHtml(w)}</div>`
+      : `<div class="wc-cn muted" style="font-size:14px">（点击「显示答案」查看中文释义）</div>`;
+  } else if (S.mode === 'cn2en') {
+    front = `<div class="wc-cn" style="font-size:22px">${meanHtml(w)}</div>`;
+    back = S.revealed
+      ? `<div class="wc-en">${w.en}</div><div class="wc-ph">${w.ph}</div>`
+      : `<div class="wc-en muted" style="font-size:15px">（点击「显示答案」查看英文）</div>`;
+  } else {
+    front = `<div class="wc-en" style="font-size:22px;color:var(--text-3)">♪ 听发音判断</div>`;
+    back = S.revealed
+      ? `<div class="wc-en">${w.en}</div><div class="wc-ph">${w.ph}</div><div class="wc-cn">${meanHtml(w)}</div>`
+      : `<div class="wc-en muted" style="font-size:15px">（聆听发音后判断，需要时显示答案）</div>`;
+  }
+
+  const cur = S.answers[keyOf(S.gi, S.wi)];
+
+  stageEl().innerHTML = `
+    <div class="flex jcb aic mb12">
+      <div class="group-dots">${dotsHtml()}</div>
+      <div class="small muted">第 ${S.gi + 1} 组 · 本组 ${inGroupDone} / ${g.length} 已完成</div>
+    </div>
+
+    <div class="word-card">
+      ${front}
+      ${back}
+      <div class="mt12">
+        <button class="audio-btn" data-label="▶ 播放发音"
+          onclick="Proto.playAudio(this,'${w.en}')">▶ 播放发音</button>
+        ${S.revealed ? '' : `<button class="btn btn-sm" style="margin-left:8px" onclick="reveal()">显示答案</button>`}
+      </div>
+    </div>
+
+    <div class="flex jcb aic mt16">
+      <div class="pill-tabs">
+        <button class="pill-tab ${S.mode === 'en2cn' ? 'on' : ''}" onclick="setMode('en2cn')">看英文 · 理解中文</button>
+        <button class="pill-tab ${S.mode === 'cn2en' ? 'on' : ''}" onclick="setMode('cn2en')">看中文 · 回忆英文</button>
+        <button class="pill-tab ${S.mode === 'listen' ? 'on' : ''}" onclick="setMode('listen')">听发音 · 识别单词</button>
+      </div>
+      <button class="btn btn-sm btn-ghost" onclick="Proto.openModal('endModal')">结束本次训练</button>
+    </div>
+
+    <div class="judge-row">
+      <button class="judge no ${cur === 'no' ? 'no' : ''}" onclick="judge('no')">不认识 <kbd>1</kbd></button>
+      <button class="judge yes" onclick="judge('yes')">认识 <kbd>2</kbd></button>
+    </div>
+
+    <div class="flex jcb mt12">
+      <button class="btn btn-ghost btn-sm" onclick="move(-1)">← 上一个</button>
+      <div class="small muted">已记录 ${inGroupDone} / ${g.length} 个 · 不认识的单词进入待复习</div>
+      <button class="btn btn-ghost btn-sm" onclick="move(1)">下一个 →</button>
+    </div>
+
+    <div class="mini-words mt16">
+      ${g.map((x, i) => {
+        const a = S.answers[keyOf(S.gi, i)];
+        const cls = a === 'yes' ? 'ok' : a === 'no' ? 'no' : '';
+        return `<span class="mini-word ${cls}">${x.en}</span>`;
+      }).join('')}
+    </div>`;
+}
+
+function renderGroupDone() {
+  const g = groups[S.gi];
+  const yes = g.filter((_, i) => S.answers[keyOf(S.gi, i)] === 'yes').length;
+  const no = g.length - yes;
+  const isLast = S.gi === groups.length - 1;
+
+  stageEl().innerHTML = `
+    <div class="flex jcb aic mb12">
+      <div class="group-dots">${dotsHtml()}</div>
+      <div class="small muted">第 ${S.gi + 1} / ${groups.length} 组</div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">第 ${S.gi + 1} 组训练完成</div>
+        <span class="tag tag-green nodot">${g.length} / ${g.length}</span></div>
+      <div class="card-body">
+        <div class="grid g3 mb16">
+          <div class="card stat"><div class="stat-label">本组单词</div><div class="stat-value">${g.length}</div></div>
+          <div class="card stat"><div class="stat-label">认识</div>
+            <div class="stat-value" style="color:var(--success)">${yes}</div></div>
+          <div class="card stat"><div class="stat-label">不认识</div>
+            <div class="stat-value" style="color:var(--danger)">${no}</div></div>
+        </div>
+
+        <div class="mini-words mb16">
+          ${g.map((x, i) => `<span class="mini-word ${S.answers[keyOf(S.gi, i)] === 'yes' ? 'ok' : 'no'}">${x.en}</span>`).join('')}
+        </div>
+
+        <div class="alert alert-info"><span class="ico">i</span>
+          <div>本组每个单词的判断结果都已单独记录（学员 / 单词 / 组别 / 模式 / 结果 / 时间 / 教师 / 轮次）。
+            未完成的单词不会被静默跳过。</div></div>
+
+        <div class="flex gap8 mt16" style="justify-content:flex-end">
+          <button class="btn" onclick="Proto.openModal('endModal')">结束本次训练</button>
+          <button class="btn btn-primary btn-lg" onclick="nextGroup()">
+            ${isLast ? '进入最后一轮复习 →' : `继续第 ${S.gi + 2} 组 →`}</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderFinal() {
+  const w = WORDS[S.fi];
+  const cur = S.finalAns[S.fi];
+
+  stageEl().innerHTML = `
+    <div class="alert alert-warn mb16"><span class="ico">!</span>
+      <div><b>最后一轮复习：</b>全部 ${groups.length} 组已完成。此阶段<b>不直接显示答案</b>，
+        教师观察孩子反应后判断：认识 / 不认识 / 暂不确定。</div></div>
+
+    <div class="bar mb12"><i style="width:${(S.fi / total * 100).toFixed(1)}%"></i></div>
+    <div class="flex jcb small muted mb12">
+      <span>复习进度 ${S.fi + 1} / ${total}</span>
+      <span>已判断 ${Object.keys(S.finalAns).length} 个</span>
+    </div>
+
+    <div class="word-card">
+      <div class="wc-en">${w.en}</div>
+      <div class="wc-ph">${w.ph}</div>
+      ${S.finalRevealed ? `<div class="wc-cn">${meanHtml(w)}</div>`
+        : `<div class="wc-cn muted" style="font-size:14px">（中文释义已隐藏，由教师观察孩子反应判断）</div>`}
+      <div class="mt12">
+        <button class="audio-btn" data-label="▶ 播放发音"
+          onclick="Proto.playAudio(this,'${w.en}')">▶ 播放发音</button>
+        ${S.finalRevealed ? '' : `<button class="btn btn-sm" style="margin-left:8px" onclick="finalReveal()">显示答案</button>`}
+      </div>
+    </div>
+
+    <div class="judge-row g3 mt16">
+      <button class="judge no" onclick="finalJudge('no')">不认识 <kbd>1</kbd></button>
+      <button class="judge mid" onclick="finalJudge('mid')">暂不确定 <kbd>2</kbd></button>
+      <button class="judge yes" onclick="finalJudge('yes')">认识 <kbd>3</kbd></button>
+    </div>
+
+    <div class="flex jcb mt12">
+      <button class="btn btn-ghost btn-sm" onclick="finalMove(-1)">← 上一个</button>
+      <div class="small muted">暂不确定的单词<b>不会</b>被视为掌握</div>
+      <button class="btn btn-ghost btn-sm" onclick="finalMove(1)">下一个 →</button>
+    </div>`;
+}
+
+function renderSummary() {
+  const yes = Object.values(S.finalAns).filter(v => v === 'yes').length;
+  const no = Object.values(S.finalAns).filter(v => v === 'no').length;
+  const mid = Object.values(S.finalAns).filter(v => v === 'mid').length;
+
+  stageEl().innerHTML = `
+    <div class="card">
+      <div class="card-head"><div class="card-title">本次训练完成</div>
+        <span class="tag tag-green nodot">${total} 个单词已处理</span></div>
+      <div class="card-body">
+        <div class="grid g4 mb16">
+          <div class="card stat"><div class="stat-label">本次训练</div><div class="stat-value">${total}</div></div>
+          <div class="card stat"><div class="stat-label">本次通过</div>
+            <div class="stat-value" style="color:var(--success)">${yes}</div></div>
+          <div class="card stat"><div class="stat-label">待复习</div>
+            <div class="stat-value" style="color:var(--danger)">${no}</div></div>
+          <div class="card stat"><div class="stat-label">暂不确定</div>
+            <div class="stat-value" style="color:var(--warning)">${mid}</div></div>
+        </div>
+
+        <div class="alert alert-info mb16"><span class="ico">i</span>
+          <div>「本次通过」<b>不等于永久掌握</b>：正式掌握状态与训练任务状态分开保存，一次通过不意味着永远记住。
+            「暂不确定」保留待确认状态，不能直接视为掌握。</div></div>
+
+        <div class="section-title">加入复习体系</div>
+        <div class="alert alert-warn mb16"><span class="ico">!</span>
+          <div>是否默认同时加入两套体系由<b>机构配置</b>决定。此处两个选项互相独立，可只选一套，也可都不选。</div></div>
+
+        <div class="field mb12">
+          <label class="check"><input type="checkbox" id="cb_leitner"> 加入 <b>莱特纳复习体系</b>（进入红盒，按盒子规则安排复习）</label>
+        </div>
+        <div class="field mb12">
+          <label class="check"><input type="checkbox" id="cb_21"> 加入 <b>21 天记忆复习体系</b>（生成独立的 21 天计划节点）</label>
+        </div>
+        <div class="field">
+          <label class="check"><input type="checkbox" id="cb_green"> 将易混淆单词加入 <b>绿盒子</b>（教师自主复习）</label>
+        </div>
+
+        <div class="divider"></div>
+        <div class="flex jcb aic">
+          <span class="small muted">保存后自动生成教学记录草稿，可继续撰写学习报告</span>
+          <div class="flex gap8">
+            <a class="btn" href="student-profile.html">返回学习档案</a>
+            <button class="btn btn-primary btn-lg" onclick="saveAll()">完成并保存</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ========== 交互 ========== */
+function setMode(m) { S.mode = m; S.revealed = false; render(); }
+function reveal() { S.revealed = true; render(); }
+
+function judge(v) {
+  S.answers[keyOf(S.gi, S.wi)] = v;
+  const g = groups[S.gi];
+  const allDone = g.every((_, i) => S.answers[keyOf(S.gi, i)]);
+  if (allDone && S.wi === g.length - 1) {
+    S.stage = 'groupDone';
+    render();
+    return;
+  }
+  if (S.wi < g.length - 1) S.wi++;
+  else {
+    // 找到本组第一个未作答的
+    const firstEmpty = g.findIndex((_, i) => !S.answers[keyOf(S.gi, i)]);
+    if (firstEmpty >= 0) S.wi = firstEmpty;
+  }
+  S.revealed = false;
+  render();
+}
+
+function move(d) {
+  const g = groups[S.gi];
+  const n = S.wi + d;
+  if (n < 0 || n >= g.length) return;
+  S.wi = n;
+  S.revealed = false;
+  render();
+}
+
+function nextGroup() {
+  if (S.gi === groups.length - 1) {
+    S.stage = 'final';
+    S.fi = 0;
+    Proto.toast('全部 ' + groups.length + ' 组已完成，进入最后一轮复习', 'ok');
+  } else {
+    S.gi++;
+    S.wi = 0;
+    S.stage = 'group';
+  }
+  S.revealed = false;
+  render();
+}
+
+function finalReveal() { S.finalRevealed = true; render(); }
+
+function finalJudge(v) {
+  S.finalAns[S.fi] = v;
+  if (S.fi < total - 1) {
+    S.fi++;
+    S.finalRevealed = false;
+    render();
+  } else {
+    S.stage = 'summary';
+    render();
+  }
+}
+
+function finalMove(d) {
+  const n = S.fi + d;
+  if (n < 0 || n >= total) return;
+  S.fi = n;
+  S.finalRevealed = false;
+  render();
+}
+
+function openPause() { Proto.openModal('pauseModal'); }
+
+function doEnd() {
+  const r = document.getElementById('endReason').value;
+  if (!r) { Proto.toast('请选择结束原因', 'err'); return; }
+  Proto.closeModal('endModal');
+  Proto.toast('本次训练已结束，未完成单词保留为待训练', 'warn');
+  setTimeout(() => location.href = 'student-profile.html', 800);
+}
+
+function saveAll() {
+  const l = document.getElementById('cb_leitner').checked;
+  const t = document.getElementById('cb_21').checked;
+  const g = document.getElementById('cb_green').checked;
+  const parts = [];
+  if (l) parts.push('莱特纳');
+  if (t) parts.push('21 天');
+  if (g) parts.push('绿盒');
+  Proto.toast(parts.length ? '已保存，待复习单词已加入：' + parts.join(' + ') : '已保存，未加入复习体系（可在档案中手动加入）', 'ok');
+  setTimeout(() => location.href = 'student-profile.html', 900);
+}
+
+/* 键盘 */
+document.addEventListener('keydown', e => {
+  if (S.stage === 'group') {
+    if (e.key === '1') judge('no');
+    if (e.key === '2') judge('yes');
+  } else if (S.stage === 'final') {
+    if (e.key === '1') finalJudge('no');
+    if (e.key === '2') finalJudge('mid');
+    if (e.key === '3') finalJudge('yes');
+  }
+});
+
+render();
+</script>
+</body>
+</html>

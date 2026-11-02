@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>我的客户</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">客户管理<span class="sep">/</span>我的客户</div>
+          <h1 class="page-title">我的客户</h1>
+          <div class="page-sub">仅显示本人报备或归属本人的客户 · 共 12 人</div>
+        </div>
+        <div class="page-actions">
+          <input class="input" placeholder="搜索姓名 / 手机号" style="width:180px" oninput="render(this.value)">
+          <a class="btn btn-primary" href="customer-create.html">+ 客户报备</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th style="width:88px">线索编号</th><th>客户</th><th>联系电话</th><th>学生年级</th>
+                <th>意向课程</th><th>来源</th><th>状态</th><th>最近跟进</th><th>下次跟进</th>
+                <th style="width:150px">操作</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 <b id="total">6</b> 条</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="alert alert-warn mt16"><span class="ico">!</span>
+        <div>代理<b>不得查看其他代理的客户和订单</b>。客户归属冲突（如重复报备）由机构管理员处理，不以最后报备者判定归属。</div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'agent', active: 'agent-customers' });
+
+const LST = { '新线索': 'tag-slate', '待联系': 'tag-amber', '跟进中': 'tag-blue', '意向明确': 'tag-purple', '已成交': 'tag-green', '无效': 'tag-slate', '已关闭': 'tag-slate' };
+
+function render(kw = '') {
+  const rows = DB.leads.filter(l => !kw || l.name.includes(kw) || l.phone.includes(kw));
+  document.getElementById('total').textContent = rows.length;
+  Proto.renderRows('rows', rows, l => `
+    <tr>
+      <td class="mono small">${l.id}</td>
+      <td class="strong"><a href="customer-detail.html">${l.name}</a></td>
+      <td class="mono">${l.phone}</td>
+      <td>${l.grade}</td>
+      <td class="small">${l.intent}</td>
+      <td>${l.channel}</td>
+      <td><span class="tag ${LST[l.status]}">${l.status}</span></td>
+      <td class="small muted">${l.lastFollow.slice(5)}</td>
+      <td class="small ${l.next && l.next < DB.today ? '' : 'muted'}"
+        ${l.next && l.next < DB.today ? 'style="color:var(--danger)"' : ''}>${l.next || '—'}</td>
+      <td class="ops">
+        <a class="btn-link" href="customer-detail.html">详情</a>
+        <a class="btn-link" href="customer-detail.html">跟进</a>
+        ${l.status === '已成交' ? '<a class="btn-link" href="commission.html">佣金</a>' : ''}
+      </td>
+    </tr>`, 10, '没有匹配的客户');
+}
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>词库详情</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">资源中心<span class="sep">/</span><a href="wordbook-list.html">词库管理</a><span class="sep">/</span>词库详情</div>
+          <h1 class="page-title">人教版 七年级上 Unit 1 词汇</h1>
+          <div class="page-sub">WB001 · 人教版 / 七年级 / 上学期 / Unit 1 · 23 个单词 · 启用</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="wordbook-list.html">返回</a>
+          <a class="btn" href="import.html">批量导入</a>
+          <button class="btn btn-primary" onclick="Proto.toast('打开新增单词（示意）')">+ 新增单词</button>
+        </div>
+      </div>
+
+      <div class="grid g4 mb16">
+        <div class="card stat"><div class="stat-label">单词数量</div><div class="stat-value">23<small>个</small></div></div>
+        <div class="card stat"><div class="stat-label">音频就绪</div><div class="stat-value" style="color:var(--success)">23<small>/ 23</small></div>
+          <div class="stat-foot">完整率 100%</div></div>
+        <div class="card stat"><div class="stat-label">多释义单词</div><div class="stat-value">5<small>个</small></div>
+          <div class="stat-foot">如 name、question、answer</div></div>
+        <div class="card stat"><div class="stat-label">被使用中</div><div class="stat-value">8<small>名学员</small></div>
+          <div class="stat-foot">其中 2 人训练进行中</div></div>
+      </div>
+
+      <div class="card">
+        <div class="tabs" id="wtabs">
+          <button class="tab active" data-pane="wp1">单词列表<span class="count">23</span></button>
+          <button class="tab" data-pane="wp2">词库基础信息</button>
+          <button class="tab" data-pane="wp3">导入记录</button>
+        </div>
+
+        <div class="tab-pane active" id="wp1">
+          <div class="alert alert-info mb16"><span class="ico">i</span>
+            <div>一个单词可以有<b>多个中文释义</b>，此处按多行展示；词库与单词为多对多关系，词库内单独保存排序，不影响同一单词在其他词库中的顺序。</div>
+          </div>
+          <div class="flex jcb aic mb12">
+            <div class="flex gap8 aic">
+              <input class="input" placeholder="搜索单词或释义" style="width:200px" oninput="filterWords(this.value)">
+              <select class="select" style="width:130px"><option>全部状态</option><option>启用</option><option>停用</option></select>
+            </div>
+            <div class="small muted">词库内排序可调整，不影响其他词库中的同一单词</div>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th style="width:56px">排序</th><th style="width:130px">单词</th><th style="width:130px">音标</th>
+                <th>中文释义</th><th>示例句</th><th style="width:80px">音频</th><th style="width:80px">状态</th><th style="width:140px">操作</th></tr></thead>
+              <tbody id="words"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 23 条 · 每页 20 条</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg">2</button><button class="pg">›</button></div>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="wp2">
+          <div class="desc g3">
+            <div class="desc-item"><span class="k">词库编号</span><span class="v mono">WB001</span></div>
+            <div class="desc-item"><span class="k">教材版本</span><span class="v">人教版</span></div>
+            <div class="desc-item"><span class="k">年级</span><span class="v">七年级</span></div>
+            <div class="desc-item"><span class="k">学期</span><span class="v">上学期</span></div>
+            <div class="desc-item"><span class="k">单元</span><span class="v">Unit 1</span></div>
+            <div class="desc-item"><span class="k">单词数量</span><span class="v mono">23</span></div>
+            <div class="desc-item"><span class="k">创建时间</span><span class="v">2026-08-20 11:02</span></div>
+            <div class="desc-item"><span class="k">创建人</span><span class="v">张敏</span></div>
+            <div class="desc-item"><span class="k">状态</span><span class="v"><span class="tag tag-green">启用</span></span></div>
+          </div>
+          <div class="divider"></div>
+          <div class="section-title">词库说明</div>
+          <div style="background:var(--bg);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--text-2);line-height:1.8">
+            人教版七年级上册 Unit 1 核心词汇，共 23 词，按教材出现顺序排列。<br>
+            单词训练时按本顺序生成待训练队列；超过 45 个待训练单词时按此顺序取前 45 个。
+          </div>
+        </div>
+
+        <div class="tab-pane" id="wp3">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>导入时间</th><th>文件名</th><th>操作人</th><th class="right">成功</th><th class="right">失败</th><th>结果</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr><td>2026-08-20 11:02</td><td class="small">人教版七上U1词汇.xlsx</td><td>张敏</td>
+                  <td class="right mono" style="color:var(--success)">23</td><td class="right mono">0</td>
+                  <td><span class="tag tag-green">全部成功</span></td>
+                  <td><button class="btn-link" onclick="Proto.toast('查看导入明细（示意）')">查看</button></td></tr>
+                <tr><td>2026-08-20 10:48</td><td class="small">人教版七上U1词汇_初版.xlsx</td><td>张敏</td>
+                  <td class="right mono">21</td><td class="right mono" style="color:var(--danger)">2</td>
+                  <td><span class="tag tag-amber">部分失败</span></td>
+                  <td><button class="btn-link" onclick="Proto.toast('下载失败行（示意）','ok')">下载失败行</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="alert alert-warn mt16"><span class="ico">!</span>
+            <div>导入失败的行<b>不会破坏已有资源</b>：整批导入采用事务处理，失败行可下载修正后重新导入，已成功部分不重复写入。</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'wordbook-list' });
+
+function renderWords(kw = '') {
+  const list = DB.words.filter(w =>
+    !kw || w.en.toLowerCase().includes(kw.toLowerCase()) || w.mean.some(m => m.cn.includes(kw)));
+
+  Proto.renderRows('words', list, (w, i) => `
+    <tr>
+      <td class="mono muted">${i + 1}</td>
+      <td class="strong" style="font-size:14px">${w.en}</td>
+      <td class="mono small muted">${w.ph}</td>
+      <td>
+        ${w.mean.map(m => `<div><span class="small" style="color:var(--info)">${m.pos}</span> ${m.cn}</div>`).join('')}
+        ${w.mean.length > 1 ? '<span class="tag tag-purple nodot" style="font-size:10px">多释义</span>' : ''}
+      </td>
+      <td class="small muted">${w.en === 'name' ? 'My name is Gina.' : w.en === 'question' ? 'Can I ask a question?' : '—'}</td>
+      <td>
+        <button class="audio-btn mini" data-label="▶ 音频"
+          onclick="Proto.playAudio(this,'${w.en}')">▶ 音频</button>
+      </td>
+      <td><span class="tag tag-green">启用</span></td>
+      <td class="ops">
+        <button class="btn-link" onclick="Proto.toast('编辑单词（示意）')">编辑</button>
+        <button class="btn-link mute" onclick="move(${i},-1)">↑</button>
+        <button class="btn-link mute" onclick="move(${i},1)">↓</button>
+      </td>
+    </tr>`, 8, '没有匹配的单词');
+}
+
+function filterWords(kw) { renderWords(kw.trim()); }
+
+function move(i, d) {
+  const j = i + d;
+  if (j < 0 || j >= DB.words.length) return;
+  [DB.words[i], DB.words[j]] = [DB.words[j], DB.words[i]];
+  renderWords(document.querySelector('#wp1 input').value.trim());
+  Proto.toast('排序已调整（仅影响本词库）', 'ok');
+}
+
+renderWords();
+</script>
+</body>
+</html>

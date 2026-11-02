@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>单词预筛选</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body class="focus-page">
+
+<div class="focus-top">
+  <a class="btn btn-sm" href="word-training-setup.html">← 返回选择</a>
+  <div>
+    <div class="ft-title">单词预筛选 · 陈可欣</div>
+    <div class="ft-sub">人教版 七年级上 Unit 1 词汇</div>
+  </div>
+  <div class="grow"></div>
+  <div class="text-r">
+    <div class="small muted">进度</div>
+    <div style="font-size:15px;font-weight:600" id="prog">1 / 23</div>
+  </div>
+  <button class="btn btn-sm" onclick="finishEarly()">结束预筛选</button>
+</div>
+
+<div class="focus-main">
+  <div class="focus-wrap">
+
+    <div class="bar mb16"><i id="barFill" style="width:4%"></i></div>
+
+    <!-- 预筛卡片 -->
+    <div id="cardArea">
+      <div class="word-card">
+        <div class="wc-en" id="wEn">name</div>
+        <div class="wc-ph" id="wPh">/neɪm/</div>
+        <div class="wc-cn" id="wCn"><span class="pos">n.</span> 名字</div>
+        <div class="mt16">
+          <button class="audio-btn" data-label="▶ 播放发音" onclick="Proto.playAudio(this, document.getElementById('wEn').textContent)">
+            ▶ 播放发音</button>
+        </div>
+      </div>
+
+      <div class="alert alert-info mt16"><span class="ico">i</span>
+        <div>预筛选只是初筛：<b>认识 ≠ 正式掌握</b>。认识的单词不进入本次新词强化队列，仍会记录初筛结果。</div></div>
+
+      <div class="judge-row">
+        <button class="judge no" onclick="answer(false)">不认识 <kbd>1</kbd></button>
+        <button class="judge yes" onclick="answer(true)">认识 <kbd>2</kbd></button>
+      </div>
+      <div class="text-c mt12"><button class="btn btn-ghost btn-sm" onclick="prev()">← 上一个单词</button></div>
+    </div>
+
+    <!-- 预筛结果 -->
+    <div id="resultArea" class="hidden">
+      <div class="card">
+        <div class="card-head"><div class="card-title">预筛选完成</div>
+          <span class="small muted">结果已逐词记录</span></div>
+        <div class="card-body">
+          <div class="grid g3 mb16">
+            <div class="card stat"><div class="stat-label">本词库单词</div><div class="stat-value">23</div></div>
+            <div class="card stat"><div class="stat-label">认识（初筛）</div>
+              <div class="stat-value" style="color:var(--info)">9</div>
+              <div class="stat-foot">不进入本次强化队列</div></div>
+            <div class="card stat"><div class="stat-label">不认识（待训练）</div>
+              <div class="stat-value" style="color:var(--warning)">14</div>
+              <div class="stat-foot">进入本次分组训练</div></div>
+          </div>
+
+          <div class="alert alert-info mb16"><span class="ico">i</span>
+            <div>待训练 <b>14</b> 个，未超过单次上限 45 个，将<b>全部</b>进入本次训练。<br>
+              若超过 45 个，系统按词库顺序取前 45 个，其余保留为待训练状态，后续训练仍可选择。</div></div>
+
+          <div class="section-title">训练队列预览</div>
+          <div class="mini-words mb16">
+            <span class="mini-word ok">name</span><span class="mini-word ok">nice</span>
+            <span class="mini-word ok">meet</span><span class="mini-word ok">too</span>
+            <span class="mini-word ok">your</span><span class="mini-word ok">his</span>
+            <span class="mini-word ok">her</span><span class="mini-word ok">yes</span>
+            <span class="mini-word ok">she</span>
+            <span class="mini-word">he</span><span class="mini-word">no</span><span class="mini-word">not</span>
+            <span class="mini-word">friend</span><span class="mini-word">question</span><span class="mini-word">answer</span>
+            <span class="mini-word">look</span><span class="mini-word">first</span><span class="mini-word">last</span>
+            <span class="mini-word">class</span><span class="mini-word">classroom</span>
+            <span class="mini-word">library</span><span class="mini-word">happy</span><span class="mini-word">family</span>
+          </div>
+          <div class="small muted mb16">浅色 = 初筛认识（不进入强化）；深色描边 = 进入本次训练队列</div>
+
+          <div class="section-title">分组规划</div>
+          <div class="grid g6 mb16">
+            <div class="kv-pill">第 1 组 · 5 个</div>
+            <div class="kv-pill">第 2 组 · 5 个</div>
+            <div class="kv-pill">第 3 组 · 5 个</div>
+            <div class="kv-pill">第 4 组 · 5 个</div>
+            <div class="kv-pill">第 5 组 · 3 个</div>
+            <div class="kv-pill muted">共 5 组 / 23 个</div>
+          </div>
+
+          <div class="alert alert-warn mb16"><span class="ico">!</span>
+            <div>本次演示按「全部 23 个单词都要训练」生成队列（含 9 个初筛认识），以便完整演示 5 组分组；
+              实际业务中初筛认识的单词默认不进入强化队列。</div></div>
+
+          <div class="flex gap8" style="justify-content:flex-end">
+            <button class="btn" onclick="restart()">重新预筛</button>
+            <a class="btn" href="student-profile.html">稍后再做</a>
+            <button class="btn btn-primary btn-lg" onclick="goTraining()">开始分组训练 →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+const WORDS = DB.words;
+let idx = 0;
+const answers = {};   // 索引 -> true/false
+
+function render() {
+  const w = WORDS[idx];
+  document.getElementById('wEn').textContent = w.en;
+  document.getElementById('wPh').textContent = w.ph;
+  document.getElementById('wCn').innerHTML = w.mean
+    .map(m => `<div><span class="pos">${m.pos}</span> ${m.cn}</div>`).join('');
+  document.getElementById('prog').textContent = `${idx + 1} / ${WORDS.length}`;
+  document.getElementById('barFill').style.width = ((idx + 1) / WORDS.length * 100) + '%';
+  Proto.speak('');  // 停止上一次朗读
+}
+
+function answer(known) {
+  answers[idx] = known;
+  if (idx < WORDS.length - 1) {
+    idx++;
+    render();
+  } else {
+    showResult();
+  }
+}
+
+function prev() {
+  if (idx > 0) { idx--; render(); }
+}
+
+function showResult() {
+  document.getElementById('cardArea').classList.add('hidden');
+  document.getElementById('resultArea').classList.remove('hidden');
+  document.getElementById('prog').textContent = `${WORDS.length} / ${WORDS.length}`;
+  document.getElementById('barFill').style.width = '100%';
+}
+
+function restart() {
+  idx = 0;
+  Object.keys(answers).forEach(k => delete answers[k]);
+  document.getElementById('cardArea').classList.remove('hidden');
+  document.getElementById('resultArea').classList.add('hidden');
+  render();
+}
+
+function finishEarly() {
+  Proto.confirmBox('结束预筛选',
+    `当前已筛 ${idx} / ${WORDS.length} 个单词。<br><br>
+     提前结束会把<b>未筛的单词保留为「未训练」状态</b>，不影响后续重新预筛。`,
+    '结束', () => location.href = 'student-profile.html');
+}
+
+function goTraining() {
+  sessionStorage.setItem('proto_train_words', JSON.stringify(WORDS));
+  location.href = 'word-training.html';
+}
+
+document.addEventListener('keydown', e => {
+  if (document.getElementById('resultArea').classList.contains('hidden')) {
+    if (e.key === '1') answer(false);
+    if (e.key === '2') answer(true);
+    if (e.key === 'ArrowLeft') prev();
+  }
+});
+
+render();
+</script>
+</body>
+</html>

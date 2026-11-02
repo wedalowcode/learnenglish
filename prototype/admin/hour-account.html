@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>课时账户</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">财务管理<span class="sep">/</span>课时账户</div>
+          <h1 class="page-title">课时账户</h1>
+          <div class="page-sub">每个学员按课程商品建立独立账户，支持多账户并存</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="hour-flow.html">课时流水</a>
+          <button class="btn btn-primary" onclick="Proto.toast('调整课时需财务权限（示意）','warn')">+ 调整课时</button>
+        </div>
+      </div>
+
+      <div class="grid g4 mb16">
+        <div class="card stat"><div class="stat-label">账户总数</div><div class="stat-value">6<small>个</small></div></div>
+        <div class="card stat"><div class="stat-label">课时总余额</div><div class="stat-value">114<small>课时</small></div>
+          <div class="stat-foot">按流水实时计算</div></div>
+        <div class="card stat"><div class="stat-label">余额不足账户</div><div class="stat-value" style="color:var(--danger)">1<small>个</small></div>
+          <div class="stat-foot">赵一诺 · 剩余 3 课时</div></div>
+        <div class="card stat"><div class="stat-label">30 天内到期</div><div class="stat-value" style="color:var(--warning)">2<small>个</small></div>
+          <div class="stat-foot">需提醒续费</div></div>
+      </div>
+
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div><b>可用余额 = 已入账课时 − 已扣除课时 + 已补入课时 − 已冲减课时。</b>
+        所有变化必须通过课时流水记录，<b>禁止直接修改余额字段</b>；余额不允许为负（除非机构启用欠课规则）。</div></div>
+
+      <div class="card filter">
+        <div class="field"><label>学员姓名</label><input class="input" id="kw" placeholder="学员姓名" oninput="render()"></div>
+        <div class="field"><label>账户状态</label>
+          <select class="select" id="st" onchange="render()"><option value="">全部</option><option>正常</option><option>余额不足</option><option>已用完</option></select></div>
+        <div class="field"><label>余额区间</label>
+          <select class="select" onchange="render()"><option value="">不限</option><option>0</option><option>1-10</option><option>10 以上</option></select></div>
+        <div class="field"><label>课程商品</label>
+          <select class="select" onchange="render()"><option value="">全部</option>
+            <option>60 课时包（一对一）</option><option>30 课时包（一对一）</option><option>20 课时包（一对一）</option></select></div>
+        <div class="filter-actions"><button class="btn btn-primary" onclick="render()">查询</button></div>
+      </div>
+
+      <div class="card mt16">
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th style="width:132px">账户编号</th><th>学员</th><th>家长</th><th>课程商品</th>
+                  <th class="right">购买</th><th class="right">赠送</th><th class="right">已消耗</th>
+                  <th class="right">已调整</th><th class="right">当前余额</th><th>有效期</th><th>状态</th><th style="width:170px">操作</th></tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 <b id="total">6</b> 条</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt16">
+        <div class="card-head"><div class="card-title">账户异常与待处理</div>
+          <span class="tag tag-red nodot">1</span></div>
+        <div class="card-body">
+          <div class="alert alert-danger"><span class="ico">!</span>
+            <div><b>赵一诺（ACC-2026-0003）</b> 在 10-29 课程完成后余额不足，课程已保留真实授课记录并标记为「待处理」。<br>
+              <span class="small">处理方式：教务为该学员补购课时包，或办理续费订单生效后生成新的扣课流水。系统<b>不会</b>产生负数余额。</span>
+              <div class="mt8 flex gap8">
+                <a class="btn btn-sm" href="course-list.html">查看课程</a>
+                <a class="btn btn-sm btn-primary" href="order-create.html">创建续费订单</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- 账户详情抽屉 -->
+<div class="drawer-mask" id="acc-mask" onclick="Proto.closeDrawer('acc')"></div>
+<div class="drawer" id="acc" style="width:560px">
+  <div class="modal-head">
+    <div class="modal-title">账户详情 · <span id="acc_name">陈可欣</span></div>
+    <button class="modal-close" onclick="Proto.closeDrawer('acc')">×</button>
+  </div>
+  <div class="modal-body">
+    <div class="desc g2 mb16">
+      <div class="desc-item"><span class="k">账户编号</span><span class="v mono">ACC-2026-0001</span></div>
+      <div class="desc-item"><span class="k">课程商品</span><span class="v">60 课时包</span></div>
+      <div class="desc-item"><span class="k">有效期</span><span class="v">2027-09-11</span></div>
+      <div class="desc-item"><span class="k">账户状态</span><span class="v"><span class="tag tag-green">正常</span></span></div>
+    </div>
+    <div class="grid g3 mb16">
+      <div class="card stat" style="padding:10px 12px"><div class="stat-label">购买 + 赠送</div><div class="stat-value" style="font-size:18px">60</div></div>
+      <div class="card stat" style="padding:10px 12px"><div class="stat-label">已消耗</div><div class="stat-value" style="font-size:18px">18</div></div>
+      <div class="card stat" style="padding:10px 12px"><div class="stat-label">当前余额</div><div class="stat-value" style="font-size:18px;color:var(--success)">42</div></div>
+    </div>
+    <div class="section-title">课时流水</div>
+    <table class="table compact">
+      <thead><tr><th>类型</th><th class="right">变动</th><th class="right">变动前</th><th class="right">变动后</th><th>关联业务</th><th>时间</th></tr></thead>
+      <tbody>
+        <tr><td>正常扣课</td><td class="right mono" style="color:var(--danger)">−1</td><td class="right mono">43</td>
+          <td class="right mono">42</td><td class="small">C20261102001</td><td class="small">11-02 10:35</td></tr>
+        <tr><td>正常扣课</td><td class="right mono" style="color:var(--danger)">−1</td><td class="right mono">44</td>
+          <td class="right mono">43</td><td class="small">C20261026002</td><td class="small">10-26 20:00</td></tr>
+        <tr><td>购买入账</td><td class="right mono" style="color:var(--success)">+60</td><td class="right mono">0</td>
+          <td class="right mono">60</td><td class="small">OD20260912001</td><td class="small">09-12 10:30</td></tr>
+      </tbody>
+    </table>
+    <div class="alert alert-info mt16"><span class="ico">i</span>
+      <div class="small">如发现误扣，只能通过<b>冲正流水</b>修复，原流水不可删除或修改。</div></div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn" onclick="Proto.closeDrawer('acc')">关闭</button>
+    <a class="btn btn-primary" href="hour-flow.html">查看全部流水</a>
+  </div>
+</div>
+
+<!-- 调整课时 -->
+<div class="mask" id="adjModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">调整课时</div>
+      <button class="modal-close" onclick="Proto.closeModal('adjModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-warn mb16"><span class="ico">!</span>
+        <div>调整不直接改余额，而是生成一条<b>「课时调整」流水</b>，需填写原因并记入操作日志。</div></div>
+      <div class="form-grid">
+        <div class="field"><label>学员</label><input class="input" id="adj_stu" disabled></div>
+        <div class="field"><label>调整类型</label>
+          <select class="select"><option>课时补入</option><option>课时调整（冲减）</option><option>扣课冲正</option><option>退款冲减</option></select></div>
+        <div class="field"><label>调整课时数 <span class="req">*</span></label>
+          <input class="input" type="number" value="1"></div>
+        <div class="field"><label>关联业务</label>
+          <select class="select"><option>教务补课</option><option>重复扣课</option><option>系统异常</option><option>其他</option></select></div>
+        <div class="field full"><label>调整原因 <span class="req">*</span></label>
+          <textarea class="textarea" placeholder="必填，如：教师请假补课 1 课时"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('adjModal')">取消</button>
+      <button class="btn btn-primary" onclick="Proto.closeModal('adjModal');Proto.toast('已生成课时调整流水','ok')">确认调整</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'hour-account' });
+
+const AST = { '正常': 'tag-green', '余额不足': 'tag-red', '已用完': 'tag-slate' };
+
+function render() {
+  const kw = document.getElementById('kw').value.trim();
+  const st = document.getElementById('st').value;
+  const rows = DB.accounts.filter(a => {
+    if (kw && !a.student.includes(kw)) return false;
+    if (st && a.status !== st) return false;
+    return true;
+  });
+  document.getElementById('total').textContent = rows.length;
+
+  Proto.renderRows('rows', rows, a => `
+    <tr>
+      <td class="mono small">${a.id}</td>
+      <td class="strong">${a.student}</td>
+      <td>${a.parent}</td>
+      <td class="small">${a.product}</td>
+      <td class="right mono">${a.buy}</td>
+      <td class="right mono">${a.gift || '—'}</td>
+      <td class="right mono">${a.used}</td>
+      <td class="right mono">${a.adjust || '—'}</td>
+      <td class="right mono strong" style="color:${a.remain < 10 ? 'var(--danger)' : 'var(--success)'}">${a.remain}</td>
+      <td class="small">${a.valid}</td>
+      <td><span class="tag ${AST[a.status]}">${a.status}</span></td>
+      <td class="ops">
+        <button class="btn-link" onclick="openAcc('${a.student}')">详情</button>
+        <a class="btn-link" href="hour-flow.html">流水</a>
+        <button class="btn-link" onclick="openAdj('${a.student}')">调整</button>
+      </td>
+    </tr>`, 12, '没有符合条件的账户');
+}
+
+function openAcc(name) {
+  document.getElementById('acc_name').textContent = name;
+  Proto.openDrawer('acc');
+}
+function openAdj(name) {
+  document.getElementById('adj_stu').value = name;
+  Proto.openModal('adjModal');
+}
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>教材结构</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .tree { font-size:13px; }
+  .tree-node { padding:5px 8px; border-radius:5px; cursor:pointer; display:flex; align-items:center; gap:6px; color:var(--text-2); }
+  .tree-node:hover { background:var(--bg); }
+  .tree-node.on { background:var(--primary-soft); color:var(--primary-dark); font-weight:600; }
+  .tree-node .caret { width:10px; color:var(--text-3); font-size:10px; }
+  .tree-node .cnt { margin-left:auto; font-size:11px; color:var(--text-3); font-weight:400; }
+  .tree-children { padding-left:16px; }
+  .tree-children.collapsed { display:none; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">资源中心<span class="sep">/</span>教材结构</div>
+          <h1 class="page-title">教材结构</h1>
+          <div class="page-sub">教材版本 → 年级 → 学期 → 单元 → 词库 / 文章 · 结构可扩展，不写死</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="import.html">资源导入</a>
+          <button class="btn btn-primary" onclick="Proto.toast('打开新增单元（示意）')">+ 新增单元</button>
+        </div>
+      </div>
+
+      <div class="grid g-1-2" style="grid-template-columns:300px 1fr;align-items:start">
+        <div class="card">
+          <div class="card-head"><div class="card-title">教材层级</div>
+            <button class="btn btn-sm" onclick="Proto.toast('打开新增教材版本（示意）')">+ 版本</button></div>
+          <div class="card-body" style="padding:10px">
+            <div class="tree" id="tree"></div>
+            <div class="divider"></div>
+            <div class="small muted" style="padding:0 8px">机构可自行扩展教材版本、年级、学期与单元，系统不写死固定体系。</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title" id="pathTitle">人教版 / 七年级 / 上学期</div>
+              <div class="flex gap8">
+                <button class="btn btn-sm" onclick="Proto.toast('调整单元排序（示意）')">调整排序</button>
+                <button class="btn btn-sm btn-primary" onclick="Proto.toast('打开新增单元（示意）')">+ 新增单元</button>
+              </div>
+            </div>
+            <div class="card-body tight">
+              <div class="table-wrap">
+                <table class="table">
+                  <thead><tr><th style="width:60px">排序</th><th>单元名称</th><th class="right">词库数量</th>
+                    <th class="right">文章数量</th><th>状态</th><th>更新时间</th><th style="width:180px">操作</th></tr></thead>
+                  <tbody id="units"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid g2 mt16">
+            <div class="card">
+              <div class="card-head"><div class="card-title">该学期资源统计</div></div>
+              <div class="card-body">
+                <div class="flex jcb small mb8"><span>单元数</span><span class="mono">4 个</span></div>
+                <div class="flex jcb small mb8"><span>词库</span><span class="mono">4 个 / 共 102 词</span></div>
+                <div class="flex jcb small mb8"><span>文章</span><span class="mono">2 篇 / 14 句</span></div>
+                <div class="flex jcb small"><span>音频完整率</span><span class="mono">82%</span></div>
+                <div class="bar-row mt12"><div class="bar green"><i style="width:82%"></i></div><span class="val">82%</span></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><div class="card-title">资源异常</div><span class="tag tag-amber nodot">2</span></div>
+              <div class="card-body">
+                <div class="alert alert-warn mb12"><span class="ico">!</span>
+                  <div><b>A Trip to the Library</b> 有 2 句缺少音频，训练时将提示资源异常。</div></div>
+                <div class="alert alert-warn"><span class="ico">!</span>
+                  <div><b>Our Family Weekend</b> 完整音频未生成。</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'material-list' });
+
+const TREE = [
+  { name: '人教版', count: 2, open: true, children: [
+    { name: '七年级', count: 2, open: true, children: [
+      { name: '上学期', count: 2, open: true, children: [
+        { name: 'Unit 1', count: 2, active: true },
+        { name: 'Unit 2', count: 2 },
+        { name: 'Unit 3', count: 1 },
+        { name: 'Unit 4', count: 0 },
+      ]},
+      { name: '下学期', count: 0, children: [{ name: 'Unit 1', count: 0 }] },
+    ]},
+    { name: '八年级', count: 1, children: [{ name: '上学期', count: 1, children: [{ name: 'Unit 1', count: 1 }] }] },
+    { name: '九年级', count: 1, children: [{ name: '上学期', count: 1, children: [{ name: 'Unit 3', count: 1 }] }] },
+  ]},
+  { name: '外研版', count: 2, children: [
+    { name: '五年级', count: 1, children: [{ name: '上学期', count: 1, children: [{ name: 'Module 1', count: 2 }] }] },
+    { name: '六年级', count: 1, children: [{ name: '上学期', count: 1, children: [{ name: 'Module 2', count: 2 }] }] },
+  ]},
+];
+
+function nodeHtml(n) {
+  const kids = n.children ? `<div class="tree-children ${n.open ? '' : 'collapsed'}">
+    ${n.children.map(nodeHtml).join('')}</div>` : '';
+  return `<div class="tree-node ${n.active ? 'on' : ''}" onclick="pick(this,'${n.name}')">
+    <span class="caret">${n.children ? (n.open ? '▾' : '▸') : '·'}</span>
+    <span>${n.name}</span><span class="cnt">${n.count}</span>
+  </div>${kids}`;
+}
+document.getElementById('tree').innerHTML = TREE.map(nodeHtml).join('');
+
+function pick(el, name) {
+  document.querySelectorAll('.tree-node').forEach(n => n.classList.remove('on'));
+  el.classList.add('on');
+  if (!/^Unit|^Module/.test(name)) return;
+  document.getElementById('pathTitle').textContent = `人教版 / 七年级 / 上学期 / ${name}`;
+}
+
+const UNITS = [
+  { order: 1, name: 'Unit 1 My name is Gina', books: 1, arts: 1, status: '启用', updated: '2026-08-20' },
+  { order: 2, name: 'Unit 2 This is my sister', books: 1, arts: 1, status: '启用', updated: '2026-08-20' },
+  { order: 3, name: 'Unit 3 Is this your pencil', books: 1, arts: 0, status: '启用', updated: '2026-08-22' },
+  { order: 4, name: 'Unit 4 Where is my schoolbag', books: 0, arts: 0, status: '停用', updated: '2026-09-01' },
+];
+
+Proto.renderRows('units', UNITS, u => `
+  <tr>
+    <td class="mono muted">${u.order}</td>
+    <td class="strong">${u.name}</td>
+    <td class="right mono">${u.books}</td>
+    <td class="right mono">${u.arts}</td>
+    <td>${u.status === '启用' ? '<span class="tag tag-green">启用</span>' : '<span class="tag tag-slate">停用</span>'}</td>
+    <td class="small muted">${u.updated}</td>
+    <td class="ops">
+      <button class="btn-link" onclick="Proto.toast('编辑单元（示意）')">编辑</button>
+      <a class="btn-link" href="wordbook-list.html">管理词库</a>
+      <a class="btn-link" href="article-list.html">管理文章</a>
+    </td>
+  </tr>`, 7);
+</script>
+</body>
+</html>
