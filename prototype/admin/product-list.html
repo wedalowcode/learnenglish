@@ -43,7 +43,8 @@
       </div>
 
       <div class="alert alert-info mt16"><span class="ico">i</span>
-        <div>商品价格与课时数<b>修改后不影响已生成的历史订单</b>，历史订单保存下单时的商品快照；停用商品不可创建新订单。</div>
+        <div>商品价格与课时数<b>修改后不影响已生成的历史订单</b>，历史订单保存下单时的商品快照；停用商品不可创建新订单。
+        <div class="mt8">本轮商品列表已接入 Store 只读数据；<b>新增/编辑商品仍为演示表单，保存接口待后续迭代</b>（订单与课时已按下单快照隔离，不受影响）。</div></div>
       </div>
 
     </main>
@@ -84,10 +85,17 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'admin', active: 'product-list' });
+const S = Store;
+const productRows = S.products();
+const onSale = productRows.filter(p => p.status === '在售').length;
+document.querySelector('.page-sub').textContent =
+  `在售 ${onSale} 个 · 停用 ${productRows.length - onSale} 个 · 停用商品不可新建订单，历史订单保留商品快照`;
+document.querySelector('.pager span').textContent = `共 ${productRows.length} 条`;
 
-Proto.renderRows('rows', DB.products, p => `
+Proto.renderRows('rows', productRows, p => `
   <tr>
     <td class="mono small">${p.id}</td>
     <td class="strong">${p.name}<div class="small muted" style="font-weight:400">${p.desc}</div></td>

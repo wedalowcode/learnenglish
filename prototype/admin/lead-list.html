@@ -94,8 +94,8 @@ function render() {
 
   let rows = S.leads({ kw: kw, status: st });
   if (ch) rows = rows.filter(r => r.lead.channel === ch);
-  if (ag === '__none') rows = rows.filter(r => !r.lead.agentId);
-  else if (ag) rows = rows.filter(r => r.lead.agentId === ag);
+  if (ag === '__none') rows = rows.filter(r => !S.leadCurrentAgentId(r.lead));
+  else if (ag) rows = rows.filter(r => S.leadCurrentAgentId(r.lead) === ag);
 
   const counts = S.leadRowCounts();
   document.getElementById('sub').textContent =
@@ -113,7 +113,11 @@ function render() {
       <td>${l.grade || '—'}</td>
       <td class="small">${l.intent || '—'}</td>
       <td>${l.channel}</td>
-      <td>${r.agent ? r.agent.name + '（' + r.agent.id + '）' : '<span class="muted">机构直营</span>'}</td>
+      <td>${(function () {
+        const cur = r.agent ? r.agent.name + '（' + r.agent.id + '）' : '机构直营';
+        const src = r.sourceAgent ? r.sourceAgent.name + '（' + r.sourceAgent.id + '）' : '机构直营';
+        return cur + (src !== cur ? `<div class="small muted">首次：${src}</div>` : '');
+      })()}</td>
       <td class="small">${l.followerName || '—'}</td>
       <td class="small muted">${(l.lastFollowAt || '—').slice(0, 16)}</td>
       <td class="small" ${overdue ? 'style="color:var(--danger)"' : ''}>${l.nextFollowAt ? l.nextFollowAt.slice(0, 10) : '—'}</td>

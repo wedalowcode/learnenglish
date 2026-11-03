@@ -2,8 +2,12 @@
 .workbuddy/
 .trae/
 
-# 本地临时测试脚本
-prototype/_test/
+# 说明：prototype/_test/ 验收脚本已入库，便于他人克隆后一键复现（第六轮起不再忽略）
+# 仅忽略测试运行时生成的文件（截图与审计输出），脚本与夹具照常入库
+prototype/_test/shots/
+prototype/_test/r8-audit.json
+.trae-html-share-packages/
+.screenshots/
 
 # 系统 / 编辑器
 .DS_Store

@@ -344,11 +344,34 @@ const Proto = (() => {
     return (Store.teacher(id) || {}).name || '';
   }
 
-  /** 当前登录代理 ID：取自会话；演示环境会话为空时才用第一位启用代理兜底并写回会话 */
+  let agentNoticeShown = false;
+  function showAgentIdentityNotice() {
+    if (agentNoticeShown) return;
+    agentNoticeShown = true;
+    Proto.toast('未识别代理登录身份：请从代理工作台进入，或使用 ?demo=1 演示模式', 'warn');
+    if (typeof document === 'undefined' || !document.body) return;
+    const bar = document.createElement('div');
+    bar.className = 'card';
+    bar.style.cssText = 'margin:16px 20px 0;padding:14px 16px;border-left:4px solid var(--warning);background:var(--surface)';
+    bar.innerHTML = '<b>未识别代理身份</b><div class="small muted" style="margin-top:4px">' +
+      '为避免张冠李戴，本页不会自动借用其他代理身份。请从代理工作台登录，或在地址后加 <code>?demo=1</code> 使用演示身份。</div>';
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+  /**
+   * 当前登录代理 ID：只认会话。
+   * 身份缺失时不再自动借用「第一位启用代理」（避免张冠李戴），
+   * 仅显式演示模式（?demo=1）下才允许回落到演示代理。
+   */
   function agentId() {
     const s = Store.currentSession();
     if (s.agentId) return s.agentId;
+    const demo = Store.isDemoMode && Store.isDemoMode();
+    if (!demo) {
+      showAgentIdentityNotice();
+      return '';
+    }
     const id = Store.defaultAgentId();
+    if (!id) return '';
     Store.setSession({
       role: 'agent', agentId: id,
       operatorName: (Store.agent(id) || {}).name || ''
@@ -357,7 +380,7 @@ const Proto = (() => {
   }
   function agentName() {
     const id = agentId();
-    return (Store.agent(id) || {}).name || '';
+    return id ? ((Store.agent(id) || {}).name || '') : '';
   }
 
   /** 当前登录家长 ID：取自会话；演示环境才用第一位家长兜底 */

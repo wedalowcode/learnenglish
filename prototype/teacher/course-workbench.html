@@ -234,7 +234,7 @@ function boot() {
 
 function render() {
   const stu = Store.student(cur.studentId);
-  const acc = Store.db.accounts.filter(a => a.student === (stu ? stu.name : ''))[0] || null;
+  const acc = stu ? (Store.db.accounts.filter(a => a.studentId === stu.id || (!a.studentId && a.student === stu.name))[0] || null) : null;
   const order = acc ? acc.buy : 0;
   const nth = acc ? acc.used + 1 : 0;
 

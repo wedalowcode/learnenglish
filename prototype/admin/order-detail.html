@@ -62,8 +62,12 @@ function render() {
     return;
   }
   const o = V.order, st = V.student, ck = S.orderCheck(ID);
+  const regs = S.paymentRegistrationsOf(ID);
+  const pendingRegs = regs.filter(r => r.status === S.PAY_REG.PENDING);
+  const refunds = S.refundRequestsOf({ orderId: ID });
+  const pendingRefunds = refunds.filter(x => x.request.status === S.REFUND.PENDING);
   const canReview = o.status === S.ORDER.PENDING;
-  const canPay = [S.ORDER.PENDING, S.ORDER.REVIEWED].indexOf(o.status) >= 0;
+  const canPay = [S.ORDER.PENDING, S.ORDER.REVIEWED].indexOf(o.status) >= 0 && o.paidAmount < o.amount;
   document.getElementById('page').innerHTML = `
     <div class="page-head">
       <div>
@@ -76,6 +80,8 @@ function render() {
         ${canReview ? `<button class="btn" onclick="review(true)">审核通过</button>
           <button class="btn" onclick="review(false)">驳回</button>` : ''}
         ${canPay ? '<button class="btn btn-primary" onclick="openPay()">确认收款并入账</button>' : ''}
+        ${[S.ORDER.CREDITED, S.ORDER.REFUNDED].indexOf(o.status) >= 0 ? '<button class="btn" onclick="askRefund()">发起退款申请</button>' : ''}
+        ${pendingRefunds.length ? '<button class="btn" onclick="reviewRefundNow()">审核退款</button>' : ''}
       </div>
     </div>
 
@@ -92,7 +98,10 @@ function render() {
             <div class="desc-item"><span class="k">赠送课时</span><span class="v mono">${o.gift}</span></div>
             <div class="desc-item"><span class="k">总课时</span><span class="v mono">${o.totalHours}</span></div>
             <div class="desc-item"><span class="k">订单金额</span><span class="v mono">${Proto.money(o.amount)}</span></div>
-            <div class="desc-item"><span class="k">已收金额</span><span class="v mono">${o.paidAmount ? Proto.money(o.paidAmount) : '—'}</span></div>
+            <div class="desc-item"><span class="k">已收金额</span><span class="v mono">${o.paidAmount ? Proto.money(o.paidAmount) + ' / ' + Proto.money(o.amount) : '—'}</span></div>
+            <div class="desc-item"><span class="k">累计入账课时</span><span class="v mono">${o.creditedHours} / ${o.totalHours}</span></div>
+            <div class="desc-item"><span class="k">已退金额</span><span class="v mono">${o.refundedAmount ? Proto.money(o.refundedAmount) : '—'}</span></div>
+            <div class="desc-item"><span class="k">订单状态</span><span class="v">${esc(o.status)}${o.partialRefund ? '（部分退款）' : ''}</span></div>
             <div class="desc-item"><span class="k">收款方式</span><span class="v">${esc(o.payMethod || '—')}</span></div>
             <div class="desc-item"><span class="k">审核人</span><span class="v">${esc(o.reviewedBy || '—')}</span></div>
             <div class="desc-item"><span class="k">入账时间</span><span class="v">${esc(o.creditedAt || '—')}</span></div>
@@ -122,11 +131,13 @@ function render() {
               <div class="desc-item"><span class="k">入账流水合计</span><span class="v mono">${ck.flowHours}</span></div>
               <div class="desc-item"><span class="k">账户购买课时</span><span class="v mono">${ck.account ? ck.account.hours : '—'}</span></div>
               <div class="desc-item"><span class="k">账户赠送课时</span><span class="v mono">${ck.account ? ck.account.gift : '—'}</span></div>
-              <div class="desc-item"><span class="k">收款记录</span><span class="v">${ck.payment ? esc(ck.payment.id) + ' · ' + Proto.money(ck.payment.amount) : '无'}</span></div>
+              <div class="desc-item"><span class="k">收款记录</span><span class="v">${ck.payments.length ? ck.payments.map(p => esc(p.id) + ' · ' + Proto.money(p.amount)).join('<br>') : '无'}</span></div>
               <div class="desc-item"><span class="k">账户剩余</span><span class="v mono">${ck.account ? ck.account.remain : '—'}</span></div>
             </div>
-            ${o.status !== S.ORDER.CREDITED ? `<div class="alert alert-info mt12"><span class="ico">i</span>
-              <div>未入账订单不应存在课时账户与入账流水；当前核对已确认无凭空课时。</div></div>` : ''}
+            ${o.status !== S.ORDER.CREDITED && (o.paidAmount || 0) === 0 ? `<div class="alert alert-info mt12"><span class="ico">i</span>
+              <div>未收款订单不应存在课时账户与入账流水；当前核对已确认无凭空课时。</div></div>` : ''}
+            ${o.status === S.ORDER.REVIEWED && (o.paidAmount || 0) > 0 ? `<div class="alert alert-info mt12"><span class="ico">i</span>
+              <div>部分收款中：已按单价折算入账 ${o.creditedHours} 课时，收满 ${Proto.money(o.amount)} 后自动转为「已入账」。</div></div>` : ''}
           </div>
         </div>
       </div>
@@ -147,6 +158,36 @@ function render() {
         </div>
 
         <div class="card">
+          <div class="card-head"><div class="card-title">收款登记<span class="hint">登记 ≠ 入账，确认后才生成课时</span></div></div>
+          <div class="card-body">
+            ${regs.length ? regs.map(r => `
+              <div class="m-row" style="display:block">
+                <div class="flex jcb aic"><b class="mono">${Proto.money(r.amount)}</b>
+                  <span class="tag tag-${r.status === S.PAY_REG.CONFIRMED ? 'green' : (r.status === S.PAY_REG.REJECTED ? 'red' : 'amber')}">${r.status}</span></div>
+                <div class="small muted mt4">${esc(r.method)} · ${esc(r.registeredBy)} · ${esc(r.registeredAt)}</div>
+                <div class="small mt4">${esc(r.voucherNo ? '凭证 ' + r.voucherNo + ' · ' : '')}${esc(r.note || '')}</div>
+                ${r.status === S.PAY_REG.PENDING ? `<div class="mt8"><button class="btn btn-sm btn-primary" onclick="confirmReg('${r.id}')">确认并入账</button>
+                  <button class="btn btn-sm" onclick="rejectReg('${r.id}')">驳回</button></div>` : ''}
+              </div>`).join('')
+              : '<div class="small muted">暂无待确认登记。确认收款时才写入正式收款记录。</div>'}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">退款记录</div></div>
+          <div class="card-body">
+            ${refunds.length ? refunds.map(x => `
+              <div class="m-row" style="display:block">
+                <div class="flex jcb aic"><b class="mono">${Proto.money(x.request.amount)}</b>
+                  <span class="tag tag-${x.request.status === S.REFUND.APPROVED ? 'green' : (x.request.status === S.REFUND.REJECTED ? 'red' : 'amber')}">${x.request.status}</span></div>
+                <div class="small muted mt4">${esc(x.request.reason)} · ${esc(x.request.requestedBy)} · ${esc(x.request.requestedAt)}</div>
+                ${x.request.reversedHours ? `<div class="small mt4">冲回 ${x.request.reversedHours} 课时 · ${esc(x.request.reviewedBy || '')}</div>` : ''}
+              </div>`).join('')
+              : '<div class="small muted">暂无退款申请。退款需管理员审核后才冲回课时。</div>'}
+          </div>
+        </div>
+
+        <div class="card">
           <div class="card-head"><div class="card-title">操作日志</div></div>
           <div class="card-body">
             ${V.logs.length ? `<div class="timeline">${V.logs.map(l => `
@@ -161,8 +202,8 @@ function render() {
           <div class="card-head"><div class="card-title">边界说明</div></div>
           <div class="card-body" style="font-size:12.5px;color:var(--text-2);line-height:1.9">
             · 第三方支付接入不在本轮范围，收款方式仅做登记；<br>
-            · 部分收款不生成课时，金额不一致会被 Store 阻断；<br>
-            · 退款后课时如何冲回待业务确认，当前仅保留「已退款」状态。
+            · 一个订单允许多次收款，累计不得超过订单金额；每次确认按课时单价折算入账，尾差计入最后一笔；<br>
+            · 退款需管理员审核：可退金额不超过已确认收款合计，按金额比例冲回课时，账户余额不得为负。
           </div>
         </div>
       </div>
@@ -172,25 +213,60 @@ function render() {
 function review(pass) {
   let remark = '';
   if (!pass) { remark = prompt('请填写驳回原因'); if (!remark) return; }
-  try { S.reviewOrder(ID, { pass: pass, remark: remark }); Proto.toast(pass ? '审核通过' : '已驳回', 'ok'); render(); }
+  try { S.reviewOrder(ID, { pass: pass, reason: remark }); Proto.toast(pass ? '审核通过' : '已驳回', 'ok'); render(); }
   catch (e) { Proto.toast(e.message, 'err'); }
 }
 function openPay() {
   const o = S.order(ID);
-  document.getElementById('p_amount').value = o.amount;
+  document.getElementById('p_amount').value = o.amount - (o.paidAmount || 0);
   document.getElementById('payTip').textContent =
-    `订单应收 ${Proto.money(o.amount)} · ${o.totalHours} 课时。收款金额必须一致，确认后创建账户并入账。`;
+    `订单应收 ${Proto.money(o.amount)} · 已收 ${Proto.money(o.paidAmount || 0)} · ${o.totalHours} 课时。可多次收款，累计不得超过应收；确认后按单价折算入账。`;
   Proto.openModal('payModal');
 }
 function confirmPay() {
   try {
-    const o = S.confirmOrderPayment(ID, {
+    const v = S.confirmOrderPayment(ID, {
       method: document.getElementById('p_method').value,
       amount: document.getElementById('p_amount').value,
       note: document.getElementById('p_note').value.trim() || '管理员确认收款'
     });
     Proto.closeModal('payModal');
-    Proto.toast('已确认收款并入账，学员课时 ' + o.totalHours, 'ok');
+    Proto.toast('已确认收款：累计 ' + Proto.money(v.order.paidAmount) + ' / ' + Proto.money(v.order.amount) +
+      '，累计入账 ' + v.order.creditedHours + ' / ' + v.order.totalHours + ' 课时', 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function confirmReg(regId) {
+  try {
+    const v = S.confirmRegisteredPayment(regId);
+    Proto.toast('已确认登记：累计入账 ' + v.order.creditedHours + ' / ' + v.order.totalHours + ' 课时', 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function rejectReg(regId) {
+  const reason = prompt('请填写驳回收款登记的原因');
+  if (!reason) return;
+  try { S.rejectRegisteredPayment(regId, { reason: reason }); Proto.toast('已驳回收款登记', 'ok'); render(); }
+  catch (e) { Proto.toast(e.message, 'err'); }
+}
+function askRefund() {
+  const o = S.order(ID);
+  const max = (o.paidAmount || 0) - (o.refundedAmount || 0);
+  const amount = prompt('可退上限 ' + Proto.money(max) + '，请输入退款金额');
+  if (!amount) return;
+  const reason = prompt('请填写退款原因');
+  if (!reason) return;
+  try { S.requestOrderRefund(ID, { amount: amount, reason: reason }); Proto.toast('退款申请已登记，待管理员审核', 'ok'); render(); }
+  catch (e) { Proto.toast(e.message, 'err'); }
+}
+function reviewRefundNow() {
+  const pending = S.refundRequestsOf({ orderId: ID, status: S.REFUND.PENDING });
+  if (!pending.length) return;
+  const r = pending[0].request;
+  if (!confirm('审批退款 ' + Proto.money(r.amount) + '：' + r.reason + '？')) return;
+  try {
+    const res = S.reviewRefund(r.id, { pass: true, result: '同意退款 ' + Proto.money(r.amount) });
+    Proto.toast('退款通过，冲回 ' + res.reversedHours + ' 课时，账户余额 ' + res.account.remain, 'ok');
     render();
   } catch (e) { Proto.toast(e.message, 'err'); }
 }

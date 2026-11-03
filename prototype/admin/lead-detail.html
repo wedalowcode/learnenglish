@@ -155,7 +155,9 @@ function render() {
        <a class="btn mt12" href="lead-list.html">返回线索列表</a></div></div>`;
     return;
   }
-  const L = VIEW.lead, STU = VIEW.student, AG = VIEW.agent;
+  const L = VIEW.lead, STU = VIEW.student, AG = VIEW.agent, SRC = VIEW.sourceAgent;
+  const dealOrder = VIEW.orders.filter(o => o.order.status === S.ORDER.CREDITED)
+    .sort((a, b) => a.order.createdAt < b.order.createdAt ? 1 : -1)[0];
   const nexts = S.LEAD_NEXT[L.status] || [];
   const closed = [S.LEAD.DEAL, S.LEAD.INVALID, S.LEAD.CLOSED].indexOf(L.status) >= 0;
 
@@ -197,9 +199,10 @@ function render() {
         <div class="card">
           <div class="card-head"><div class="card-title">归属信息<span class="hint">三处归属分开留痕</span></div></div>
           <div class="card-body"><div class="desc g3">
-            <div class="desc-item"><span class="k">代理归属</span><span class="v">${AG ? esc(AG.name) + '（' + AG.id + '）' : '机构直营'}</span></div>
-            <div class="desc-item"><span class="k">维护归属</span><span class="v">${esc(L.followerName || '—')}</span></div>
-            <div class="desc-item"><span class="k">成交归属</span><span class="v">${VIEW.orders.filter(o => o.order.status === S.ORDER.CREDITED).length ? (AG ? esc(AG.name) : '机构直营') : '待成交'}</span></div>
+            <div class="desc-item"><span class="k">首次获客代理</span><span class="v">${SRC ? esc(SRC.name) + '（' + SRC.id + '）' : '机构直营'}<div class="small muted">写入后永不覆盖</div></span></div>
+            <div class="desc-item"><span class="k">当前维护代理</span><span class="v">${AG ? esc(AG.name) + '（' + AG.id + '）' : '机构直营'}<div class="small muted">可移交，改归属只改这里</div></span></div>
+            <div class="desc-item"><span class="k">维护人员</span><span class="v">${esc(L.followerName || '—')}</span></div>
+            <div class="desc-item"><span class="k">成交归属</span><span class="v">${dealOrder ? (S.agent(dealOrder.order.agentId) ? esc(S.agent(dealOrder.order.agentId).name) : '机构直营') + '<div class="small muted">订单快照</div>' : '待成交'}</span></div>
           </div></div>
         </div>
 
@@ -267,6 +270,22 @@ function render() {
           </div>
         </div>
 
+        ${VIEW.disputes && VIEW.disputes.length ? `
+        <div class="card">
+          <div class="card-head"><div class="card-title">归属争议<span class="hint">待管理员裁定</span></div></div>
+          <div class="card-body">
+            ${VIEW.disputes.map(x => { const d = x.dispute; return `
+              <div class="m-row" style="display:block">
+                <div class="flex jcb aic"><b class="mono small">${d.id}</b>
+                  <span class="tag tag-amber">${d.status}</span></div>
+                <div class="small mt4">申领：${esc(x.claimantAgent ? x.claimantAgent.name + '（' + x.claimantAgent.id + '）' : '—')}
+                  · 原归属：${esc(x.originalAgent ? x.originalAgent.name + '（' + x.originalAgent.id + '）' : '机构直营')}</div>
+                <div class="small muted mt4">事由：${esc(d.reason)} · ${esc(d.requestedBy)} · ${esc(d.createdAt)}</div>
+                ${d.status === S.DISPUTE.OPEN ? `<button class="btn btn-sm mt8" onclick="resolveDispute('${d.id}')">裁定归属</button>` : ''}
+              </div>`; }).join('')}
+          </div>
+        </div>` : ''}
+
         <div class="alert alert-info mt16"><span class="ico">i</span>
           <div>「已成交」由收款确认自动推进，改状态不产生业绩；课时只能来自订单收款入账或有权限的调整流水。</div></div>
       </div>
@@ -277,8 +296,8 @@ function render() {
   document.getElementById('o_product').innerHTML = S.products().filter(p => p.status !== '停用')
     .map(p => `<option value="${p.id}"${p.id === L.intentProductId ? ' selected' : ''}>${p.name} · ${p.hours}课时 · ${Proto.money(p.amount)}</option>`).join('');
   document.getElementById('a_agent').innerHTML = '<option value="">机构直营（无代理）</option>' +
-    S.agents().filter(a => a.status === '启用' || a.id === L.agentId)
-      .map(a => `<option value="${a.id}"${a.id === L.agentId ? ' selected' : ''}>${a.name}（${a.id}）</option>`).join('');
+    S.agents().filter(a => a.status === '启用' || a.id === L.currentAgentId)
+      .map(a => `<option value="${a.id}"${a.id === L.currentAgentId ? ' selected' : ''}>${a.name}（${a.id}）</option>`).join('');
 }
 
 function openFollow() { Proto.openModal('followModal'); }
@@ -305,7 +324,7 @@ function submitOrder() {
   try {
     const o = S.submitEnrollmentOrder({
       leadId: LEAD_ID, productId: document.getElementById('o_product').value,
-      agentId: VIEW.lead.agentId || ''
+      agentId: S.leadCurrentAgentId(VIEW.lead) || ''
     });
     Proto.closeModal('orderModal');
     Proto.toast('报名订单 ' + o.order.id + ' 已提交，等待审核收款', 'ok');
@@ -321,6 +340,25 @@ function saveAssign() {
     });
     Proto.closeModal('assignModal');
     Proto.toast('归属已调整，并写入线索日志', 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+function resolveDispute(disputeId) {
+  const row = S.leadDisputesOf({ leadId: LEAD_ID }).filter(x => x.dispute.id === disputeId)[0];
+  if (!row) return;
+  const d = row.dispute;
+  const toClaimant = confirm('裁定归属争议 ' + d.id + '\n\n点「确定」判给申领代理：' + d.claimantAgentId +
+    '\n点「取消」维持原归属：' + (d.originalAgentId || '机构直营'));
+  const result = prompt('请填写裁定结果（会写入线索日志，永久可追溯）',
+    toClaimant ? '判给申领代理 ' + (d.claimantAgentId || '') : '维持原归属 ' + (d.originalAgentId || '机构直营'));
+  if (!result) return;
+  try {
+    S.resolveLeadDispute(disputeId, {
+      assignToAgentId: toClaimant ? d.claimantAgentId : d.originalAgentId,
+      result: result
+    });
+    Proto.toast('归属争议已裁定，结果已落日志', 'ok');
     render();
   } catch (e) { Proto.toast(e.message, 'err'); }
 }
