@@ -203,6 +203,9 @@
     'feedback.viewSelf': ['agent', 'parent', 'teacher']
   };
   var ROLE_LABEL = { admin: '老板', staff: '教务负责人', ops: '管理员', teacher: '教师', agent: '代理', parent: '家长' };
+  /* 内部角色的固定演示身份：页面只声明 role 时按角色重置操作人，
+     避免跨页持久化后把上一个角色的操作人带到新角色（如管理员页显示代理姓名）。 */
+  var ROLE_DEFAULT_OPERATOR = { admin: '张敏', staff: '陈静', ops: '王敏' };
   var session = {
     role: 'admin', operatorName: '张敏', operatorId: '张敏',
     teacherId: '', agentId: '', parentId: ''
@@ -374,11 +377,16 @@
      教师端每个页面的「我是谁」只能来自登录会话，不能从 URL 的学员编号反推。
      会话在同标签页内跨页面延续，保证「接单 → 词库申请 → 开始教学」identity 不变。 */
   var SESSION_KEY = 'ee_proto_session_v8';
-  /* 只持久化「当前登录身份」（教师 / 代理 / 家长），不持久化角色：
-     角色由各页面调用 setSession 显式声明，避免一个角色的会话污染另一个角色的权限判断。 */
+  var sessionRestored = false;
+  /* 持久化「当前登录身份」（角色 + 身份 ID + 操作人）：
+     角色切换器写入后，同标签页跨页面延续同一身份；
+     页面仍可以用 setSession 显式声明角色，声明结果同样落盘。 */
   function saveSession() {
     try {
       SS.setItem(SESSION_KEY, JSON.stringify({
+        role: session.role || '',
+        operatorName: session.operatorName || '',
+        operatorId: session.operatorId || '',
         teacherId: session.teacherId || '',
         agentId: session.agentId || '',
         parentId: session.parentId || ''
@@ -391,11 +399,17 @@
       if (!raw) return;
       var o = JSON.parse(raw);
       if (!o || typeof o !== 'object') return;
+      sessionRestored = true;
+      if (o.role) session.role = o.role;
+      if (o.operatorName) session.operatorName = o.operatorName;
+      if (o.operatorId) session.operatorId = o.operatorId;
       if (o.teacherId) session.teacherId = o.teacherId;
       if (o.agentId) session.agentId = o.agentId;
       if (o.parentId) session.parentId = o.parentId;
     } catch (e) { /* 损坏则用默认会话 */ }
   }
+  /** 会话是否来自上次持久化（用于页面判断「用户是否已显式选择过身份」） */
+  function sessionPersisted() { return sessionRestored; }
 
   /* ---------------- 小工具 ---------------- */
   function pad(n, len) { n = String(n); while (n.length < len) n = '0' + n; return n; }
@@ -5448,8 +5462,13 @@
   /* ---------- 会话与权限 ---------- */
   function setSession(s) {
     s = s || {};
+    var roleChanged = !!s.role && s.role !== session.role;
     if (s.role) session.role = s.role;
     if (s.operatorName) { session.operatorName = s.operatorName; session.operatorId = s.operatorName; }
+    else if (roleChanged && ROLE_DEFAULT_OPERATOR[session.role]) {
+      session.operatorName = ROLE_DEFAULT_OPERATOR[session.role];
+      session.operatorId = session.operatorName;
+    }
     if (s.operatorId) session.operatorId = s.operatorId;
     /* 教师身份单独记：教师端所有「我的 / 自己的」判断都靠它，不靠姓名猜 */
     if ('teacherId' in s) session.teacherId = s.teacherId || '';
@@ -9929,6 +9948,7 @@
     currentAgentId: sessionAgentId, currentParentId: sessionParentId,
     isDemoMode: isDemoMode,
     operatorForRole: operatorForRole,
+    sessionPersisted: sessionPersisted,
     defaultAgentId: defaultAgentId, defaultParentId: defaultParentId,
     agents: agents, agent: agent, agentsOf: agentsOf,
     recruitAgent: recruitAgent, reviewAgent: reviewAgent, setAgentStatus: setAgentStatus,
@@ -9966,6 +9986,7 @@
     handleRenewal: handleRenewal, closeRenewal: closeRenewal, submitRenewalOrder: submitRenewalOrder,
     createLearningFeedback: createLearningFeedback, learningFeedbacksOfStudent: learningFeedbacksOfStudent,
     agentFeedbacks: agentFeedbacks, parentFeedbacks: parentFeedbacks,
+    parents: function () { return db.parents; },
     parent: parent, parentChildren: parentChildren, parentOrders: parentOrders,
     parentStudents: parentStudents, parentStudentLinks: parentStudentLinks,
     linkParentStudent: linkParentStudent,

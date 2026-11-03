@@ -153,6 +153,119 @@ ul { margin: 0; padding: 0; list-style: none; }
 .avatar.b { background: #ede9fe; color: #6d28d9; }
 .avatar.c { background: #cffafe; color: #0e7490; }
 
+/* ---------------- 角色切换器 ---------------- */
+.role-switcher-host { position: relative; display: flex; align-items: center; }
+.role-switch-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 10px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--panel); color: var(--text-2);
+  font-size: 12.5px; font-family: inherit; cursor: pointer; white-space: nowrap;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.role-switch-btn:hover { background: var(--bg); border-color: var(--border-2); color: var(--text); }
+.role-switch-btn.on,
+.role-switch-btn[aria-expanded="true"] {
+  background: var(--primary-soft); border-color: #bfdbfe; color: var(--primary-dark);
+}
+.role-switch-btn .role-switch-glyph { font-size: 13px; color: var(--primary); }
+.role-switch-btn .role-switch-current {
+  max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding-left: 7px; border-left: 1px solid var(--border-2); color: var(--text-2);
+}
+.role-switch-btn .caret { font-size: 10px; color: var(--text-3); transition: transform .15s; }
+.role-switch-btn[aria-expanded="true"] .caret { transform: rotate(180deg); }
+
+.role-switch-panel {
+  position: absolute; top: calc(100% + 8px); right: 0;
+  width: min(380px, calc(100vw - 24px));
+  max-height: min(70vh, 580px);
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg); z-index: 70;
+}
+.role-switch-panel[hidden] { display: none; }
+.role-switch-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 12px 14px 10px; border-bottom: 1px solid var(--border); flex: 0 0 auto;
+}
+.role-switch-head b { font-size: 13px; }
+.role-switch-head span { font-size: 11px; color: var(--text-3); }
+.role-switch-list { overflow-y: auto; padding: 4px 0; flex: 1; }
+.role-switch-list::-webkit-scrollbar { width: 6px; }
+.role-switch-list::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px; }
+.role-item { border-bottom: 1px solid var(--border); }
+.role-item:last-child { border-bottom: none; }
+.role-item.on { background: var(--primary-soft); }
+.role-item.disabled { opacity: .6; }
+.role-item-main {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; cursor: pointer; outline: none;
+}
+.role-item-main:hover { background: rgba(37, 99, 235, .05); }
+.role-item.disabled .role-item-main { cursor: not-allowed; }
+.role-avatar {
+  width: 30px; height: 30px; flex: 0 0 30px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); color: var(--text-2); font-size: 12px; font-weight: 700;
+}
+.role-avatar.g { background: var(--success-soft); color: var(--success); }
+.role-avatar.a { background: var(--warning-soft); color: #b45309; }
+.role-avatar.b { background: #ede9fe; color: #6d28d9; }
+.role-avatar.c { background: #cffafe; color: #0e7490; }
+.role-info { flex: 1; min-width: 0; }
+.role-name { font-size: 13px; font-weight: 600; }
+.role-sub {
+  font-size: 11.5px; color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.role-tail { display: flex; align-items: center; gap: 8px; color: var(--text-3); font-size: 11px; flex: 0 0 auto; }
+.role-more { background: var(--bg); border-radius: 999px; padding: 1px 7px; }
+.role-item.on .role-more { background: #fff; }
+.role-arrow { font-size: 16px; line-height: 1; color: var(--text-3); }
+.role-accounts {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 0 14px 10px 54px;
+}
+.role-account {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: #fff; color: var(--text-2);
+  padding: 3px 9px; font-size: 12px; font-family: inherit; cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.role-account:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.role-account.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.role-account.on .role-account-code { color: rgba(255, 255, 255, .8); }
+.role-account:disabled { cursor: not-allowed; opacity: .55; }
+.role-account-code { font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.role-account-why { font-size: 10.5px; color: var(--danger); }
+.role-switch-foot {
+  flex: 0 0 auto; padding: 9px 14px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-3); background: #fcfdff;
+}
+
+/* 家长端等移动页面：切换器挂在页头，面板限制在手机框内 */
+.role-switcher-host.in-mobile { position: static; margin-left: auto; }
+.in-mobile .role-switch-btn { height: 28px; padding: 0 8px; }
+.in-mobile .role-switch-text,
+.in-mobile .role-switch-current { display: none; }
+.in-mobile .role-switch-btn .role-switch-glyph { font-size: 14px; }
+.in-mobile .role-switch-panel {
+  position: absolute; top: calc(100% + 6px); left: 12px; right: 12px; width: auto;
+  max-height: 600px;
+}
+
+@media (max-width: 1100px) {
+  .role-switch-btn .role-switch-current { display: none; }
+}
+@media (max-width: 900px) {
+  .role-switch-panel {
+    position: fixed; top: calc(var(--top-h) + 8px); left: 12px; right: 12px;
+    width: auto; max-height: calc(100vh - var(--top-h) - 24px);
+  }
+}
+
 .content { padding: 20px 24px 48px; max-width: 1560px; width: 100%; }
 
 /* ---------------- 页面标题 ---------------- */
@@ -649,6 +762,7 @@ body.mobile-bg {
 .m-head {
   flex: 0 0 auto; background: #fff; padding: 8px 16px 12px;
   display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border);
+  position: relative;
 }
 .m-head .m-title { font-size: 16px; font-weight: 600; }
 .m-head .back { font-size: 18px; color: var(--text-2); cursor: pointer; line-height: 1; background: none; border: none; padding: 0 2px; }

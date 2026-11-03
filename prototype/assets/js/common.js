@@ -112,19 +112,327 @@ const Proto = (() => {
   };
 
   const ROLE_INFO = {
-    admin: { name: '张敏（机构管理员）', org: '启航英语 · 城东校区', avatar: '张', cls: '' },
-    staff: { name: '陈静（教务负责人）', org: '启航英语 · 城东校区', avatar: '陈', cls: 'b' },
-    ops: { name: '王敏（教学资源管理员）', org: '启航英语 · 城东校区', avatar: '王', cls: 'c' },
-    teacher: { name: '李婉（教师）', org: '启航英语 · 城东校区', avatar: '李', cls: 'g' },
-    agent: { name: '王磊（招生代理）', org: '启航英语 · 城东校区', avatar: '王', cls: 'a' },
-    parent: { name: '陈志强（家长）', org: '启航英语 · 城东校区', avatar: '陈', cls: 'b' },
+    admin: { org: '启航英语 · 城东校区', cls: '' },
+    staff: { org: '启航英语 · 城东校区', cls: 'b' },
+    ops: { org: '启航英语 · 城东校区', cls: 'c' },
+    teacher: { org: '启航英语 · 城东校区', cls: 'g' },
+    agent: { org: '启航英语 · 城东校区', cls: 'a' },
+    parent: { org: '启航英语 · 城东校区', cls: 'b' },
   };
+
+  /* 角色切换器：角色清单、首页与内部账号（内部角色没有数据库账号表，使用演示身份） */
+  const ROLE_META = {
+    admin: { label: '老板/机构管理', short: '老板', home: 'admin/dashboard.html', cls: '', glyph: 'A' },
+    staff: { label: '教务负责人', short: '教务', home: 'admin/demand-list.html', cls: 'b', glyph: '教' },
+    ops: { label: '管理员', short: '管理员', home: 'admin/assign-task.html', cls: 'c', glyph: '管' },
+    teacher: { label: '教师', short: '教师', home: 'teacher/workbench.html', cls: 'g', glyph: '师' },
+    agent: { label: '代理', short: '代理', home: 'agent/workbench.html', cls: 'a', glyph: '代' },
+    parent: { label: '家长', short: '家长', home: 'parent/home.html', cls: 'b', glyph: '家' },
+  };
+  const ROLE_ORDER = ['admin', 'staff', 'ops', 'teacher', 'agent', 'parent'];
+  const INTERNAL_OPERATOR = { admin: '张敏', staff: '陈静', ops: '王敏' };
+  const INTERNAL_CODE = { admin: 'U-ADMIN', staff: 'U-STAFF', ops: 'U-OPS' };
+
+  function escHtml(v) {
+    return String(v == null ? '' : v).replace(/[&<>"]/g,
+      c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+
+  /** 角色可选账号：教师 / 代理 / 家长从 Store 读，内部角色使用演示身份 */
+  function roleAccounts(role) {
+    if (role === 'admin' || role === 'staff' || role === 'ops') {
+      return [{
+        id: INTERNAL_OPERATOR[role], name: INTERNAL_OPERATOR[role],
+        code: INTERNAL_CODE[role], available: true, reason: '', meta: ROLE_META[role].label
+      }];
+    }
+    if (role === 'teacher') {
+      return (Store.teachers() || []).map(t => {
+        const acc = Store.accountStatusOf ? Store.accountStatusOf(t.id) : '';
+        const ok = t.cooperationStatus === '可授课' && acc === '正常';
+        let reason = '';
+        if (!ok) {
+          if (t.cooperationStatus !== '可授课') reason = '合作状态：' + t.cooperationStatus;
+          else if (acc === '未开通') reason = '登录账号未开通';
+          else reason = '登录账号已禁用';
+        }
+        return {
+          id: t.id, name: t.name, code: t.id, available: ok, reason: reason,
+          meta: (t.grades || []).join(' / ')
+        };
+      });
+    }
+    if (role === 'agent') {
+      return (Store.agents() || []).map(a => {
+        const ok = a.status === '启用';
+        return {
+          id: a.id, name: a.name, code: a.id, available: ok,
+          reason: ok ? '' : (a.status === '待审核' ? '代理待审核，暂不可登录' : '代理已停用'),
+          meta: a.type || ''
+        };
+      });
+    }
+    if (role === 'parent') {
+      return (Store.parents() || []).map(p => {
+        const ok = p.status !== '停用';
+        return {
+          id: p.id, name: p.name, code: p.id, available: ok,
+          reason: ok ? '' : '家长账号已停用',
+          meta: [p.relation || '', p.phone ? '尾号 ' + p.phone.slice(-4) : ''].filter(Boolean).join(' · ')
+        };
+      });
+    }
+    return [];
+  }
+
+  /** 当前会话里的角色身份；教师 / 家长沿用页面级演示兜底，代理缺失时明确显示未识别 */
+  function roleIdentity(role) {
+    const s = Store.currentSession();
+    if (role === 'teacher') {
+      const tid = s.teacherId || (Store.defaultTeacherId ? Store.defaultTeacherId() : '');
+      const t = tid ? Store.teacher(tid) : null;
+      return t ? { role, name: t.name, code: t.id, available: true }
+        : { role, name: '未识别教师身份', code: '', available: false };
+    }
+    if (role === 'agent') {
+      const a = s.agentId ? Store.agent(s.agentId) : null;
+      return a ? { role, name: a.name, code: a.id, available: true }
+        : { role, name: '未识别代理身份', code: '', available: false };
+    }
+    if (role === 'parent') {
+      const pid = s.parentId || (Store.defaultParentId ? Store.defaultParentId() : '');
+      const p = pid ? Store.parent(pid) : null;
+      return p ? { role, name: p.name, code: p.id, available: true }
+        : { role, name: '未识别家长身份', code: '', available: false };
+    }
+    const name = (s.role === role && s.operatorName === INTERNAL_OPERATOR[role])
+      ? s.operatorName : INTERNAL_OPERATOR[role];
+    /* 内部角色没有数据库账号表，固定使用演示编码（U-ADMIN / U-STAFF / U-OPS），
+       不把操作人姓名当成编码显示 */
+    return { role, name, code: INTERNAL_CODE[role], available: true };
+  }
+
+  /** 页面角色：会话里已显式选择过身份就沿用该角色，否则用页面默认角色。
+      不做跨角色映射（例如教师打开教务页面不会静默变成教务），权限由 Store 拦截。 */
+  function pageRole(defaultRole) {
+    const s = Store.currentSession();
+    if (!(Store.sessionPersisted && Store.sessionPersisted())) return defaultRole;
+    return ROLE_ORDER.indexOf(s.role) >= 0 ? s.role : defaultRole;
+  }
+
+  /* ---------------- 角色切换器组件 ---------------- */
+  let roleSwitcherBound = false;
+  const roleSwitcherState = { expanded: {}, open: false };
+
+  function roleLabel(role) { return (ROLE_META[role] || ROLE_META.admin).label; }
+
+  function closeRolePanel() {
+    roleSwitcherState.open = false;
+    const host = document.querySelector('[data-role-switcher]');
+    if (!host) return;
+    const btn = host.querySelector('.role-switch-btn');
+    const panel = host.querySelector('.role-switch-panel');
+    if (btn) { btn.classList.remove('on'); btn.setAttribute('aria-expanded', 'false'); }
+    if (panel) panel.hidden = true;
+  }
+
+  /** 清理上一角色的临时运行态：只清 UI 缓存与弹窗，不碰 Store 业务数据 */
+  function clearSwitchRuntime() {
+    try {
+      const keys = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i);
+        if (k && (k.indexOf('ee_proto_ui_') === 0 || k.indexOf('ee_proto_draft_') === 0)) keys.push(k);
+      }
+      keys.forEach(k => sessionStorage.removeItem(k));
+      sessionStorage.removeItem('ee_proto_demo');
+    } catch (e) { /* 忽略 */ }
+    document.querySelectorAll('.mask.show, .drawer.show').forEach(el => el.classList.remove('show'));
+  }
+
+  /** 显式切换身份：写入会话（角色 + 身份 ID + 操作人）后跳角色首页 */
+  function switchRole(role, accountId) {
+    const meta = ROLE_META[role];
+    if (!meta) return;
+    const acc = roleAccounts(role).filter(a => a.id === accountId)[0];
+    if (!acc) return;
+    if (!acc.available) {
+      toast('该账号当前不可切换：' + (acc.reason || '不可用'), 'warn');
+      return;
+    }
+    closeRolePanel();
+    clearSwitchRuntime();
+    Store.setSession({
+      role: role,
+      operatorName: acc.name,
+      operatorId: acc.id,
+      teacherId: role === 'teacher' ? acc.id : '',
+      agentId: role === 'agent' ? acc.id : '',
+      parentId: role === 'parent' ? acc.id : ''
+    });
+    location.href = root() + meta.home;
+  }
+
+  function roleItemHTML(role, currentRole) {
+    const meta = ROLE_META[role];
+    const accounts = roleAccounts(role);
+    const available = accounts.filter(a => a.available);
+    const hasAny = available.length > 0;
+    const isCurrent = role === currentRole;
+    const ident = isCurrent ? roleIdentity(role) : null;
+    const currentId = ident ? ident.code : '';
+    const multi = accounts.length > 1;
+    const expanded = multi && (isCurrent || roleSwitcherState.expanded[role]);
+    const subtitle = isCurrent && ident
+      ? `当前身份：${escHtml(ident.name)}${ident.code ? ' / ' + escHtml(ident.code) : ''}`
+      : (hasAny ? `${available.length} 个可用账号` : '暂无可用账号');
+    const reason = !hasAny ? ((accounts[0] && accounts[0].reason) || '该角色尚未配置账号') : '';
+    return `
+      <div class="role-item ${isCurrent ? 'on' : ''} ${hasAny ? '' : 'disabled'}" data-role="${role}">
+        <div class="role-item-main" role="button" tabindex="0" data-role="${role}"
+          ${hasAny ? '' : 'aria-disabled="true"'}>
+          <div class="role-avatar ${meta.cls}">${meta.glyph}</div>
+          <div class="role-info">
+            <div class="role-name">${escHtml(meta.label)}</div>
+            <div class="role-sub">${subtitle}${reason ? ' · ' + escHtml(reason) : ''}</div>
+          </div>
+          <div class="role-tail">${multi && hasAny ? `<span class="role-more">可选 ${available.length} 人</span>` : ''}${hasAny ? '<span class="role-arrow">›</span>' : ''}</div>
+        </div>
+        ${expanded ? `<div class="role-accounts">${accounts.map(a => `
+          <button type="button" class="role-account ${a.id === currentId ? 'on' : ''}"
+            data-role="${escHtml(role)}" data-account="${escHtml(a.id)}"
+            ${a.available ? '' : 'disabled title="' + escHtml(a.reason || '暂不可用') + '"'}>
+            ${escHtml(a.name)} <span class="role-account-code">${escHtml(a.code)}</span>
+            ${a.available ? '' : `<span class="role-account-why">${escHtml(a.reason)}</span>`}
+          </button>`).join('')}</div>` : ''}
+      </div>`;
+  }
+
+  function roleSwitcherHTML(currentRole) {
+    const ident = roleIdentity(currentRole);
+    const accounts = roleAccounts(currentRole);
+    const activeCount = accounts.filter(a => a.available).length;
+    return `
+      <button type="button" class="role-switch-btn" aria-haspopup="true" aria-expanded="false"
+        title="切换角色与登录身份">
+        <span class="role-switch-glyph">⇄</span>
+        <span class="role-switch-text">切换角色</span>
+        <span class="role-switch-current">${escHtml(roleLabel(currentRole))} · ${escHtml(ident.name)}${ident.code ? ' / ' + escHtml(ident.code) : ''}</span>
+        <span class="caret">▾</span>
+      </button>
+      <div class="role-switch-panel" hidden>
+        <div class="role-switch-head">
+          <b>切换角色</b>
+          <span>当前 ${escHtml(roleLabel(currentRole))} · ${activeCount} 个可用账号</span>
+        </div>
+        <div class="role-switch-list">
+          ${ROLE_ORDER.map(r => roleItemHTML(r, currentRole)).join('')}
+        </div>
+        <div class="role-switch-foot">切换会清理临时筛选与未保存草稿提示；业务数据与已保存记录不受影响。</div>
+      </div>`;
+  }
+
+  function bindRoleSwitcher(host, currentRole) {
+    host.onclick = (e) => {
+      /* 面板内点击不冒泡到 document，否则多账号展开重渲染后
+         原 target 已脱离文档，外部点击判定会误关面板 */
+      e.stopPropagation();
+      const btn = e.target.closest('.role-switch-btn');
+      if (btn) {
+        const panel = host.querySelector('.role-switch-panel');
+        const open = panel.hidden;
+        roleSwitcherState.open = open;
+        panel.hidden = !open;
+        btn.classList.toggle('on', open);
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        return;
+      }
+      const accountBtn = e.target.closest('.role-account');
+      if (accountBtn) {
+        e.preventDefault();
+        switchRole(accountBtn.dataset.role, accountBtn.dataset.account);
+        return;
+      }
+      const main = e.target.closest('.role-item-main');
+      if (main) {
+        e.preventDefault();
+        const role = main.dataset.role;
+        const accounts = roleAccounts(role);
+        const available = accounts.filter(a => a.available);
+        if (!available.length) {
+          toast('该角色暂无可用账号：' + ((accounts[0] && accounts[0].reason) || '请联系管理员配置'), 'warn');
+          return;
+        }
+        if (accounts.length === 1) {
+          switchRole(role, accounts[0].id);
+        } else {
+          roleSwitcherState.expanded[role] = !roleSwitcherState.expanded[role];
+          roleSwitcherState.open = true;
+          roleSwitcher(host._pageRole || currentRole);
+        }
+      }
+    };
+    host.onkeydown = (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const main = e.target.closest('.role-item-main');
+      if (!main) return;
+      e.preventDefault();
+      main.click();
+    };
+    host._pageRole = currentRole;
+    if (!roleSwitcherBound) {
+      roleSwitcherBound = true;
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('[data-role-switcher]')) closeRolePanel();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeRolePanel();
+      });
+    }
+  }
+
+  /**
+   * 统一角色切换组件：所有带顶栏的页面由 shell 自动挂载；
+   * 家长端等没有顶栏的移动页面在 DOMContentLoaded 时挂到 .m-head。
+   */
+  function roleSwitcher(opts = {}) {
+    const currentRole = opts.role || (Store.currentSession().role || 'admin');
+    let host = document.querySelector('[data-role-switcher]');
+    if (!host) {
+      const right = document.querySelector('.topbar-right');
+      const head = document.querySelector('.m-head');
+      if (right) {
+        host = document.createElement('div');
+        host.className = 'role-switcher-host';
+        right.insertBefore(host, right.firstChild);
+      } else if (head) {
+        host = document.createElement('div');
+        host.className = 'role-switcher-host in-mobile';
+        head.appendChild(host);
+      } else {
+        return null;
+      }
+      host.setAttribute('data-role-switcher', '');
+    }
+    host.classList.toggle('in-mobile', !document.querySelector('.topbar') && !!document.querySelector('.m-frame'));
+    host.innerHTML = roleSwitcherHTML(currentRole);
+    bindRoleSwitcher(host, currentRole);
+    if (roleSwitcherState.open) {
+      const btn = host.querySelector('.role-switch-btn');
+      const panel = host.querySelector('.role-switch-panel');
+      if (btn) { btn.classList.add('on'); btn.setAttribute('aria-expanded', 'true'); }
+      if (panel) panel.hidden = false;
+    }
+    return host;
+  }
 
   /* ---------------- 布局外壳 ---------------- */
   function shell(opts = {}) {
     const role = opts.role || 'admin';
+    const identityRole = opts.identityRole || role;
     const active = opts.active || '';
-    const rid = ROLE_INFO[role] || ROLE_INFO.admin;
+    const rid = ROLE_INFO[identityRole] || ROLE_INFO.admin;
+    const ident = roleIdentity(identityRole);
 
     const sidebar = document.getElementById('sidebar');
     if (sidebar) {
@@ -157,14 +465,16 @@ const Proto = (() => {
       topbar.innerHTML = `
         <div class="topbar-org">
           <strong>${rid.org}</strong>
-          <span class="tag tag-slate nodot" style="font-size:11px">${roleName(role)}端</span>
+          <span class="tag tag-slate nodot" style="font-size:11px">${roleName(identityRole)}端</span>
         </div>
         <div class="topbar-right">
-          <a class="btn btn-sm btn-ghost" href="${root()}index.html">切换角色</a>
+          <div data-role-switcher></div>
           <div class="topbar-icon" title="消息通知" onclick="Proto.toast('3 条待处理提醒','warn')">✉<span class="dot"></span></div>
-          <div class="user-chip"><div class="avatar ${rid.cls}">${rid.avatar}</div><span>${rid.name}</span></div>
+          <div class="user-chip"><div class="avatar ${rid.cls}">${escHtml((ident.name || '?').slice(0, 1))}</div><span>${escHtml(ident.name)}</span></div>
         </div>`;
     }
+
+    roleSwitcher({ role: identityRole });
 
     if (opts.title) document.title = opts.title + ' · 英语一对一教学平台';
   }
@@ -400,11 +710,18 @@ const Proto = (() => {
   }
 
   return {
-    shell, $, $$, money, int, toast, openModal, closeModal, openDrawer, closeDrawer,
+    shell, roleSwitcher, switchRole, roleIdentity, roleAccounts, pageRole,
+    $, $$, money, int, toast, openModal, closeModal, openDrawer, closeDrawer,
     confirmBox, initTabs, switchTab, renderRows, speak, playAudio, isPhone, markInvalid, setText,
     teacherId, teacherName, agentId, agentName, parentId, parentName,
-    MENUS, roleName,
+    MENUS, ROLE_META, roleName,
   };
 })();
 
-document.addEventListener('DOMContentLoaded', () => { Proto.initTabs(); });
+document.addEventListener('DOMContentLoaded', () => {
+  Proto.initTabs();
+  /* 家长端等没有顶栏的移动页面：把角色切换器挂到页头 */
+  if (!document.querySelector('[data-role-switcher]') && document.querySelector('.m-frame')) {
+    Proto.roleSwitcher({ role: 'parent' });
+  }
+});

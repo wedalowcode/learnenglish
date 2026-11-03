@@ -40,7 +40,6 @@
           <div class="page-sub" id="pageSub">—</div>
         </div>
         <div class="page-actions">
-          <select class="select" id="as" style="width:170px" onchange="switchRole(this.value)"></select>
           <a class="btn" href="wordbook-request.html?tab=pending">词库开通申请</a>
         </div>
       </div>
@@ -189,24 +188,16 @@
 <script>
 const Q = new URLSearchParams(location.search);
 let TAB = Q.get('tab') || 'task';
-const ROLE = Q.get('as') || 'ops';
+const ROLE = Proto.pageRole('ops');
 const S = Store;
+const SES = Store.currentSession();
+const OP_NAME = (Store.sessionPersisted() && SES.role === ROLE) ? SES.operatorName : Proto.roleIdentity(ROLE).name;
 
-Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: TAB === 'task' ? 'assign-task' : 'assign-log' });
-
-S.setSession({ role: ROLE, operatorName: Store.operatorForRole(ROLE) });
+S.setSession({ role: ROLE, operatorName: OP_NAME });
+Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: TAB === 'task' ? 'assign-task' : 'assign-log', identityRole: ROLE });
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-function switchRole(r) { location.href = 'assign-task.html?tab=' + TAB + '&as=' + r; }
-function go(t) { location.href = 'assign-task.html?tab=' + t + '&as=' + ROLE; }
-
-/* 角色选择器：演示「谁能正式分配」 */
-(function initRole() {
-  const sel = document.getElementById('as');
-  sel.innerHTML = [
-    ['ops', '王敏（管理员）'], ['admin', '张敏（老板）'], ['staff', '陈静（教务负责人）']
-  ].map(x => `<option value="${x[0]}" ${x[0] === ROLE ? 'selected' : ''}>${x[1]}</option>`).join('');
-})();
+function go(t) { location.href = 'assign-task.html?tab=' + t; }
 
 /* ---------- 数据 ---------- */
 function tasks() {
@@ -315,7 +306,7 @@ function render() {
       <td>${statusHtml}</td>
       <td class="nowrap-cell">
         ${act}
-        <a class="btn-link" href="demand-detail.html?id=${d.id}&as=${ROLE}">详情</a>
+        <a class="btn-link" href="demand-detail.html?id=${d.id}">详情</a>
         ${extra}
       </td>
     </tr>`;
@@ -514,8 +505,8 @@ function setTab() {
     : '教学资源分配<span class="sep">/</span>分配记录';
   document.getElementById('pageTitle').textContent = isTask ? '待分配学员' : '分配记录';
   document.getElementById('tabActions').innerHTML = isTask
-    ? `<a class="btn btn-sm" href="demand-list.html?as=${ROLE}">需求池</a>`
-    : `<a class="btn btn-sm" href="assign-task.html?tab=task&as=${ROLE}">回去分配</a>`;
+    ? `<a class="btn btn-sm" href="demand-list.html">需求池</a>`
+    : `<a class="btn btn-sm" href="assign-task.html?tab=task">回去分配</a>`;
 }
 
 function renderAll() {

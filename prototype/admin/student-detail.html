@@ -406,7 +406,7 @@ function renderWb() {
       <td><div class="strong small">${esc(b ? b.name : w.wordbookId)}</div>
         <div class="small muted">${esc(b ? (b.category + ' · ' + (b.bookVersion || '未标版本') + ' · ' + b.wordCount + ' 词') : '')}</div></td>
       <td class="small">${w.requestId
-        ? `<a class="btn-link" href="wordbook-request.html?tab=grant&as=ops" title="申请 ${esc(w.requestId)}">教师申请</a>`
+        ? `<a class="btn-link" href="wordbook-request.html?tab=grant" title="申请 ${esc(w.requestId)}">教师申请</a>`
         : '<span class="tag tag-slate">管理员开通</span>'}</td>
       <td class="small nowrap-cell">${esc(x.teacher ? x.teacher.name : '—')}</td>
       <td class="small nowrap-cell">${esc(w.approvedBy || '—')}</td>

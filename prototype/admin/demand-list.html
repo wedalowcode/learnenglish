@@ -212,11 +212,12 @@
 <script src="../assets/js/store.js"></script>
 <script>
 const Q = new URLSearchParams(location.search);
-/* 需求池是教务的地盘；老板可以用 ?as=admin 进来，管理员用 ?as=ops 只能看不能改 */
-const ROLE = Q.get('as') || 'staff';
-Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: 'demand-list' });
-
-Store.setSession({ role: ROLE, operatorName: Store.operatorForRole(ROLE) });
+/* 需求池是教务的地盘；角色来自角色切换器写入的会话，未选择身份时默认教务 */
+const ROLE = Proto.pageRole('staff');
+const SES = Store.currentSession();
+const OP_NAME = (Store.sessionPersisted() && SES.role === ROLE) ? SES.operatorName : Proto.roleIdentity(ROLE).name;
+Store.setSession({ role: ROLE, operatorName: OP_NAME });
+Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: 'demand-list', identityRole: ROLE });
 const S = Store;
 
 const NEEDS = ['词汇', '文章', '阅读', '语法', '听说', '写作', '自然拼读', '中考冲刺'];
@@ -326,7 +327,7 @@ function render() {
       ' ' + (d.expectedSchedule.periods.join('/') || '');
     const need = d.learningNeeds.map(n => `<span class="need-tag">${n}</span>`).join('');
     return `<tr>
-      <td class="mono small"><a href="demand-detail.html?id=${d.id}&as=${ROLE}">${d.code}</a></td>
+      <td class="mono small"><a href="demand-detail.html?id=${d.id}">${d.code}</a></td>
       <td class="strong nowrap-cell">${s ? s.name : '—'}
         ${v.isChange && [S.DEMAND.DONE, S.DEMAND.CANCELLED].indexOf(d.status) < 0
           ? '<div class="small" style="color:var(--warning)">更换教师</div>' : ''}</td>
@@ -348,7 +349,7 @@ function render() {
 
 function actionsOf(v) {
   const d = v.demand;
-  const out = [`<a class="btn-link" href="demand-detail.html?id=${d.id}&as=${ROLE}">详情</a>`];
+  const out = [`<a class="btn-link" href="demand-detail.html?id=${d.id}">详情</a>`];
   const editable = d.status !== S.DEMAND.DONE && d.status !== S.DEMAND.CANCELLED;
   if (editable && S.can('demand.edit')) {
     out.push(`<button class="btn-link" onclick="openEdit('${d.id}')">编辑</button>`);
@@ -361,10 +362,10 @@ function actionsOf(v) {
     out.push(`<button class="btn-link mute" onclick="askReason('withdraw','${d.id}')">撤回</button>`);
   }
   if (d.status === S.DEMAND.CONFIRM && S.can('demand.confirm')) {
-    out.push(`<button class="btn-link" onclick="location.href='demand-detail.html?id=${d.id}&as=${ROLE}'">去确认</button>`);
+    out.push(`<button class="btn-link" onclick="location.href='demand-detail.html?id=${d.id}'">去确认</button>`);
   }
   if (d.status === S.DEMAND.ASSIGN) {
-    out.push(`<a class="btn-link" href="assign-task.html?as=${ROLE}&id=${d.id}">去分配</a>`);
+    out.push(`<a class="btn-link" href="assign-task.html?id=${d.id}">去分配</a>`);
   }
   if (d.status !== S.DEMAND.DONE && d.status !== S.DEMAND.CANCELLED && S.can('demand.cancel')) {
     out.push(`<button class="btn-link mute" onclick="askReason('cancel','${d.id}')">取消</button>`);
@@ -492,7 +493,7 @@ function submitCreate() {
       render();
       renderQuick();
       fillStudentOptions();
-      if (publish) location.href = 'demand-detail.html?id=' + r.demand.id + '&as=' + ROLE;
+      if (publish) location.href = 'demand-detail.html?id=' + r.demand.id;
       return;
     }
     if (!studentId) throw new Error('请选择学员，或先为新学员建档');
@@ -503,7 +504,7 @@ function submitCreate() {
     render();
     renderQuick();
     fillStudentOptions();
-    if (publish) location.href = 'demand-detail.html?id=' + d.id + '&as=' + ROLE;
+    if (publish) location.href = 'demand-detail.html?id=' + d.id;
   } catch (e) {
     err.innerHTML = `<div class="alert alert-danger mt12"><span class="ico">!</span>
       <div>${e.message}${e.code === 'STUDENT_EXISTS' && e.data && e.data.student

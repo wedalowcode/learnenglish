@@ -81,9 +81,11 @@
 <script src="../assets/js/store.js"></script>
 <script>
 const Q = new URLSearchParams(location.search);
-const ROLE = Q.get('as') || 'staff';
-Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: 'response-manage' });
-Store.setSession({ role: ROLE, operatorName: Store.operatorForRole(ROLE) });
+const ROLE = Proto.pageRole('staff');
+const SES = Store.currentSession();
+const OP_NAME = (Store.sessionPersisted() && SES.role === ROLE) ? SES.operatorName : Proto.roleIdentity(ROLE).name;
+Store.setSession({ role: ROLE, operatorName: OP_NAME });
+Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: 'response-manage', identityRole: ROLE });
 const S = Store;
 
 let quickStatus = '';
@@ -182,7 +184,7 @@ function render() {
   Proto.renderRows('rows', rows, x => {
     const t = x.teacher, r = x.response;
     return `<tr>
-      <td class="mono small"><a href="demand-detail.html?id=${x.demand.id}&as=${ROLE}">${x.demand.code}</a></td>
+      <td class="mono small"><a href="demand-detail.html?id=${x.demand.id}">${x.demand.code}</a></td>
       <td class="strong nowrap-cell">${x.student ? x.student.name : '—'}
         <div class="small muted">${x.demand.grade} · ${x.demand.textbook}</div></td>
       <td><span class="tag tag-${S.DEMAND_TONE[x.demand.status]}">${x.demand.status}</span></td>
@@ -195,7 +197,7 @@ function render() {
         ${r.withdrawnAt ? `<div class="small" style="color:var(--warning)">撤回 ${r.withdrawnAt.slice(5, 16)}</div>` : ''}</td>
       <td class="small">${r.remark || '—'}</td>
       <td class="small" style="color:var(--text-3)">${r.declineReason || r.withdrawReason || '—'}</td>
-      <td><a class="btn-link" href="demand-detail.html?id=${x.demand.id}&as=${ROLE}">查看需求</a></td>
+      <td><a class="btn-link" href="demand-detail.html?id=${x.demand.id}">查看需求</a></td>
     </tr>`;
   }, 11, '暂无响应记录');
 }

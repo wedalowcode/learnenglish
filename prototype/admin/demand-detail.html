@@ -97,11 +97,12 @@
 <script src="../assets/js/store.js"></script>
 <script>
 const Q = new URLSearchParams(location.search);
-const ROLE = Q.get('as') || 'staff';
+const ROLE = Proto.pageRole('staff');
+const SES = Store.currentSession();
+const OP_NAME = (Store.sessionPersisted() && SES.role === ROLE) ? SES.operatorName : Proto.roleIdentity(ROLE).name;
+Store.setSession({ role: ROLE, operatorName: OP_NAME });
 const TID = Q.get('id') || '';
-Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: 'demand-list' });
-
-Store.setSession({ role: ROLE, operatorName: Store.operatorForRole(ROLE) });
+Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: 'demand-list', identityRole: ROLE });
 const S = Store;
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -318,7 +319,7 @@ function confirmCardOf(v) {
       <div class="mt12 flex gap8">
         ${S.can('demand.confirm') ? `<button class="btn btn-sm" onclick="openRevoke()">撤销确认</button>` : ''}
         ${S.can('student.assignFinal')
-          ? `<a class="btn btn-sm btn-primary" href="assign-task.html?as=${ROLE}&id=${d.id}">去正式分配</a>`
+          ? `<a class="btn btn-sm btn-primary" href="assign-task.html?id=${d.id}">去正式分配</a>`
           : `<span class="small muted">等待管理员正式分配</span>`}
       </div>`;
   }

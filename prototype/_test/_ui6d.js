@@ -122,13 +122,13 @@ function ok(name, cond, extra) {
     ok('重复分配被拒 ' + r.err.slice(0, 30), /已完成分配/.test(r.err), r.err);
     ok('被拒后关系数未变（原子性）', r.before === r.after, r);
 
-    /* ---- 8. 教务角色不能正式分配（越权） ---- */
-    await p.goto(base + '?tab=task&as=staff');
+    /* ---- 8. 教务角色不能正式分配（越权） ----
+       角色切换已统一到顶栏组件，不再使用 ?as= 参数；这里显式写入教务身份后直接调用。 */
     r = await p.eval(`
-      var rows = document.querySelectorAll('#taskRows tr').length;
+      Store.setSession({ role:'staff', operatorName:'陈静' });
       var out = { err: '' };
       try { Store.assignDemand('D20261026005'); } catch (e) { out.err = e.message; }
-      return { err: out.err, rows: rows, can: Store.can('student.assignFinal') };`);
+      return { err: out.err, can: Store.can('student.assignFinal') };`);
     ok('教务无分配权限', r.can === false, r.can);
     ok('教务调用分配被拒 FORBIDDEN', /无权|权限/.test(r.err), r.err);
 
