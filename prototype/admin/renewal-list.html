@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>续费机会</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">招生管理<span class="sep">/</span>续费机会</div>
+          <h1 class="page-title">续费机会</h1>
+          <div class="page-sub" id="sub">—</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn" onclick="refresh()">重新扫描</button>
+        </div>
+      </div>
+
+      <div class="grid g4 mb16" id="stats"></div>
+
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div>系统按「剩余课时低于 <b id="th">5</b>」或「套餐在 <b id="days">45</b> 天内到期」自动生成续费机会。
+          教务/代理可跟进，代理可发起续费订单；<b>续费课时同样以收款入账为准</b>。</div></div>
+
+      <div class="card filter">
+        <div class="field"><label>续费状态</label>
+          <select class="select" id="st" onchange="render()"><option value="">全部</option></select></div>
+        <div class="field"><label>代理归属</label>
+          <select class="select" id="ag" onchange="render()"><option value="">全部</option></select></div>
+        <div class="field"><label>触发原因</label>
+          <select class="select" id="tp" onchange="render()"><option value="">全部</option></select></div>
+        <div class="filter-actions"><button class="btn btn-primary" onclick="render()">查询</button></div>
+      </div>
+
+      <div class="card mt16">
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th style="width:100px">机会编号</th><th>学员</th><th>年级</th><th>当前教师</th>
+                <th>触发原因</th><th class="right">剩余课时</th><th>套餐到期</th><th>代理归属</th>
+                <th>状态</th><th>最近跟进</th><th style="width:160px">操作</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 <b id="total">0</b> 条</span></div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<div class="mask" id="followModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">续费跟进</div>
+      <button class="modal-close" onclick="Proto.closeModal('followModal')">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label>跟进内容 <span class="req">*</span></label>
+        <textarea class="textarea" id="rn_remark" placeholder="记录与家长沟通的结果与下一步安排"></textarea></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('followModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveFollow()">保存跟进</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const S = Store;
+S.setSession({ role: 'admin' });
+Proto.shell({ role: 'admin', active: 'renewal-list' });
+
+document.getElementById('th').textContent = S.LESSON_ALERT_THRESHOLD;
+document.getElementById('days').textContent = S.EXPIRE_ALERT_DAYS;
+document.getElementById('st').innerHTML = '<option value="">全部</option>' +
+  S.RENEWAL_STATUS.map(s => `<option>${s}</option>`).join('');
+document.getElementById('tp').innerHTML = '<option value="">全部</option>' +
+  S.RENEWAL_SOURCE.map(s => `<option>${s}</option>`).join('');
+document.getElementById('ag').innerHTML = '<option value="">全部</option><option value="__none">机构直营</option>' +
+  S.agents().map(a => `<option value="${a.id}">${a.name}（${a.id}）</option>`).join('');
+
+let currentId = '';
+
+function refresh() {
+  try { S.refreshRenewalOpportunities(); Proto.toast('已重新扫描课时与套餐到期情况', 'ok'); render(); }
+  catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+function render() {
+  const st = document.getElementById('st').value;
+  const ag = document.getElementById('ag').value;
+  const tp = document.getElementById('tp').value;
+  let rows = S.renewals({ status: st });
+  if (ag === '__none') rows = rows.filter(x => !x.renewal.agentId);
+  else if (ag) rows = rows.filter(x => x.renewal.agentId === ag);
+  if (tp) rows = rows.filter(x => x.renewal.sourceType === tp);
+
+  const all = S.renewals();
+  document.getElementById('sub').textContent =
+    `全部 ${all.length} 条 · 待跟进 ${all.filter(x => x.renewal.status === '待跟进').length} · 跟进中 ${all.filter(x => x.renewal.status === '跟进中').length} · 已转订单 ${all.filter(x => x.renewal.status === '已转订单').length}`;
+  document.getElementById('stats').innerHTML = `
+    <div class="card stat"><div class="stat-label">续费机会</div><div class="stat-value">${all.length}</div>
+      <div class="stat-foot">课时不足 + 套餐临期</div></div>
+    <div class="card stat"><div class="stat-label">待跟进</div><div class="stat-value" style="color:var(--warning)">${all.filter(x => x.renewal.status === '待跟进').length}</div>
+      <div class="stat-foot">需要安排触达</div></div>
+    <div class="card stat"><div class="stat-label">跟进中</div><div class="stat-value">${all.filter(x => x.renewal.status === '跟进中').length}</div>
+      <div class="stat-foot">已有沟通记录</div></div>
+    <div class="card stat"><div class="stat-label">已转订单</div><div class="stat-value" style="color:var(--success)">${all.filter(x => x.renewal.status === '已转订单').length}</div>
+      <div class="stat-foot">等待收款入账</div></div>`;
+  document.getElementById('total').textContent = rows.length;
+
+  Proto.renderRows('rows', rows, x => {
+    const r = x.renewal;
+    const open = [S.RENEWAL.PENDING, S.RENEWAL.FOLLOWING].indexOf(r.status) >= 0;
+    return `<tr>
+      <td class="mono small">${r.id}</td>
+      <td class="strong">${x.studentName}</td>
+      <td>${x.grade || '—'}</td>
+      <td class="small">${x.teacherName || '未分配'}</td>
+      <td><span class="tag tag-amber nodot">${r.sourceType}</span></td>
+      <td class="right mono" style="color:${r.remain < 5 ? 'var(--danger)' : 'inherit'};font-weight:600">${r.remain}</td>
+      <td class="small">${r.expireAt || '—'}</td>
+      <td class="small">${x.agent ? x.agent.name + '（' + x.agent.id + '）' : '<span class="muted">机构直营</span>'}</td>
+      <td><span class="tag tag-${S.RENEWAL_TONE[r.status]}">${r.status}</span></td>
+      <td class="small muted">${r.handledBy ? r.handledBy + ' · ' + (r.updatedAt || '').slice(5, 16) : '—'}</td>
+      <td class="ops">${open ? `<button class="btn-link" onclick="openFollow('${r.id}')">跟进</button>
+        <button class="btn-link danger" onclick="closeIt('${r.id}')">关闭</button>` : '<span class="muted small">已结束</span>'}</td>
+    </tr>`;
+  }, 10, '暂无续费机会');
+}
+
+function openFollow(id) {
+  currentId = id;
+  document.getElementById('rn_remark').value = '';
+  Proto.openModal('followModal');
+}
+function saveFollow() {
+  try {
+    S.handleRenewal(currentId, { remark: document.getElementById('rn_remark').value.trim() });
+    Proto.closeModal('followModal');
+    Proto.toast('续费跟进已记录', 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function closeIt(id) {
+  const reason = prompt('请填写关闭原因');
+  if (!reason) return;
+  try { S.closeRenewal(id, { remark: reason }); Proto.toast('已关闭', 'ok'); render(); }
+  catch (e) { Proto.toast(e.message, 'err'); }
+}
+render();
+</script>
+</body>
+</html>

@@ -194,8 +194,7 @@ const S = Store;
 
 Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: TAB === 'task' ? 'assign-task' : 'assign-log' });
 
-const OPERATOR = { admin: '张敏', staff: '陈静', ops: '王敏' };
-S.setSession({ role: ROLE, operatorName: OPERATOR[ROLE] || '王敏' });
+S.setSession({ role: ROLE, operatorName: Store.operatorForRole(ROLE) });
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function switchRole(r) { location.href = 'assign-task.html?tab=' + TAB + '&as=' + r; }
@@ -257,7 +256,7 @@ function renderStats() {
     <div class="stat-foot">${c.s}</div></div>`).join('');
 
   document.getElementById('pageSub').textContent =
-    `${OPERATOR[ROLE]} · ${S.ROLE_LABEL[ROLE]} · 正式分配是唯一建立师生负责关系的入口`;
+    `${Store.operatorForRole(ROLE)} · ${S.ROLE_LABEL[ROLE]} · 正式分配是唯一建立师生负责关系的入口`;
 }
 
 /* ---------- Tab1 ---------- */

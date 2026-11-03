@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>续费机会</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">续费与佣金<span class="sep">/</span>续费机会</div>
+          <h1 class="page-title">续费机会</h1>
+          <div class="page-sub" id="sub">—</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="my-customers.html">我的客户</a>
+        </div>
+      </div>
+
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div>学员剩余课时低于 <b id="th">5</b> 课时，或套餐在 <b id="days">45</b> 天内到期时，系统自动生成续费机会。
+          代理只能处理自己客户的续费机会；<b>续费订单同样需要管理员确认收款后才增加课时</b>。</div></div>
+
+      <div class="card">
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th style="width:110px">机会编号</th><th>学员</th><th>年级</th><th>当前教师</th>
+                <th>触发原因</th><th class="right">剩余课时</th><th>套餐到期</th><th>状态</th>
+                <th>代理归属</th><th style="width:190px">操作</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<div class="mask" id="followModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">续费跟进</div>
+      <button class="modal-close" onclick="Proto.closeModal('followModal')">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label>跟进内容 <span class="req">*</span></label>
+        <textarea class="textarea" id="rn_remark" placeholder="记录与家长的沟通结果"></textarea></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('followModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveFollow()">保存跟进</button>
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="orderModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">发起续费订单</div>
+      <button class="modal-close" onclick="Proto.closeModal('orderModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div id="orderTip">续费订单提交后进入「待审核」，管理员确认收款后课时才会累加。</div></div>
+      <div class="field"><label>续费套餐 <span class="req">*</span></label>
+        <select class="select" id="rn_product"></select></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('orderModal')">取消</button>
+      <button class="btn btn-primary" onclick="submitOrder()">提交续费订单</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const S = Store;
+const AG = Proto.agentId();
+S.setSession({ role: 'agent', agentId: AG, operatorName: Proto.agentName() });
+Proto.shell({ role: 'agent', active: 'agent-renewal' });
+
+document.getElementById('th').textContent = S.LESSON_ALERT_THRESHOLD;
+document.getElementById('days').textContent = S.EXPIRE_ALERT_DAYS;
+document.getElementById('rn_product').innerHTML = S.products().filter(p => p.status !== '停用')
+  .map(p => `<option value="${p.id}">${p.name} · ${p.hours}课时 · ${Proto.money(p.amount)}</option>`).join('');
+
+let currentId = '';
+let mode = 'follow';
+
+function render() {
+  const rows = S.agentRenewals(AG);
+  document.getElementById('sub').textContent = `仅本人客户 · 共 ${rows.length} 条续费机会`;
+  Proto.renderRows('rows', rows, x => {
+    const r = x.renewal;
+    const open = [S.RENEWAL.PENDING, S.RENEWAL.FOLLOWING].indexOf(r.status) >= 0;
+    return `<tr>
+      <td class="mono small">${r.id}</td>
+      <td class="strong"><a href="customer-detail.html?id=${r.leadId}">${x.studentName}</a></td>
+      <td>${x.grade || '—'}</td>
+      <td class="small">${x.teacherName || '未分配'}</td>
+      <td><span class="tag tag-amber nodot">${r.sourceType}</span></td>
+      <td class="right mono ${r.remain < S.db.config.renewal.lessonThreshold ? '' : 'muted'}"
+        ${r.remain < S.db.config.renewal.lessonThreshold ? 'style="color:var(--danger);font-weight:600"' : ''}>${r.remain}</td>
+      <td class="small">${r.expireAt || '—'}</td>
+      <td><span class="tag tag-${S.RENEWAL_TONE[r.status]}">${r.status}</span></td>
+      <td class="small">${Proto.agentName()}（${r.agentId}）</td>
+      <td class="ops">
+        ${open ? `<button class="btn-link" onclick="openFollow('${r.id}')">跟进</button>
+          <button class="btn-link" onclick="openOrder('${r.id}')">续费下单</button>
+          <button class="btn-link danger" onclick="closeIt('${r.id}')">关闭</button>` : '<span class="muted small">已结束</span>'}
+      </td>
+    </tr>`;
+  }, 10, '暂无续费机会');
+}
+
+function openFollow(id) {
+  currentId = id; mode = 'follow';
+  document.getElementById('rn_remark').value = '';
+  Proto.openModal('followModal');
+}
+function saveFollow() {
+  try {
+    S.handleRenewal(currentId, { remark: document.getElementById('rn_remark').value.trim() });
+    Proto.closeModal('followModal');
+    Proto.toast('续费跟进已记录', 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function openOrder(id) {
+  currentId = id;
+  const r = S.renewal(id);
+  document.getElementById('orderTip').textContent =
+    `学员剩余 ${r.remain} 课时 · ${r.sourceType}。续费订单提交后仍需管理员确认收款才增加课时。`;
+  Proto.openModal('orderModal');
+}
+function submitOrder() {
+  try {
+    const o = S.submitRenewalOrder(currentId, document.getElementById('rn_product').value);
+    Proto.closeModal('orderModal');
+    Proto.toast('续费订单 ' + o.order.id + ' 已提交，等待管理员确认收款', 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function closeIt(id) {
+  const reason = prompt('请填写关闭原因');
+  if (!reason) return;
+  try { S.closeRenewal(id, { remark: reason }); Proto.toast('续费机会已关闭', 'ok'); render(); }
+  catch (e) { Proto.toast(e.message, 'err'); }
+}
+render();
+</script>
+</body>
+</html>

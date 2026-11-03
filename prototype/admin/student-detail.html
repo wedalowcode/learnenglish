@@ -370,8 +370,8 @@
 <script>
 const Q = new URLSearchParams(location.search);
 const S = Store;
-const SID = Q.get('id') || 'S2026001';
-S.setSession({ role: 'admin', operatorName: '张敏' });
+const SID = Q.get('id') || (S.students()[0] ? S.students()[0].id : '');
+S.setSession({ role: 'admin' });
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 

@@ -37,14 +37,26 @@
 /* 家长端可见性规则：只有「已发布」的报告才展示内容；
    「编辑中 / 已提交」一律显示为「老师正在整理」，不暴露半成品。 */
 const q = new URLSearchParams(location.search);
-const STUDENT = q.get('student') || 'S2026001';
+const PID = Proto.parentId();
+Store.setSession({ role: 'parent', parentId: PID, operatorName: Proto.parentName() });
+const KIDS = Store.parentChildren(PID);
+const STUDENT = KIDS.filter(k => k.id === q.get('student'))[0]
+  ? q.get('student') : (KIDS[0] ? KIDS[0].id : '');
 
 function boot() {
+  if (!STUDENT) {
+    document.getElementById('body').innerHTML =
+      '<div class="m-card"><div class="small muted">当前家长账号下暂无孩子档案。</div></div>';
+    return;
+  }
   const stu = Store.student(STUDENT);
   const published = Store.publishedReportsOf(STUDENT);
   const all = Store.reportsOf(STUDENT);
 
-  let rp = q.get('report') ? Store.report(q.get('report')) : published[0] || null;
+  /* 只允许打开属于自己孩子的报告；越权 report 参数直接忽略 */
+  let rp = q.get('report')
+    ? all.filter(x => x.id === q.get('report'))[0] || null
+    : published[0] || null;
 
   if (!rp) {
     document.getElementById('headTag').textContent = '暂无';

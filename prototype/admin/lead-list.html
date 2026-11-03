@@ -17,32 +17,22 @@
         <div>
           <div class="crumb">招生管理<span class="sep">/</span>客户线索</div>
           <h1 class="page-title">客户线索</h1>
-          <div class="page-sub">全机构线索 · 本月新增 8 条 · 成交 1 条 · 待联系 1 条</div>
+          <div class="page-sub" id="sub">—</div>
         </div>
         <div class="page-actions">
           <button class="btn" onclick="Proto.toast('导出线索（示意）','ok')">导出</button>
-          <button class="btn btn-primary" onclick="Proto.toast('打开新增线索表单（示意）')">+ 新增线索</button>
+          <a class="btn btn-primary" href="lead-detail.html?new=1">+ 新增线索</a>
         </div>
       </div>
 
       <div class="card filter">
         <div class="field"><label>客户姓名 / 手机号</label><input class="input" id="kw" placeholder="输入姓名或手机号" oninput="render()"></div>
         <div class="field"><label>来源渠道</label>
-          <select class="select" id="ch" onchange="render()">
-            <option value="">全部</option><option>公众号</option><option>转介绍</option><option>地推</option>
-            <option>电话咨询</option><option>代理推荐</option>
-          </select></div>
+          <select class="select" id="ch" onchange="render()"><option value="">全部</option></select></div>
         <div class="field"><label>所属代理</label>
-          <select class="select" id="ag" onchange="render()"><option value="">全部</option><option>王磊</option><option>刘倩</option><option>赵勇</option><option>无</option></select></div>
-        <div class="field"><label>跟进人</label>
-          <select class="select" onchange="render()"><option value="">全部</option><option>张敏</option><option>教务处-小陈</option></select></div>
+          <select class="select" id="ag" onchange="render()"><option value="">全部</option></select></div>
         <div class="field"><label>线索状态</label>
-          <select class="select" id="st" onchange="render()">
-            <option value="">全部</option><option>新线索</option><option>待联系</option><option>跟进中</option>
-            <option>意向明确</option><option>已成交</option><option>无效</option><option>已关闭</option>
-          </select></div>
-        <div class="field"><label>最近跟进时间</label>
-          <select class="select"><option>不限</option><option>今日</option><option>近 3 天</option><option>近 7 天</option><option>超过 7 天未跟进</option></select></div>
+          <select class="select" id="st" onchange="render()"><option value="">全部</option></select></div>
         <div class="filter-actions">
           <button class="btn btn-primary" onclick="render()">查询</button>
           <button class="btn" onclick="reset()">重置</button>
@@ -50,25 +40,23 @@
       </div>
 
       <div class="alert alert-warn mt16"><span class="ico">!</span>
-        <div>客户重复报备时，系统只提示「可能存在重复线索」，归属由有权限的管理员确认，<b>不以最后报备者作为归属判定</b>。</div>
+        <div>客户重复报备时，系统只提示「可能存在重复线索」，归属由有权限的管理员确认，<b>不以最后报备者作为归属判定</b>。归属变更会写入线索日志。</div>
       </div>
 
       <div class="card mt16">
         <div class="card-head"><div class="card-title">线索列表<span class="hint" id="cnt"></span></div>
-          <div class="small muted">已成交必须关联有效订单或由管理员确认成交条件</div></div>
+          <div class="small muted">已成交必须关联有效订单（收款确认后自动成交）</div></div>
         <div class="card-body tight">
           <div class="table-wrap">
             <table class="table">
               <thead>
-                <tr><th style="width:88px">线索编号</th><th>客户</th><th>联系电话</th><th>学生年级</th><th>意向教材</th>
-                  <th>来源渠道</th><th>所属代理</th><th>跟进人</th><th>最近跟进</th><th>意向课程</th><th>状态</th><th style="width:170px">操作</th></tr>
+                <tr><th style="width:88px">线索编号</th><th>客户</th><th>联系电话</th><th>学生年级</th><th>意向课程</th>
+                  <th>来源渠道</th><th>所属代理</th><th>跟进人</th><th>最近跟进</th><th>下次跟进</th><th>订单</th><th>状态</th><th style="width:150px">操作</th></tr>
               </thead>
               <tbody id="rows"></tbody>
             </table>
           </div>
-          <div class="pager"><span>共 <b id="total">8</b> 条</span>
-            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
-          </div>
+          <div class="pager"><span>共 <b id="total">0</b> 条</span></div>
         </div>
       </div>
 
@@ -79,11 +67,24 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
+const S = Store;
+S.setSession({ role: 'admin' });
 Proto.shell({ role: 'admin', active: 'lead-list' });
 
-const LST = { '新线索': 'tag-slate', '待联系': 'tag-amber', '跟进中': 'tag-blue', '意向明确': 'tag-purple', '已成交': 'tag-green', '无效': 'tag-slate', '已关闭': 'tag-slate' };
-const agentName = id => (DB.agents.find(a => a.id === id) || {}).name || '<span class="muted">无</span>';
+document.getElementById('st').innerHTML = '<option value="">全部</option>' +
+  S.LEAD_STATUS.map(s => `<option>${s}</option>`).join('');
+document.getElementById('ch').innerHTML = '<option value="">全部</option>' +
+  S.LEAD_CHANNELS.map(c => `<option>${c}</option>`).join('');
+document.getElementById('ag').innerHTML = '<option value="">全部</option><option value="__none">无（机构直营）</option>' +
+  S.agents().map(a => `<option value="${a.id}">${a.name}（${a.id}）</option>`).join('');
+
+function reset() {
+  ['kw'].forEach(id => document.getElementById(id).value = '');
+  ['ch', 'ag', 'st'].forEach(id => document.getElementById(id).value = '');
+  render();
+}
 
 function render() {
   const kw = document.getElementById('kw').value.trim();
@@ -91,69 +92,38 @@ function render() {
   const ag = document.getElementById('ag').value;
   const st = document.getElementById('st').value;
 
-  const rows = DB.leads.filter(l => {
-    if (kw && !(l.name.includes(kw) || l.phone.includes(kw))) return false;
-    if (ch && l.channel !== ch) return false;
-    if (ag === '无' && l.agent) return false;
-    if (ag && ag !== '无' && agentName(l.agent).indexOf(ag) < 0) return false;
-    if (st && l.status !== st) return false;
-    return true;
-  });
+  let rows = S.leads({ kw: kw, status: st });
+  if (ch) rows = rows.filter(r => r.lead.channel === ch);
+  if (ag === '__none') rows = rows.filter(r => !r.lead.agentId);
+  else if (ag) rows = rows.filter(r => r.lead.agentId === ag);
+
+  const counts = S.leadRowCounts();
+  document.getElementById('sub').textContent =
+    `全机构线索 ${S.leads().length} 条 · 跟进中 ${counts['跟进中']} · 意向 ${counts['意向明确']} · 成交 ${counts['已成交']}`;
   document.getElementById('cnt').textContent = `筛选结果 ${rows.length} 条`;
   document.getElementById('total').textContent = rows.length;
 
-  Proto.renderRows('rows', rows, l => `
-    <tr>
+  Proto.renderRows('rows', rows, r => {
+    const l = r.lead;
+    const overdue = l.nextFollowAt && l.nextFollowAt.slice(0, 10) <= S.TODAY;
+    return `<tr>
       <td class="mono small">${l.id}</td>
-      <td class="strong"><a href="lead-detail.html">${l.name}</a></td>
+      <td class="strong"><a href="lead-detail.html?id=${l.id}">${l.name}</a></td>
       <td class="mono">${l.phone}</td>
-      <td>${l.grade}</td>
-      <td class="small">${l.book}</td>
+      <td>${l.grade || '—'}</td>
+      <td class="small">${l.intent || '—'}</td>
       <td>${l.channel}</td>
-      <td>${agentName(l.agent)}</td>
-      <td class="small">${l.follower}</td>
-      <td class="small muted">${l.lastFollow}</td>
-      <td class="small">${l.intent}</td>
-      <td><span class="tag ${LST[l.status]}">${l.status}</span></td>
-      <td class="ops">
-        <a class="btn-link" href="lead-detail.html">详情</a>
-        <button class="btn-link" onclick="follow('${l.name}')">跟进</button>
-        ${['已成交', '无效', '已关闭'].includes(l.status) ? '' :
-          `<button class="btn-link" onclick="toStudent('${l.name}')">转学员</button>`}
-        ${l.status === '已成交' || l.status === '已关闭' ? '' :
-          `<button class="btn-link danger" onclick="invalid('${l.name}')">标记无效</button>`}
-      </td>
-    </tr>`, 12, '没有符合条件的线索，请调整筛选条件');
+      <td>${r.agent ? r.agent.name + '（' + r.agent.id + '）' : '<span class="muted">机构直营</span>'}</td>
+      <td class="small">${l.followerName || '—'}</td>
+      <td class="small muted">${(l.lastFollowAt || '—').slice(0, 16)}</td>
+      <td class="small" ${overdue ? 'style="color:var(--danger)"' : ''}>${l.nextFollowAt ? l.nextFollowAt.slice(0, 10) : '—'}</td>
+      <td class="small">${r.orders ? r.credited + '/' + r.orders + ' 已入账' : '—'}</td>
+      <td><span class="tag tag-${S.LEAD_TONE[l.status] || 'slate'}">${l.status}</span></td>
+      <td class="ops"><a class="btn-link" href="lead-detail.html?id=${l.id}">详情</a>
+        <a class="btn-link" href="lead-detail.html?id=${l.id}#follow">跟进</a></td>
+    </tr>`;
+  }, 13, '没有符合条件的线索，请调整筛选条件');
 }
-
-function reset() {
-  document.getElementById('kw').value = '';
-  ['ch', 'ag', 'st'].forEach(id => document.getElementById(id).value = '');
-  render();
-}
-
-function follow(name) {
-  Proto.toast(`已打开 ${name} 的跟进记录表单`, '');
-  location.href = 'lead-detail.html';
-}
-
-function toStudent(name) {
-  Proto.confirmBox('线索转学员',
-    `将 <b>${name}</b> 转为学员，系统将按以下顺序处理：<br><br>
-     1. 检查是否存在同手机号客户<br>
-     2. 选择已有家长或创建新家长<br>
-     3. 创建学员档案并建立线索关联<br>
-     4. 保留原始代理归属<br>
-     5. <b>不自动扣课、不创建虚构收款</b>`, '继续转学员',
-    () => location.href = 'student-form.html');
-}
-
-function invalid(name) {
-  Proto.confirmBox('标记线索无效', `确认将 <b>${name}</b> 标记为无效线索吗？<br><br>
-    标记后不再进入跟进提醒，记录与跟进历史保留。`, '标记无效',
-    () => Proto.toast('已标记为无效', 'ok'));
-}
-
 render();
 </script>
 </body>

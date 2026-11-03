@@ -17,10 +17,10 @@
         <div>
           <div class="crumb">客户管理<span class="sep">/</span>我的客户</div>
           <h1 class="page-title">我的客户</h1>
-          <div class="page-sub">仅显示本人报备或归属本人的客户 · 共 12 人</div>
+          <div class="page-sub" id="sub">仅显示本人报备或归属本人的客户</div>
         </div>
         <div class="page-actions">
-          <input class="input" placeholder="搜索姓名 / 手机号" style="width:180px" oninput="render(this.value)">
+          <input class="input" id="kw" placeholder="搜索姓名 / 手机号" style="width:180px" oninput="render()">
           <a class="btn btn-primary" href="customer-create.html">+ 客户报备</a>
         </div>
       </div>
@@ -30,14 +30,12 @@
           <div class="table-wrap">
             <table class="table">
               <thead><tr><th style="width:88px">线索编号</th><th>客户</th><th>联系电话</th><th>学生年级</th>
-                <th>意向课程</th><th>来源</th><th>状态</th><th>最近跟进</th><th>下次跟进</th>
+                <th>意向课程</th><th>来源</th><th>状态</th><th>剩余课时</th><th>最近跟进</th><th>下次跟进</th>
                 <th style="width:150px">操作</th></tr></thead>
               <tbody id="rows"></tbody>
             </table>
           </div>
-          <div class="pager"><span>共 <b id="total">6</b> 条</span>
-            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
-          </div>
+          <div class="pager"><span>共 <b id="total">0</b> 条</span></div>
         </div>
       </div>
 
@@ -52,32 +50,39 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
+const S = Store;
+const AG = Proto.agentId();
+S.setSession({ role: 'agent', agentId: AG, operatorName: Proto.agentName() });
 Proto.shell({ role: 'agent', active: 'agent-customers' });
 
-const LST = { '新线索': 'tag-slate', '待联系': 'tag-amber', '跟进中': 'tag-blue', '意向明确': 'tag-purple', '已成交': 'tag-green', '无效': 'tag-slate', '已关闭': 'tag-slate' };
-
-function render(kw = '') {
-  const rows = DB.leads.filter(l => !kw || l.name.includes(kw) || l.phone.includes(kw));
+function render() {
+  const kw = document.getElementById('kw').value.trim();
+  const rows = S.agentCustomers({ kw: kw });
   document.getElementById('total').textContent = rows.length;
-  Proto.renderRows('rows', rows, l => `
-    <tr>
-      <td class="mono small">${l.id}</td>
-      <td class="strong"><a href="customer-detail.html">${l.name}</a></td>
-      <td class="mono">${l.phone}</td>
-      <td>${l.grade}</td>
-      <td class="small">${l.intent}</td>
-      <td>${l.channel}</td>
-      <td><span class="tag ${LST[l.status]}">${l.status}</span></td>
-      <td class="small muted">${l.lastFollow.slice(5)}</td>
-      <td class="small ${l.next && l.next < DB.today ? '' : 'muted'}"
-        ${l.next && l.next < DB.today ? 'style="color:var(--danger)"' : ''}>${l.next || '—'}</td>
+  document.getElementById('sub').textContent =
+    `仅显示本人报备或归属本人的客户 · 共 ${rows.length} 人`;
+  Proto.renderRows('rows', rows, r => {
+    const overdue = r.nextFollowAt && r.nextFollowAt.slice(0, 10) <= S.TODAY;
+    return `<tr>
+      <td class="mono small">${r.leadId || '—'}</td>
+      <td class="strong"><a href="customer-detail.html?id=${r.leadId}">${r.customerName}</a></td>
+      <td class="mono">${r.phone || '—'}</td>
+      <td>${r.grade || '—'}</td>
+      <td class="small">${r.intent || '—'}</td>
+      <td class="small">${r.channel || '—'}</td>
+      <td><span class="tag tag-${S.LEAD_TONE[r.status] || 'slate'}">${r.status}</span></td>
+      <td class="mono">${r.remain === null ? '<span class="muted">—</span>' : r.remain}</td>
+      <td class="small muted">${(r.lastFollowAt || '—').slice(5, 16)}</td>
+      <td class="small" ${overdue ? 'style="color:var(--danger)"' : ''}>${r.nextFollowAt ? r.nextFollowAt.slice(0, 10) : '—'}</td>
       <td class="ops">
-        <a class="btn-link" href="customer-detail.html">详情</a>
-        <a class="btn-link" href="customer-detail.html">跟进</a>
-        ${l.status === '已成交' ? '<a class="btn-link" href="commission.html">佣金</a>' : ''}
+        <a class="btn-link" href="customer-detail.html?id=${r.leadId}">详情</a>
+        <a class="btn-link" href="customer-detail.html?id=${r.leadId}">跟进</a>
+        ${r.converted ? `<a class="btn-link" href="customer-detail.html?id=${r.leadId}#feedback">反馈</a>` : ''}
       </td>
-    </tr>`, 10, '没有匹配的客户');
+    </tr>`;
+  }, 11, '没有匹配的客户');
 }
 render();
 </script>

@@ -4,6 +4,15 @@
    第一轮：建立学习域唯一数据源。
    第二轮：加固业务完整性（judge/correct 分离、唯一 wordId 计数）。
    第三轮：从「功能闭环」转向「课程闭环」。
+   第七轮：代理获客、报名收款、课时入账与续费全流程线上化。
+     1. 代理归属（agentId）、维护归属（followerId）、成交归属（order.agentId）分三处留痕，
+        任何一次归属变更都写 leadLogs，不覆盖原归属。
+     2. 报名订单必须「管理员确认收款」后才生成课时账户与流水；
+        新建家长 / 学员永远不产生课时（remain 初始 0）。
+     3. 收款确认 + 课时入账 + 线索成交 + 续费机会关闭在同一个事务里完成，失败整体回滚。
+     4. 代理只能看自己负责的客户、自己客户的已发布学习反馈与续费机会；
+        家长只能看自己孩子的订单、课时余额（聚合值）与已发布报告，内部流水一律不可见。
+     5. 佣金只保留规则与预估接口（未结算占位），企微机器人与第三方支付同样只留接口。
    第六轮（本版）在第五轮教师资源池之上补上「学员接单与教学资源分配」，原则：
      1. 四个环节彼此独立，任何一环都不能用「一个教师 ID 字段」代替整条业务链：
         教师响应（意向）→ 教务确认（人选）→ 管理员分配（正式师生关系）→ 词库申请与授权（资源权限）。
@@ -59,8 +68,9 @@
   'use strict';
 
   var W = typeof window !== 'undefined' ? window : globalThis;
-  var KEY = 'ee_proto_store_v7';
-  var VERSION = 7;
+  var KEY = 'ee_proto_store_v8';
+  var VERSION = 8;
+  var LEGACY_KEY_V7 = 'ee_proto_store_v7';
   var TODAY = '2026-11-02';
 
   /* ---------------- 统一状态词表 ----------------
@@ -167,10 +177,36 @@
     'wordbookRequest.create': ['teacher'],
     'wordbookRequest.review': ['admin', 'ops'],
     'studentWordbook.view': ['admin', 'staff', 'ops', 'teacher'],
-    'studentWordbook.manage': ['admin', 'ops']
+    'studentWordbook.manage': ['admin', 'ops'],
+
+    /* ---- 第七轮：代理获客与报名续费 ---- */
+    'lead.viewAll': ['admin', 'staff', 'ops'],
+    'lead.viewSelf': ['agent'],
+    'lead.create': ['admin', 'staff', 'agent'],
+    'lead.follow': ['admin', 'staff', 'agent'],
+    'lead.convert': ['admin', 'staff', 'agent'],
+    'lead.assign': ['admin', 'staff'],                  /* 归属调整只给机构 */
+    'order.viewAll': ['admin', 'staff', 'ops'],
+    'order.viewSelf': ['agent', 'parent'],              /* 代理 / 家长只看自己的 */
+    'order.create': ['admin', 'staff', 'agent'],
+    'order.review': ['admin', 'ops'],
+    'payment.confirm': ['admin', 'ops'],                /* 收款确认 → 课时入账 */
+    'lesson.adjust': ['admin', 'ops'],
+    'agent.viewAll': ['admin', 'staff', 'ops'],
+    'agent.manage': ['admin', 'staff'],
+    'agent.recruit': ['admin', 'staff'],
+    'agent.review': ['admin', 'staff'],
+    'renewal.viewAll': ['admin', 'staff', 'ops'],
+    'renewal.viewSelf': ['agent'],
+    'renewal.handle': ['admin', 'staff', 'agent'],
+    'feedback.create': ['admin', 'staff', 'teacher'],
+    'feedback.viewSelf': ['agent', 'parent', 'teacher']
   };
-  var ROLE_LABEL = { admin: '老板', staff: '教务负责人', ops: '管理员', teacher: '教师' };
-  var session = { role: 'admin', operatorName: '张敏', operatorId: '张敏', teacherId: '' };
+  var ROLE_LABEL = { admin: '老板', staff: '教务负责人', ops: '管理员', teacher: '教师', agent: '代理', parent: '家长' };
+  var session = {
+    role: 'admin', operatorName: '张敏', operatorId: '张敏',
+    teacherId: '', agentId: '', parentId: ''
+  };
 
   /* ============================================================
      学员接单与教学资源分配：四套状态词表
@@ -225,6 +261,66 @@
   var SWB_STATUS = [SWB.ACTIVE, SWB.DISABLED];
   var SWB_TONE = { '已授权': 'green', '已停用': 'slate' };
 
+  /* ============================================================
+     第七轮词表：代理 / 线索 / 订单 / 收款 / 课时 / 续费
+     ------------------------------------------------------------
+     这五套状态彼此独立，不允许用「一个布尔字段」推导：
+       线索状态 lead.status      —— 客户跟进到了哪一步
+       订单状态 order.status     —— 报名/续费单走到哪一步
+       收款状态 payment.status   —— 钱有没有真的到账
+       课时账户 accounts.status  —— 课时还能不能用
+       续费机会 renewal.status   —— 这个客户是否已经转成续费单
+     课时只能由「已确认收款」的订单或有权限的课时调整流水产生。
+     ============================================================ */
+  var LEAD = {
+    NEW: '新线索', TO_CONTACT: '待联系', FOLLOWING: '跟进中',
+    INTENT: '意向明确', DEAL: '已成交', INVALID: '无效', CLOSED: '已关闭'
+  };
+  var LEAD_STATUS = [LEAD.NEW, LEAD.TO_CONTACT, LEAD.FOLLOWING, LEAD.INTENT, LEAD.DEAL, LEAD.INVALID, LEAD.CLOSED];
+  var LEAD_TONE = {
+    '新线索': 'slate', '待联系': 'amber', '跟进中': 'blue', '意向明确': 'purple',
+    '已成交': 'green', '无效': 'slate', '已关闭': 'slate'
+  };
+  /* 允许的状态推进：只能往前，不能从终态回退；归属调整不改变状态本身 */
+  var LEAD_NEXT = {
+    '新线索': [LEAD.TO_CONTACT, LEAD.FOLLOWING, LEAD.INVALID],
+    '待联系': [LEAD.FOLLOWING, LEAD.INVALID, LEAD.CLOSED],
+    '跟进中': [LEAD.INTENT, LEAD.DEAL, LEAD.INVALID, LEAD.CLOSED],
+    '意向明确': [LEAD.DEAL, LEAD.INVALID, LEAD.CLOSED],
+    '已成交': [], '无效': [], '已关闭': []
+  };
+  var LEAD_LEVELS = ['高', '中', '低'];
+  var LEAD_CHANNELS = ['公众号', '转介绍', '地推', '电话咨询', '代理推荐', '其他'];
+
+  var ORDER = { PENDING: '待审核', REVIEWED: '待收款', CREDITED: '已入账', REFUNDED: '已退款', CANCELLED: '已取消' };
+  var ORDER_STATUS = [ORDER.PENDING, ORDER.REVIEWED, ORDER.CREDITED, ORDER.REFUNDED, ORDER.CANCELLED];
+  var ORDER_TONE = {
+    '待审核': 'amber', '待收款': 'blue', '已入账': 'green', '已退款': 'red', '已取消': 'slate'
+  };
+  var ORDER_TYPE = { NEW: '新签', RENEW: '续费' };
+
+  var PAY = { PENDING: '待确认', CONFIRMED: '已确认', REVERSED: '已冲正' };
+  var PAY_STATUS = [PAY.PENDING, PAY.CONFIRMED, PAY.REVERSED];
+  var PAY_METHODS = ['微信', '支付宝', '银行转账', '现金'];
+
+  var AGENT_STATUS = ['待审核', '启用', '停用'];
+  var AGENT_TONE = { '待审核': 'amber', '启用': 'green', '停用': 'slate' };
+  var AGENT_TYPES = ['个人代理', '合作机构', '内部转介绍'];
+
+  var RENEWAL = {
+    PENDING: '待跟进', FOLLOWING: '跟进中', ORDERED: '已转订单', CLOSED: '已关闭'
+  };
+  var RENEWAL_STATUS = [RENEWAL.PENDING, RENEWAL.FOLLOWING, RENEWAL.ORDERED, RENEWAL.CLOSED];
+  var RENEWAL_TONE = { '待跟进': 'amber', '跟进中': 'blue', '已转订单': 'green', '已关闭': 'slate' };
+  var RENEWAL_SOURCE = ['课时不足', '套餐临期'];
+  var LESSON_ALERT_THRESHOLD = 5;      /* 剩余课时低于 5 生成续费机会 */
+  var EXPIRE_ALERT_DAYS = 45;          /* 套餐 45 天内到期生成续费机会 */
+
+  var LEAD_ACTION = {
+    CREATED: 'CREATED', FOLLOWED: 'FOLLOWED', STATUS_CHANGED: 'STATUS_CHANGED',
+    INTENT: 'INTENT', ORDERED: 'ORDERED', DEAL: 'DEAL', ASSIGNED: 'ASSIGNED', INVALID: 'INVALID'
+  };
+
   /* 需求操作流水动作（只追加，不修改） */
   var DEMAND_ACTION = {
     CREATED: 'CREATED', PUBLISHED: 'PUBLISHED', WITHDRAWN: 'WITHDRAWN',
@@ -265,11 +361,17 @@
   /* ---------------- 会话身份持久化 ----------------
      教师端每个页面的「我是谁」只能来自登录会话，不能从 URL 的学员编号反推。
      会话在同标签页内跨页面延续，保证「接单 → 词库申请 → 开始教学」identity 不变。 */
-  var SESSION_KEY = 'ee_proto_session_v7';
-  /* 只持久化「当前登录教师」这一个身份事实，不持久化角色：
-     角色由各页面调用 setSession 显式声明，避免教师会话污染管理端权限判断。 */
+  var SESSION_KEY = 'ee_proto_session_v8';
+  /* 只持久化「当前登录身份」（教师 / 代理 / 家长），不持久化角色：
+     角色由各页面调用 setSession 显式声明，避免一个角色的会话污染另一个角色的权限判断。 */
   function saveSession() {
-    try { SS.setItem(SESSION_KEY, JSON.stringify({ teacherId: session.teacherId || '' })); } catch (e) { /* 静默 */ }
+    try {
+      SS.setItem(SESSION_KEY, JSON.stringify({
+        teacherId: session.teacherId || '',
+        agentId: session.agentId || '',
+        parentId: session.parentId || ''
+      }));
+    } catch (e) { /* 静默 */ }
   }
   function restoreSession() {
     try {
@@ -277,10 +379,9 @@
       if (!raw) return;
       var o = JSON.parse(raw);
       if (!o || typeof o !== 'object') return;
-      if (o.teacherId) {
-        session.teacherId = o.teacherId;
-        session.operatorName = session.operatorName || '';
-      }
+      if (o.teacherId) session.teacherId = o.teacherId;
+      if (o.agentId) session.agentId = o.agentId;
+      if (o.parentId) session.parentId = o.parentId;
     } catch (e) { /* 损坏则用默认会话 */ }
   }
 
@@ -883,6 +984,390 @@
       });
     })();
 
+    /* ============================================================
+       13. 第七轮域：代理 / 客户线索 / 跟进 / 订单 / 收款 / 续费
+       ------------------------------------------------------------
+       种子只覆盖「各状态各一条」，不追求数量：
+         代理：启用 3 个 + 停用 1 个
+         线索：新线索 / 待联系 / 跟进中 / 意向明确 / 已成交 / 无效 / 已关闭
+         订单：待审核 / 待收款 / 已入账 / 已退款
+         续费：课时不足 1 条 + 套餐临期 1 条
+       历史订单的课时已由 accounts 承载，v8 不再重复入账；
+       新提交订单必须走「收款确认」才产生课时。
+       ============================================================ */
+    var agents = [];
+    var agentLogs = [];
+    var agentLogSeq = 0;
+    (B.agents || []).forEach(function (a) {
+      var pct = /(\d+(?:\.\d+)?)%/.exec(String(a.rule || ''));
+      var fixed = /(\d+(?:\.\d+)?)\s*元/.exec(String(a.rule || ''));
+      agents.push({
+        id: a.id, name: a.name, phone: a.phone || '', wechat: a.wechat || '',
+        type: a.type || '个人代理', status: a.status === '停用' ? '停用' : '启用',
+        recruiterId: '', ownerId: a.owner || '',
+        ruleType: pct ? 'percent' : (fixed ? 'fixed' : 'none'),
+        ruleValue: pct ? Number(pct[1]) : (fixed ? Number(fixed[1]) : 0),
+        ruleText: a.rule || '规则待确认',
+        remark: '', createdBy: a.owner || '', approvedBy: a.owner || '',
+        approvedAt: a.created ? a.created + ' 10:00' : '',
+        createdAt: (a.created || TODAY) + ' 09:00',
+        updatedAt: (a.created || TODAY) + ' 09:00'
+      });
+      agentLogSeq++;
+      agentLogs.push({
+        id: 'AL' + pad(agentLogSeq, 3), agentId: a.id, action: 'CREATED',
+        detail: '代理档案建立（' + (a.type || '个人代理') + '），规则：' + (a.rule || '待确认'),
+        from: '', to: a.status === '停用' ? '停用' : '启用',
+        operatorId: a.owner || '', operatorName: a.owner || '', at: (a.created || TODAY) + ' 09:00'
+      });
+    });
+
+    var products = clone(B.products || []);
+    function productByName(name) {
+      return products.filter(function (p) { return p.name === name; })[0] ||
+        products.filter(function (p) { return String(p.name).indexOf(String(name).replace(/（.*?）/g, '')) >= 0; })[0] || null;
+    }
+    function productByIntent(intent) {
+      var m = /(\d+)\s*课时/.exec(String(intent || ''));
+      if (!m) return products[0] || null;
+      return products.filter(function (p) { return Number(p.hours) === Number(m[1]); })[0] || products[0] || null;
+    }
+
+    var leads = [];
+    var leadFollowUps = [];
+    var leadLogs = [];
+    var leadSeq = 0, followSeq = 0, leadLogSeq = 0;
+    (B.leads || []).forEach(function (l) {
+      leadSeq++;
+      var p = productByIntent(l.intent);
+      leads.push({
+        id: l.id, code: l.id, name: l.name, phone: l.phone,
+        kidName: l.kid || '', grade: l.grade || '', book: l.book || '',
+        channel: l.channel || '其他',
+        agentId: l.agent || '',                       /* 代理归属（成交归属的源头） */
+        followerId: l.follower || '',                 /* 维护归属 */
+        followerName: l.follower || '',
+        intent: l.intent || '', intentProductId: p ? p.id : '',
+        status: l.status || LEAD.NEW, level: l.level || '中',
+        lastFollowAt: l.lastFollow || '', nextFollowAt: l.next ? l.next + ' 10:00' : '',
+        convertedStudentId: '', convertedAt: '',
+        createdBy: l.follower || l.agent || '', createdAt: (l.created || TODAY) + ' 09:00',
+        updatedAt: l.lastFollow || (l.created || TODAY) + ' 09:00',
+        invalidReason: '', remark: ''
+      });
+      leadLogs.push({
+        id: 'LL' + pad(leadLogSeq + 1, 3), leadId: l.id, action: LEAD_ACTION.CREATED,
+        detail: '线索建立，来源 ' + (l.channel || '其他') + (l.agent ? '，代理归属 ' + l.agent : ''),
+        from: '', to: l.status || LEAD.NEW, operatorId: l.follower || l.agent || '',
+        operatorName: l.follower || l.agent || '', at: (l.created || TODAY) + ' 09:00'
+      });
+      leadLogSeq++;
+      if (l.status && l.status !== LEAD.NEW && l.lastFollow) {
+        followSeq++;
+        leadFollowUps.push({
+          id: 'LF' + pad(followSeq, 3), leadId: l.id, type: '电话',
+          content: '已与家长沟通 ' + (l.kid || l.name) + ' 的学习情况，意向 ' + (l.intent || '待确认'),
+          result: l.status === LEAD.INVALID ? '家长暂时不需要' : '家长表示可以考虑',
+          nextAt: l.next ? l.next + ' 10:00' : '',
+          by: l.follower || '', byId: l.follower || '', at: l.lastFollow
+        });
+      }
+    });
+
+    var orders = [];
+    var payments = [];
+    var orderLogs = [];
+    var ordSeq = 0, paySeq = 0, ordLogSeq = 0;
+    var orderStatusMap = { '已生效': ORDER.CREDITED, '部分付款': ORDER.REVIEWED, '待付款': ORDER.PENDING, '退款处理中': ORDER.REFUNDED };
+    (B.orders || []).forEach(function (o) {
+      ordSeq++;
+      var p = productByName(o.product);
+      var st = orderStatusMap[o.status] || ORDER.PENDING;
+      /* 历史演示数据里这两单的账户/收款已经在系统里，按「已收款入账」还原，
+         避免出现「课时账户有余额、订单却未收款」的凭空课时；同时保留一单待收款、一单待审核。 */
+      if (o.id === 'OD20261008002') st = ORDER.CREDITED;
+      if (o.id === 'OD20261025004') st = ORDER.REVIEWED;
+      var lead = leads.filter(function (x) { return x.phone === o.phone; })[0] || null;
+      var stu = (B.students || []).filter(function (x) { return x.id === o.student; })[0] || null;
+      var agentId = o.agent || (lead ? lead.agentId : '');
+      /* 让「课时不足」的续费机会可追溯到代理：历史订单 OD20261008002 归 A002 */
+      if (o.id === 'OD20261008002' && !agentId) agentId = 'A002';
+      var paid = Number(o.paid) || 0;
+      if (st === ORDER.CREDITED) paid = Number(o.amount) || paid;
+      var acc = st === ORDER.CREDITED ? (B.accounts || []).filter(function (a) {
+        return a.student === o.studentName && a.product === o.product;
+      })[0] || null : null;
+      var order = {
+        id: o.id, code: o.id, type: ORDER_TYPE.NEW,
+        leadId: lead ? lead.id : '', studentId: o.student,
+        parentId: stu ? stu.parent : '', agentId: agentId,
+        followerId: lead ? lead.followerId : '', ownerAgentId: agentId,
+        productId: p ? p.id : '', productName: o.product, hours: Number(o.buy) || 0,
+        gift: Number(o.gift) || 0, totalHours: (Number(o.buy) || 0) + (Number(o.gift) || 0),
+        amount: Number(o.amount) || 0, paidAmount: paid,
+        status: st, payMethod: o.payType || '',
+        paymentId: '', lessonAccountId: acc ? acc.id : '',
+        creditedAt: st === ORDER.CREDITED ? (o.pay || TODAY) + ' 10:00' : '',
+        creditBy: st === ORDER.CREDITED ? (o.agent || '张敏') : '',
+        createdBy: lead ? lead.followerId : (o.agent || ''),
+        createdAt: o.created || (TODAY + ' 09:00'), updatedAt: o.created || (TODAY + ' 09:00'),
+        reviewedBy: st === ORDER.CREDITED ? '王敏' : '', reviewedAt: st === ORDER.CREDITED ? (o.pay || TODAY) + ' 10:00' : '',
+        renewalOpportunityId: '', cancelReason: '', remark: ''
+      };
+      if (st === ORDER.CREDITED || st === ORDER.REFUNDED) {
+        paySeq++;
+        order.paymentId = 'PY' + pad(paySeq, 3);
+        payments.push({
+          id: order.paymentId, orderId: order.id, amount: paid || order.amount,
+          method: o.payType || '银行转账',
+          status: st === ORDER.REFUNDED ? PAY.REVERSED : PAY.CONFIRMED,
+          confirmedBy: '王敏', confirmedAt: (o.pay || TODAY) + ' 10:00',
+          note: st === ORDER.REFUNDED ? '订单退款，原收款冲回（历史保留）' : '历史订单收款',
+          createdAt: (o.pay || TODAY) + ' 09:30', updatedAt: (o.pay || TODAY) + ' 10:00'
+        });
+      } else if (st === ORDER.REVIEWED && paid) {
+        paySeq++;
+        order.paymentId = 'PY' + pad(paySeq, 3);
+        payments.push({
+          id: order.paymentId, orderId: order.id, amount: paid, method: o.payType || '银行转账',
+          status: PAY.PENDING, confirmedBy: '', confirmedAt: '',
+          note: '部分付款待确认，未确认前不入课时',
+          createdAt: (o.pay || TODAY) + ' 09:30', updatedAt: (o.pay || TODAY) + ' 09:30'
+        });
+      }
+      orders.push(order);
+      ordLogSeq++;
+      orderLogs.push({
+        id: 'OL' + pad(ordLogSeq, 3), orderId: order.id, action: 'CREATED',
+        detail: '订单创建：' + order.productName + ' / ' + order.totalHours + ' 课时',
+        from: '', to: ORDER.PENDING, operatorId: order.createdBy, operatorName: order.createdBy,
+        at: order.createdAt
+      });
+      if (st !== ORDER.PENDING) {
+        ordLogSeq++;
+        orderLogs.push({
+          id: 'OL' + pad(ordLogSeq, 3), orderId: order.id,
+          action: st === ORDER.CREDITED ? 'CREDITED' : (st === ORDER.REFUNDED ? 'REFUNDED' : 'REVIEWED'),
+          detail: st === ORDER.CREDITED ? '收款确认，课时入账 ' + order.totalHours + ' 课时' :
+            (st === ORDER.REFUNDED ? '订单退款' : '审核通过，待确认收款'),
+          from: ORDER.PENDING, to: st, operatorId: '王敏', operatorName: '王敏',
+          at: (o.pay || TODAY) + ' 10:00'
+        });
+      }
+    });
+
+    /* 已成交线索回填学员，保证「线索 → 学员 → 订单」可串联 */
+    leads.forEach(function (l) {
+      if (l.convertedStudentId || l.status !== LEAD.DEAL) return;
+      var s = (B.students || []).filter(function (x) {
+        var p = (B.parents || []).filter(function (pp) { return pp.id === x.parent; })[0];
+        return p && p.phone === l.phone;
+      })[0];
+      if (s) {
+        l.convertedStudentId = s.id;
+        l.convertedAt = (s.created || TODAY) + ' 10:00';
+      }
+    });
+
+    var accounts = clone(B.accounts || []);
+    var flows = clone(B.flows || []);
+    var stuByName = {};
+    (B.students || []).forEach(function (s) { stuByName[s.name] = s; });
+    accounts.forEach(function (a) {
+      var s = stuByName[a.student];
+      a.studentId = s ? s.id : '';
+      a.parentId = s ? s.parent : '';
+      a.hours = Number(a.buy) || 0;
+      a.gift = Number(a.gift) || 0;
+      a.used = Number(a.used) || 0;
+      a.adjust = Number(a.adjust) || 0;
+      a.remain = Number(a.remain) || 0;
+      a.orderId = (orders.filter(function (o) { return o.lessonAccountId === a.id; })[0] || {}).id || '';
+      a.expireAt = a.expireAt || a.valid || '';
+    });
+    flows.forEach(function (f) {
+      var s = stuByName[f.student];
+      f.studentId = s ? s.id : '';
+      var m = /(OD\w+)/.exec(String(f.ref || ''));
+      f.orderId = m ? m[1] : (f.orderId || '');
+      f.accountId = f.account;
+    });
+
+    /* 补齐历史链路：每个课时账户都必须能追溯到一笔已收款订单；
+       没有订单的账户补一笔历史已入账订单，保证「课时 == 订单」可核对。 */
+    accounts.forEach(function (a) {
+      if (a.orderId) return;
+      var s = stuByName[a.student];
+      if (!s) return;
+      var p = productByName(a.product) || { id: '', name: a.product, price: a.buy * 120, gift: 0, validMonths: 12 };
+      ordSeq++;
+      var oid = 'OD' + TODAY.replace(/-/g, '') + 'S' + pad(ordSeq, 3);
+      var createdDate = a.expireAt ? addMonths(a.expireAt, -12) : TODAY;
+      var o = {
+        id: oid, code: oid, type: ORDER_TYPE.NEW, leadId: '',
+        studentId: s.id, parentId: s.parent, agentId: 'A003',
+        followerId: '', ownerAgentId: 'A003',
+        productId: p.id, productName: a.product, hours: Number(a.buy) || 0,
+        gift: Number(a.gift) || 0, totalHours: Number(a.buy) + Number(a.gift),
+        amount: Number(p.price) || 0, paidAmount: Number(p.price) || 0,
+        status: ORDER.CREDITED, payMethod: '微信', paymentId: '', lessonAccountId: a.id,
+        creditedAt: createdDate + ' 10:00', creditBy: '张敏',
+        reviewedBy: '王敏', reviewedAt: createdDate + ' 10:00',
+        renewalOpportunityId: '', createdBy: '张敏',
+        createdAt: createdDate + ' 09:00', updatedAt: createdDate + ' 10:00',
+        cancelReason: '', remark: '历史演示数据补齐（账户可追溯到订单）'
+      };
+      paySeq++;
+      o.paymentId = 'PY' + pad(paySeq, 3);
+      payments.push({
+        id: o.paymentId, orderId: oid, amount: o.amount, method: '微信',
+        status: PAY.CONFIRMED, confirmedBy: '王敏', confirmedAt: createdDate + ' 10:00',
+        note: '历史订单收款（补齐演示链路）', createdAt: createdDate + ' 09:30', updatedAt: createdDate + ' 10:00'
+      });
+      orders.push(o);
+      a.orderId = oid;
+      a.studentId = s.id;
+      a.parentId = s.parent;
+      orderLogs.push({
+        id: 'OL' + pad(ordLogSeq + 1, 3), orderId: oid, action: 'CREDITED',
+        detail: '历史订单收款确认，课时入账 ' + o.totalHours + ' 课时',
+        from: ORDER.PENDING, to: ORDER.CREDITED, operatorId: '王敏', operatorName: '王敏',
+        at: createdDate + ' 10:00'
+      });
+      ordLogSeq++;
+    });
+
+    /* 每个已入账账户补一笔购买/赠送入账流水（已存在的跳过），让订单与课时账逐个对得上 */
+    var flowSeq = flows.length;
+    accounts.forEach(function (a) {
+      var o = orders.filter(function (x) { return x.lessonAccountId === a.id; })[0];
+      if (!o || o.status !== ORDER.CREDITED) return;
+      var at = o.creditedAt || (TODAY + ' 10:00');
+      var stampId = at.slice(0, 10).replace(/-/g, '');
+      if (!flows.some(function (f) { return f.account === a.id && f.type === '购买入账'; }) && a.buy > 0) {
+        flowSeq++;
+        flows.push({
+          id: 'FL' + stampId + pad(flowSeq, 3), student: a.student, studentId: a.studentId,
+          account: a.id, accountId: a.id, type: '购买入账', delta: a.buy,
+          before: 0, after: a.buy, ref: o.id + ' 收款确认', op: '张敏', time: at,
+          note: '订单收款确认后入账', orderId: o.id, paymentId: o.paymentId
+        });
+      }
+      if (!flows.some(function (f) { return f.account === a.id && f.type === '赠送入账'; }) && a.gift > 0) {
+        flowSeq++;
+        flows.push({
+          id: 'FL' + stampId + pad(flowSeq, 3), student: a.student, studentId: a.studentId,
+          account: a.id, accountId: a.id, type: '赠送入账', delta: a.gift,
+          before: a.buy, after: Number(a.buy) + Number(a.gift), ref: o.id + ' 赠送课时',
+          op: '张敏', time: at, note: '套餐赠送 ' + a.gift + ' 课时',
+          orderId: o.id, paymentId: o.paymentId
+        });
+      }
+      flows.forEach(function (f) {
+        if (f.account === a.id && !f.orderId) f.orderId = o.id;
+      });
+    });
+
+    /* 补一笔“还没收款”的演示订单：待审核 1 条，未收款不产生课时。
+       另一单 OD20261025004 已按「待收款」保留。 */
+    (function () {
+      var pendingStu = (B.students || []).filter(function (x) { return x.id === 'S2026009'; })[0];
+      [
+        { stu: pendingStu, status: '待审核', agent: 'A002', pid: 'PRD02', date: TODAY + ' 10:00' }
+      ].forEach(function (item) {
+        if (!item.stu) return;
+        var p = products.filter(function (x) { return x.id === item.pid; })[0] || products[1];
+        ordSeq++;
+        var oid = 'OD' + TODAY.replace(/-/g, '') + pad(ordSeq, 3);
+        var o = {
+          id: oid, code: oid, type: ORDER_TYPE.NEW, leadId: '',
+          studentId: item.stu.id, parentId: item.stu.parent, agentId: item.agent,
+          followerId: '', ownerAgentId: item.agent, productId: p.id, productName: p.name,
+          hours: p.hours, gift: p.gift, totalHours: p.hours + p.gift,
+          amount: p.price, paidAmount: 0, status: item.status, payMethod: '',
+          paymentId: '', lessonAccountId: '', creditedAt: '', creditBy: '',
+          reviewedBy: item.status === '待收款' ? '王敏' : '',
+          reviewedAt: item.status === '待收款' ? item.date : '',
+          renewalOpportunityId: '', createdBy: '张敏',
+          createdAt: item.date, updatedAt: item.date, cancelReason: '',
+          remark: '演示订单：' + item.status + '，未收款不产生课时'
+        };
+        orders.push(o);
+        orderLogs.push({
+          id: 'OL' + pad(ordLogSeq + 1, 3), orderId: oid, action: 'CREATED',
+          detail: '提交报名订单：' + p.name + ' / ' + o.totalHours + ' 课时，' + item.status,
+          from: '', to: ORDER.PENDING, operatorId: '张敏', operatorName: '张敏', at: item.date
+        });
+        ordLogSeq++;
+      });
+    })();
+
+    /* 学员剩余课时以账户为唯一口径：没有账户就是 0（新建学员不赠送课时） */
+    (B.students || []).forEach(function (s) {
+      var sum = accounts.filter(function (a) { return a.studentId === s.id; })
+        .reduce(function (n, a) { return n + Number(a.remain || 0); }, 0);
+      s.remain = sum;
+      if (!sum) s.product = '';
+    });
+
+    /* 学习反馈：只取已发布报告，代理可见；未发布报告不进入反馈表 */
+    var learningFeedbacks = [];
+    var fbSeq = 0;
+    reports.forEach(function (rp) {
+      if (rp.status !== REPORT_STATUS.PUBLISHED) return;
+      fbSeq++;
+      learningFeedbacks.push({
+        id: 'FB' + pad(fbSeq, 3), studentId: rp.studentId, teacherId: rp.teacherId,
+        courseId: rp.courseId, reportId: rp.id, title: rp.title,
+        performance: rp.content.performance || '', weak: rp.content.weak || '',
+        next: rp.content.next || '', status: '已发布', visibleToAgent: true,
+        publishedAt: rp.publishedAt || rp.createdAt || '', createdAt: rp.createdAt || ''
+      });
+    });
+    /* 第二个学员的反馈：让 A003 也能看到自己客户的已发布反馈 */
+    (function () {
+      if (!(B.students || []).some(function (x) { return x.id === 'S2026004'; })) return;
+      fbSeq++;
+      learningFeedbacks.push({
+        id: 'FB' + pad(fbSeq, 3), studentId: 'S2026004', teacherId: 'T004',
+        courseId: 'C20261029005', reportId: '', title: 'Unit 1 单词初筛 · 课后反馈',
+        performance: '本节完成 20 个单词初筛，12 个已掌握。',
+        weak: '字母组合 th / sh 的发音还需要多听多读。',
+        next: '下节课继续 Unit 1 剩余单词，并加入 5 个待复习词的莱特纳复习。',
+        status: '已发布', visibleToAgent: true,
+        publishedAt: '2026-10-29 19:30', createdAt: '2026-10-29 19:20'
+      });
+    })();
+
+    /* 续费机会：只为有明确代理归属的学员生成，来源、剩余课时、到期日都可追溯 */
+    function attributionOfStudent(studentId) {
+      var os = orders.filter(function (o) { return o.studentId === studentId && o.status === ORDER.CREDITED; })
+        .sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+      if (os.length && os[0].agentId) return { agentId: os[0].agentId, orderId: os[0].id, leadId: os[0].leadId || '' };
+      var ls = leads.filter(function (x) { return x.convertedStudentId === studentId; })[0];
+      if (ls) return { agentId: ls.agentId, orderId: '', leadId: ls.id };
+      return { agentId: '', orderId: '', leadId: '' };
+    }
+    var renewalOpportunities = [];
+    var renewalSeq = 0;
+    accounts.forEach(function (a) {
+      if (!a.studentId) return;
+      var at = attributionOfStudent(a.studentId);
+      if (!at.agentId) return;
+      var low = Number(a.remain) < LESSON_ALERT_THRESHOLD;
+      var near = a.expireAt && a.expireAt >= TODAY && a.expireAt <= addDays(TODAY, EXPIRE_ALERT_DAYS);
+      if (!low && !near) return;
+      renewalSeq++;
+      renewalOpportunities.push({
+        id: 'RN' + pad(renewalSeq, 3), studentId: a.studentId, leadId: at.leadId,
+        agentId: at.agentId, accountId: a.id, orderId: at.orderId,
+        sourceType: low ? '课时不足' : '套餐临期',
+        remain: a.remain, threshold: LESSON_ALERT_THRESHOLD, expireAt: a.expireAt || '',
+        status: RENEWAL.PENDING, handledBy: '', remark: '',
+        createdAt: TODAY + ' 08:30', updatedAt: TODAY + ' 08:30', renewalOrderId: ''
+      });
+    });
+
     return {
       version: VERSION,
       today: TODAY,
@@ -896,10 +1381,26 @@
             return x ? Math.max(m, Number(x[1])) : m;
           }, 0),
           UA: users.length, TS: teacherStudents.length, TCH: coopSeq, TCL: 0,
-          SD: demandSeq, TRS: respSeq, DL: dlogSeq, WBR: wbrSeq, SWB: swbSeq
+          SD: demandSeq, TRS: respSeq, DL: dlogSeq, WBR: wbrSeq, SWB: swbSeq,
+          AG: agents.length, LD: leadSeq, LF: followSeq, LLOG: leadLogSeq,
+          ORD: ordSeq, PY: paySeq, OLOG: ordLogSeq,
+          RN: renewalSeq, FB: fbSeq, ALOG: agentLogSeq,
+          FL: flows.length, ACC: accounts.length
         },
         builtAt: stamp()
       },
+      /* 第七轮域 */
+      agents: agents,
+      agentLogs: agentLogs,
+      products: products,
+      leads: leads,
+      leadFollowUps: leadFollowUps,
+      leadLogs: leadLogs,
+      orders: orders,
+      payments: payments,
+      orderLogs: orderLogs,
+      renewalOpportunities: renewalOpportunities,
+      learningFeedbacks: learningFeedbacks,
       students: clone(B.students || []),
       teachers: teachers,
       users: users,
@@ -966,6 +1467,137 @@
       exitRequireNoCourses: true,
       maxStudentsPerTeacher: 6
     };
+    d.config.renewal = d.config.renewal || {
+      lessonThreshold: LESSON_ALERT_THRESHOLD,
+      expireDays: EXPIRE_ALERT_DAYS
+    };
+
+    /* ---- 第七轮域：结构性默认值 ---- */
+    d.agents = d.agents || [];
+    d.agentLogs = d.agentLogs || [];
+    d.products = d.products || [];
+    d.leads = d.leads || [];
+    d.leadFollowUps = d.leadFollowUps || [];
+    d.leadLogs = d.leadLogs || [];
+    d.orders = d.orders || [];
+    d.payments = d.payments || [];
+    d.orderLogs = d.orderLogs || [];
+    d.renewalOpportunities = d.renewalOpportunities || [];
+    d.learningFeedbacks = d.learningFeedbacks || [];
+    d.accounts = d.accounts || [];
+    d.flows = d.flows || [];
+
+    d.agents.forEach(function (a) {
+      a.status = AGENT_STATUS.indexOf(a.status) >= 0 ? a.status : '待审核';
+      a.type = a.type || '个人代理';
+      a.phone = a.phone || ''; a.wechat = a.wechat || '';
+      a.ruleType = a.ruleType || 'none';
+      if (typeof a.ruleValue !== 'number') a.ruleValue = 0;
+      a.ruleText = a.ruleText || '规则待确认';
+      a.recruiterId = a.recruiterId || '';
+      a.ownerId = a.ownerId || '';
+      a.createdAt = a.createdAt || (TODAY + ' 09:00');
+      a.updatedAt = a.updatedAt || a.createdAt;
+    });
+
+    d.products.forEach(function (p) {
+      p.hours = Number(p.hours) || 0;
+      p.gift = Number(p.gift) || 0;
+      p.amount = Number(p.amount || p.price) || 0;
+      p.name = p.name || '';
+      p.status = p.status === '停用' ? '停用' : '在售';
+      var vm = /\d+/.exec(String(p.validMonths || p.valid || ''));
+      p.validMonths = vm ? Number(vm[0]) : 12;
+      p.description = p.description || '';
+    });
+
+    d.leads.forEach(function (l) {
+      l.status = LEAD_STATUS.indexOf(l.status) >= 0 ? l.status : LEAD.NEW;
+      l.level = LEAD_LEVELS.indexOf(l.level) >= 0 ? l.level : '中';
+      l.agentId = l.agentId || '';
+      l.followerId = l.followerId || l.agentId || '';
+      l.followerName = l.followerName || l.followerId;
+      l.kidName = l.kidName || ''; l.grade = l.grade || ''; l.book = l.book || '';
+      l.intentProductId = l.intentProductId || '';
+      l.convertedStudentId = l.convertedStudentId || '';
+      l.convertedAt = l.convertedAt || '';
+      l.createdAt = l.createdAt || (TODAY + ' 09:00');
+      l.updatedAt = l.updatedAt || l.createdAt;
+    });
+
+    d.leadFollowUps.forEach(function (f) {
+      f.type = f.type || '电话';
+      f.content = f.content || '';
+      f.by = f.by || ''; f.byId = f.byId || '';
+      f.at = f.at || f.createdAt || (TODAY + ' 09:00');
+    });
+
+    d.orders.forEach(function (o) {
+      o.type = o.type === ORDER_TYPE.RENEW ? ORDER_TYPE.RENEW : ORDER_TYPE.NEW;
+      o.status = ORDER_STATUS.indexOf(o.status) >= 0 ? o.status : ORDER.PENDING;
+      o.hours = Number(o.hours) || 0;
+      o.gift = Number(o.gift) || 0;
+      o.totalHours = Number(o.totalHours) || (o.hours + o.gift);
+      o.amount = Number(o.amount) || 0;
+      o.paidAmount = Number(o.paidAmount) || 0;
+      o.agentId = o.agentId || '';
+      o.ownerAgentId = o.ownerAgentId || o.agentId;
+      o.leadId = o.leadId || ''; o.studentId = o.studentId || ''; o.parentId = o.parentId || '';
+      o.paymentId = o.paymentId || ''; o.lessonAccountId = o.lessonAccountId || '';
+      o.creditedAt = o.creditedAt || '';
+      o.renewalOpportunityId = o.renewalOpportunityId || '';
+      o.createdAt = o.createdAt || (TODAY + ' 09:00');
+      o.updatedAt = o.updatedAt || o.createdAt;
+    });
+
+    d.payments.forEach(function (p) {
+      p.status = PAY_STATUS.indexOf(p.status) >= 0 ? p.status : PAY.PENDING;
+      p.amount = Number(p.amount) || 0;
+      p.method = p.method || '微信';
+      p.confirmedBy = p.confirmedBy || ''; p.confirmedAt = p.confirmedAt || '';
+      p.createdAt = p.createdAt || (TODAY + ' 09:00');
+    });
+
+    d.renewalOpportunities.forEach(function (r) {
+      r.status = RENEWAL_STATUS.indexOf(r.status) >= 0 ? r.status : RENEWAL.PENDING;
+      r.sourceType = RENEWAL_SOURCE.indexOf(r.sourceType) >= 0 ? r.sourceType : '课时不足';
+      r.remain = Number(r.remain) || 0;
+      r.createdAt = r.createdAt || (TODAY + ' 08:30');
+      r.updatedAt = r.updatedAt || r.createdAt;
+      r.renewalOrderId = r.renewalOrderId || '';
+    });
+
+    d.learningFeedbacks.forEach(function (f) {
+      f.status = f.status === '草稿' ? '草稿' : '已发布';
+      if (f.visibleToAgent === undefined) f.visibleToAgent = true;
+      f.createdAt = f.createdAt || (TODAY + ' 09:00');
+      f.publishedAt = f.publishedAt || (f.status === '已发布' ? f.createdAt : '');
+    });
+
+    ['AG', 'LD', 'LF', 'LLOG', 'ORD', 'PY', 'OLOG', 'RN', 'FB', 'ALOG', 'FL', 'ACC'].forEach(function (k) {
+      d.meta.seq[k] = d.meta.seq[k] || 0;
+    });
+    d.meta.seq.AG = Math.max(d.meta.seq.AG, d.agents.length);
+    d.meta.seq.ALOG = Math.max(d.meta.seq.ALOG, d.agentLogs.length);
+    d.meta.seq.FL = Math.max(d.meta.seq.FL, d.flows.length);
+    var accMax = d.meta.seq.ACC || 0;
+    d.accounts.forEach(function (a) {
+      var m = /^ACC-\d{4}-(\d+)/.exec(String(a.id || ''));
+      if (m) accMax = Math.max(accMax, Number(m[1]));
+    });
+    d.flows.forEach(function (f) {
+      var m = /^ACC-\d{4}-(\d+)/.exec(String(f.account || ''));
+      if (m) accMax = Math.max(accMax, Number(m[1]));
+    });
+    d.meta.seq.ACC = Math.max(d.meta.seq.ACC, accMax);
+    d.meta.seq.LD = Math.max(d.meta.seq.LD, d.leads.length);
+    d.meta.seq.LF = Math.max(d.meta.seq.LF, d.leadFollowUps.length);
+    d.meta.seq.LLOG = Math.max(d.meta.seq.LLOG, d.leadLogs.length);
+    d.meta.seq.ORD = Math.max(d.meta.seq.ORD, d.orders.length);
+    d.meta.seq.PY = Math.max(d.meta.seq.PY, d.payments.length);
+    d.meta.seq.OLOG = Math.max(d.meta.seq.OLOG, d.orderLogs.length);
+    d.meta.seq.RN = Math.max(d.meta.seq.RN, d.renewalOpportunities.length);
+    d.meta.seq.FB = Math.max(d.meta.seq.FB, d.learningFeedbacks.length);
 
     var stuByName = {}, teaByName = {};
     (d.students || []).forEach(function (s) { stuByName[s.name] = s.id; });
@@ -1165,6 +1797,31 @@
       var tt = act ? d.teachers.filter(function (x) { return x.id === act.teacherId; })[0] : null;
       s.teacher = tt ? tt.id : '';
       s.teacherName = tt ? tt.name : '未分配';
+    });
+
+    /* 课时余额唯一口径：accounts.remain 之和。
+       任何「没有账户却有课时」的历史脏数据在这里被清零，避免凭空课时。 */
+    d.students.forEach(function (s) {
+      var sum = d.accounts.filter(function (a) {
+        return (a.studentId && a.studentId === s.id) || (!a.studentId && a.student === s.name);
+      }).reduce(function (n, a) { return n + Number(a.remain || 0); }, 0);
+      s.remain = sum;
+      if (!sum && s.product) s.product = '';
+    });
+    d.accounts.forEach(function (a) {
+      if (a.studentId) return;
+      var s = d.students.filter(function (x) { return x.name === a.student; })[0];
+      if (s) { a.studentId = s.id; a.parentId = a.parentId || s.parent || ''; }
+    });
+    /* 订单与课时账户互链：已入账订单必须有账户；账户必须能追溯到订单 */
+    d.orders.forEach(function (o) {
+      if (o.status !== ORDER.CREDITED) return;
+      if (!o.lessonAccountId) {
+        var acc = d.accounts.filter(function (a) {
+          return a.orderId === o.id || (a.studentId === o.studentId && a.product === o.productName);
+        })[0];
+        if (acc) o.lessonAccountId = acc.id;
+      }
     });
 
     var coopSeqN = 0;
@@ -1467,6 +2124,67 @@
     'leitnerTasks', 'leitnerRecords', 'leitnerOps', 'plans21', 'plan21Tasks', 'plan21Records',
     'articleTasks', 'articleTaskDetails', 'courses', 'courseRecords', 'reports', 'flows', 'accounts',
     'flowReversals', 'familyChecks'];
+  var V8_COLLECTIONS = ['agents', 'agentLogs', 'products', 'leads', 'leadFollowUps', 'leadLogs', 'orders',
+    'payments', 'orderLogs', 'renewalOpportunities', 'learningFeedbacks'];
+
+  /**
+   * v7 → v8 一次性迁移。
+   * v8 在 v7 的基础上新增代理/线索/订单/收款/续费/学习反馈六组表，
+   * 原有学习域集合结构不变，因此按集合原样搬运，新表用种子补齐。
+   * 永不删除 ee_proto_store_v7；迁移结果写入 db.meta.migration 供界面提示。
+   * 返回 null 表示没有可迁移的 v7 数据。
+   */
+  function loadLegacyV7() {
+    var raw = null;
+    try { raw = SS.getItem(LEGACY_KEY_V7); } catch (e) { return null; }
+    if (!raw) return null;
+    var old;
+    try { old = JSON.parse(raw); } catch (e) { old = null; }
+    if (!old || typeof old !== 'object') {
+      try { console.warn('[Store] ' + LEGACY_KEY_V7 + ' 无法解析，已保留原始数据作为备份，演示数据重置为 v8 种子'); } catch (e) { }
+      var bad = normalizeDb(buildSeed());
+      bad.meta.migration = {
+        from: 'v7', to: 'v8', at: stamp(), ok: false,
+        reason: 'v7 数据无法解析',
+        strategy: '迁移失败，未修改旧 key，演示数据已重置为 v8 种子',
+        carried: [], seeded: [], backupKey: LEGACY_KEY_V7
+      };
+      return bad;
+    }
+    try {
+      var seed = buildSeed();
+      var out = normalizeDb(seed);
+      var moved = [], reset = [];
+      MIGRATABLE_KEYS.concat(V8_COLLECTIONS).forEach(function (k) {
+        if (!Array.isArray(old[k]) || !Array.isArray(seed[k])) { reset.push(k); return; }
+        out[k] = clone(old[k]);
+        moved.push(k);
+      });
+      out.version = VERSION;
+      out.meta = out.meta || {};
+      out.meta.migration = {
+        from: 'v7', to: 'v8', at: stamp(), ok: true,
+        strategy: '按集合搬运 + 新表用种子补齐；v7 原始数据保留在 ' + LEGACY_KEY_V7,
+        carried: moved, seeded: reset, backupKey: LEGACY_KEY_V7
+      };
+      try {
+        console.info('[Store] 已从 v7 迁移本地演示数据：保留 ' + moved.length + ' 个集合，' +
+          reset.length + ' 个集合用种子补齐；' + LEGACY_KEY_V7 + ' 已保留为备份');
+      } catch (e) { }
+      return normalizeDb(out);
+    } catch (e) {
+      /* 结构无法安全映射：旧 key 原样保留，用 v8 种子启动，并把原因写进 meta 供页面提示 */
+      try { console.warn('[Store] v7 迁移失败，已保留 ' + LEGACY_KEY_V7 + ' 原始数据，演示数据已重置：' + e.message); } catch (x) { }
+      var bad = normalizeDb(buildSeed());
+      bad.meta.migration = {
+        from: 'v7', to: 'v8', at: stamp(), ok: false,
+        reason: String(e && e.message || e),
+        strategy: '迁移失败，未修改旧 key，演示数据已重置为 v8 种子',
+        carried: [], seeded: [], backupKey: LEGACY_KEY_V7
+      };
+      return bad;
+    }
+  }
 
   function loadLegacyV6() {
     var raw = null;
@@ -1476,7 +2194,7 @@
     try { old = JSON.parse(raw); } catch (e) { old = null; }
     if (!old || typeof old !== 'object') {
       /* 旧数据损坏：保留原 key 不动，退回种子并明确提示 */
-      try { console.warn('[Store] ' + LEGACY_KEY + ' 无法解析，已保留原始数据作为备份，演示数据重置为 v7 种子'); } catch (e) { }
+      try { console.warn('[Store] ' + LEGACY_KEY + ' 无法解析，已保留原始数据作为备份，演示数据重置为 v8 种子'); } catch (e) { }
       return null;
     }
     var seed = buildSeed();
@@ -1484,7 +2202,7 @@
     var moved = [], reset = [];
     MIGRATABLE_KEYS.forEach(function (k) {
       if (!Array.isArray(old[k])) { reset.push(k); return; }
-      /* 只搬运结构一致的数组：两侧都存在该集合才覆盖，避免把 v6 的未知结构塞进 v7 */
+      /* 只搬运结构一致的数组：两侧都存在该集合才覆盖，避免把 v6 的未知结构塞进 v8 */
       if (!Array.isArray(seed[k])) { reset.push(k); return; }
       out[k] = clone(old[k]);
       moved.push(k);
@@ -1492,9 +2210,9 @@
     out.version = VERSION;
     out.meta = out.meta || {};
     out.meta.migration = {
-      from: 'v6', to: 'v7', at: stamp(),
+      from: 'v6', to: 'v8', at: stamp(), ok: true,
       strategy: '按集合搬运 + 缺失集合用种子补齐；v6 原始数据保留在 ' + LEGACY_KEY,
-      carried: moved, seeded: reset
+      carried: moved, seeded: reset, backupKey: LEGACY_KEY
     };
     try {
       console.info('[Store] 已从 v6 迁移本地演示数据：保留 ' + moved.length + ' 个集合，' +
@@ -1515,6 +2233,8 @@
         }
       }
     } catch (e) { /* 损坏则重建 */ }
+    var legacyV7 = loadLegacyV7();
+    if (legacyV7) { db = legacyV7; save(); return db; }
     var legacy = loadLegacyV6();
     if (legacy) { db = legacy; save(); return db; }
     db = normalizeDb(buildSeed());
@@ -3398,7 +4118,10 @@
     if (!c) fail('课程不存在');
     var stu = student(c.studentId);
     if (!stu) return { ok: false, reason: '课程未关联有效学员，无法扣课' };
-    var acc = db.accounts.filter(function (a) { return a.student === stu.name; })[0];
+    var accs = db.accounts.filter(function (a) {
+      return a.studentId === stu.id || a.student === stu.name;
+    });
+    var acc = accs.filter(function (a) { return Number(a.remain) > 0; })[0] || accs[0];
     if (!acc) {
       c.deductState = '扣课异常';
       save();
@@ -3412,16 +4135,21 @@
     var before = acc.remain;
     acc.remain = before - 1;
     acc.used = (acc.used || 0) + 1;
+    acc.updatedAt = stamp();
     var f = {
       id: 'FL' + TODAY.replace(/-/g, '') + ('000' + (db.flows.length + 1)).slice(-3),
-      student: stu.name, account: acc.id, type: '正常扣课',
+      student: stu.name, studentId: stu.id, account: acc.id, accountId: acc.id, type: '正常扣课',
       delta: -1, before: before, after: acc.remain,
       ref: c.id + ' 课程完成', op: by || '系统', time: stamp(),
-      note: '课程完成后自动扣课', courseId: c.id
+      note: '课程完成后自动扣课', courseId: c.id, orderId: acc.orderId || ''
     };
     db.flows.push(f);
     c.deductState = '已扣课';
     c.deduct = '已扣课';
+    setLessonAccountStatus(acc, db.config.renewal.lessonThreshold);
+    syncStudentRemain(stu.id);
+    save();
+    refreshRenewalOpportunities(stu.id);
     save();
     return { ok: true, flow: f, account: acc, remaining: acc.remain };
   }
@@ -3569,6 +4297,8 @@
     rp.status = REPORT_STATUS.PUBLISHED;
     rp.publishedAt = stamp();
     rp.publishedBy = by || rp.teacherId;
+    /* 报告发布即生成一条「已发布」学习反馈，代理与家长只看这一层投影 */
+    syncFeedbackFromReport(rp);
     save();
     return { ok: true, report: rp };
   }
@@ -4620,10 +5350,19 @@
     if (s.operatorId) session.operatorId = s.operatorId;
     /* 教师身份单独记：教师端所有「我的 / 自己的」判断都靠它，不靠姓名猜 */
     if ('teacherId' in s) session.teacherId = s.teacherId || '';
+    if ('agentId' in s) session.agentId = s.agentId || '';
+    if ('parentId' in s) session.parentId = s.parentId || '';
     saveSession();
     return clone(session);
   }
   function currentSession() { return clone(session); }
+  /* 演示用的默认操作人：集中放在数据层，页面不再写死任何姓名。
+     真实登录接入后，这里改为读取当前登录用户即可。 */
+  var OPERATOR_BY_ROLE = { admin: '张敏', staff: '陈静', ops: '王敏' };
+  function operatorForRole(role) {
+    if (OPERATOR_BY_ROLE[role]) return OPERATOR_BY_ROLE[role];
+    return session.role === role ? session.operatorName : '';
+  }
   function can(action) { return (PERMS[action] || []).indexOf(session.role) >= 0; }
   function assertCan(action) {
     if (!can(action)) {
@@ -7029,6 +7768,1419 @@
     };
   }
 
+  /* ============================================================
+     第七轮：代理获客 / 线索 / 报名订单 / 收款 / 课时 / 续费 / 反馈
+     ------------------------------------------------------------
+     分层约定：
+       1) 所有写操作先 assertCan + 归属校验，再快照 db，失败 JSON.parse 回滚；
+       2) 代理 / 家长 / 教师只拿「投影」，越权判断在 Store 里，不靠页面隐藏按钮；
+       3) 课时只认 accounts，订单只有「收款已确认」才生成账户；
+       4) 归属：lead.agentId（代理归属）、lead.followerId（维护归属）、
+          order.agentId（成交归属）三处留痕，变更写 leadLogs。
+     安全说明：以上过滤在原型阶段由 Store 承担；真实上线必须把这些投影
+     下沉到服务端接口（代理只能请求自己的 customerId，家长只能请求自己的孩子），
+     前端不可信。
+     ============================================================ */
+
+  function agent(id) { return db.agents.filter(function (a) { return a.id === id; })[0] || null; }
+  function agents() { return db.agents; }
+  function product(id) { return db.products.filter(function (p) { return p.id === id; })[0] || null; }
+  function products() { return db.products; }
+  function lead(id) { return db.leads.filter(function (l) { return l.id === id; })[0] || null; }
+  function order(id) { return db.orders.filter(function (o) { return o.id === id; })[0] || null; }
+  function payment(id) { return db.payments.filter(function (p) { return p.id === id; })[0] || null; }
+  function renewal(id) { return db.renewalOpportunities.filter(function (r) { return r.id === id; })[0] || null; }
+  function parent(id) { return db.parents.filter(function (p) { return p.id === id; })[0] || null; }
+
+  function defaultAgentId() {
+    var a = db.agents.filter(function (x) { return x.status === '启用'; })[0] || db.agents[0];
+    return a ? a.id : '';
+  }
+  function sessionAgentId() {
+    if (session.agentId) return session.agentId;
+    return defaultAgentId();
+  }
+  function defaultParentId() {
+    var p = db.parents.filter(function (x) { return x.status !== '停用'; })[0] || db.parents[0];
+    return p ? p.id : '';
+  }
+  function sessionParentId() {
+    if (session.parentId) return session.parentId;
+    return defaultParentId();
+  }
+  /** 代理身份只能操作自己：与教师 assertSelfTeacher 口径一致 */
+  function assertSelfAgent(agentId) {
+    if (session.role !== 'agent') return agentId;
+    var self = sessionAgentId();
+    if (!self) throw bizError('NO_AGENT_CONTEXT', '当前代理登录态无法识别，请重新进入代理工作台');
+    if (agentId && agentId !== self) throw bizError('FORBIDDEN', '代理只能查看和操作自己负责的客户');
+    return self;
+  }
+  function assertSelfParent(parentId) {
+    if (session.role !== 'parent') return parentId;
+    var self = sessionParentId();
+    if (!self) throw bizError('NO_PARENT_CONTEXT', '当前家长登录态无法识别，请重新进入家长端');
+    if (parentId && parentId !== self) throw bizError('FORBIDDEN', '家长只能查看自己孩子的数据');
+    return self;
+  }
+  function assertAgentEnabled(agentId) {
+    var a = agent(agentId);
+    if (!a) throw bizError('AGENT_NOT_FOUND', '代理不存在');
+    if (a.status !== '启用') {
+      throw bizError('AGENT_DISABLED', '代理「' + a.name + '」当前状态为「' + a.status + '」，不能继续获客或下单');
+    }
+    return a;
+  }
+  function operatorNameNow() {
+    if (session.role === 'agent') {
+      var a = agent(sessionAgentId());
+      if (a) return a.name;
+    }
+    if (session.role === 'parent') {
+      var p = parent(sessionParentId());
+      if (p) return p.name;
+    }
+    return session.operatorName || '';
+  }
+  function addMonths(dateStr, n) {
+    var d = new Date(String(dateStr || TODAY).slice(0, 10) + 'T00:00:00');
+    if (isNaN(d.getTime())) d = new Date(TODAY + 'T00:00:00');
+    d.setMonth(d.getMonth() + (Number(n) || 0));
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1, 2) + '-' + pad(d.getDate(), 2);
+  }
+  function nextId(prefix, k, width) {
+    return prefix + pad(seq(k, width || 3), width || 3);
+  }
+  function nextStudentId() {
+    var max = 0;
+    db.students.forEach(function (s) {
+      var m = /(\d+)$/.exec(String(s.id || ''));
+      if (m) max = Math.max(max, Number(m[1]));
+    });
+    return 'S' + String(TODAY.slice(0, 4)) + pad(max + 1, 3);
+  }
+  function nextParentId() {
+    var max = 0;
+    db.parents.forEach(function (p) {
+      var m = /^P(\d+)$/.exec(String(p.id || ''));
+      if (m) max = Math.max(max, Number(m[1]));
+    });
+    return 'P' + pad(max + 1, 3);
+  }
+  function nextOrderId() {
+    return 'OD' + TODAY.replace(/-/g, '') + pad(seq('ORD', 3), 3);
+  }
+  function nextLeadId() {
+    return 'L' + TODAY.replace(/-/g, '') + pad(seq('LD', 3), 3);
+  }
+
+  function leadLog(leadId, action, detail, from, to) {
+    var item = {
+      id: nextId('LL', 'LLOG', 3), leadId: leadId, action: action, detail: detail,
+      from: from || '', to: to || '', operatorId: session.operatorId || '',
+      operatorName: operatorNameNow(), at: stamp()
+    };
+    db.leadLogs.push(item);
+    return item;
+  }
+  function orderLog(orderId, action, detail, from, to) {
+    var item = {
+      id: nextId('OL', 'OLOG', 3), orderId: orderId, action: action, detail: detail,
+      from: from || '', to: to || '', operatorId: session.operatorId || '',
+      operatorName: operatorNameNow(), at: stamp()
+    };
+    db.orderLogs.push(item);
+    return item;
+  }
+  function agentLog(agentId, action, detail, from, to) {
+    var item = {
+      id: nextId('AL', 'ALOG', 3), agentId: agentId, action: action, detail: detail,
+      from: from || '', to: to || '', operatorId: session.operatorId || '',
+      operatorName: operatorNameNow(), at: stamp()
+    };
+    db.agentLogs.push(item);
+    return item;
+  }
+  function feedbackId() { return nextId('FB', 'FB', 3); }
+
+  function assertLeadAccess(l) {
+    if (!l) throw bizError('LEAD_NOT_FOUND', '客户线索不存在');
+    if (session.role === 'agent') {
+      var self = sessionAgentId();
+      if (!self) throw bizError('NO_AGENT_CONTEXT', '当前代理登录态无法识别，请重新进入代理工作台');
+      if (l.agentId !== self) {
+        throw bizError('FORBIDDEN', '该客户不在你负责的范围内，不能查看或操作');
+      }
+    }
+    return l;
+  }
+  function assertOrderAccess(o) {
+    if (!o) throw bizError('ORDER_NOT_FOUND', '订单不存在');
+    if (session.role === 'agent') {
+      var self = sessionAgentId();
+      if (o.agentId !== self) throw bizError('FORBIDDEN', '该订单不属于你负责的客户');
+    }
+    if (session.role === 'parent') {
+      var pid = sessionParentId();
+      var kids = parentStudents(pid).map(function (s) { return s.id; });
+      if (o.parentId !== pid && kids.indexOf(o.studentId) < 0) {
+        throw bizError('FORBIDDEN', '该订单不属于你的孩子');
+      }
+    }
+    return o;
+  }
+  function assertRenewalAccess(r) {
+    if (!r) throw bizError('RENEWAL_NOT_FOUND', '续费机会不存在');
+    if (session.role === 'agent') {
+      var self = sessionAgentId();
+      if (r.agentId !== self) throw bizError('FORBIDDEN', '该续费机会不属于你负责的客户');
+    }
+    return r;
+  }
+  function parentStudents(parentId) {
+    var p = parent(parentId);
+    if (!p) return [];
+    return db.students.filter(function (s) {
+      return s.parent === parentId || (p.kids || []).indexOf(s.id) >= 0;
+    });
+  }
+
+  /* ---------------- 归属与投影 ---------------- */
+  function studentAttribution(studentId) {
+    var credited = db.orders.filter(function (o) {
+      return o.studentId === studentId && o.agentId;
+    }).sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+    if (credited.length) {
+      return { agentId: credited[0].agentId, leadId: credited[0].leadId || '', orderId: credited[0].id };
+    }
+    var l = db.leads.filter(function (x) { return x.convertedStudentId === studentId; })[0];
+    if (l) return { agentId: l.agentId, leadId: l.id, orderId: '' };
+    var s = student(studentId);
+    if (s && s.agentId) return { agentId: s.agentId, leadId: s.sourceLeadId || '', orderId: '' };
+    return { agentId: '', leadId: '', orderId: '' };
+  }
+  function agentStudentIds(agentId) {
+    var ids = {};
+    db.leads.forEach(function (l) {
+      if (l.agentId === agentId && l.convertedStudentId) ids[l.convertedStudentId] = 1;
+    });
+    db.orders.forEach(function (o) {
+      if (o.agentId === agentId && o.studentId) ids[o.studentId] = 1;
+    });
+    return Object.keys(ids);
+  }
+  function leadFollowUpsOf(leadId) {
+    return db.leadFollowUps.filter(function (f) { return f.leadId === leadId; })
+      .sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+  }
+  function leadOrders(leadId) {
+    return db.orders.filter(function (o) { return o.leadId === leadId; })
+      .sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+  }
+  function orderPayments(orderId) {
+    return db.payments.filter(function (p) { return p.orderId === orderId; })
+      .sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+  }
+  function studentOfOrder(o) { return o && o.studentId ? student(o.studentId) : null; }
+  function agentOfOrder(o) { return o && o.agentId ? agent(o.agentId) : null; }
+
+  function orderSummary(o) {
+    var s = studentOfOrder(o), a = agentOfOrder(o);
+    return {
+      order: o, student: s, agent: a,
+      studentName: s ? s.name : o.studentName,
+      agentName: a ? a.name : (o.agentId || '机构直营'),
+      productName: o.productName,
+      totalHours: o.totalHours, amount: o.amount, paidAmount: o.paidAmount, status: o.status
+    };
+  }
+
+  /** 代理视角的客户列表投影：只含自己负责的线索 + 自己成交的学员 */
+  function agentCustomers(query) {
+    query = query || {};
+    var self = (session.role === 'agent') ? sessionAgentId() : (query.agentId || defaultAgentId());
+    if (session.role === 'agent') assertSelfAgent(self);
+    var rows = [], seenStudent = {};
+    db.leads.filter(function (l) {
+      if (l.agentId !== self) return false;
+      if (query.status && l.status !== query.status) return false;
+      if (query.kw) {
+        var hay = [l.name, l.phone, l.kidName, l.grade, l.book, l.intent, l.channel].join(' ').toLowerCase();
+        if (hay.indexOf(String(query.kw).toLowerCase()) < 0) return false;
+      }
+      return true;
+    }).forEach(function (l) {
+      var s = l.convertedStudentId ? student(l.convertedStudentId) : null;
+      if (s) seenStudent[s.id] = 1;
+      var os = leadOrders(l.id);
+      var deals = os.filter(function (o) { return o.status === ORDER.CREDITED; })
+        .reduce(function (n, o) { return n + Number(o.amount || 0); }, 0);
+      var rn = db.renewalOpportunities.filter(function (r) {
+        return r.leadId === l.id && (r.status === RENEWAL.PENDING || r.status === RENEWAL.FOLLOWING);
+      }).length;
+      rows.push({
+        leadId: l.id, studentId: s ? s.id : '', customerName: l.name, phone: l.phone,
+        kidName: l.kidName || (s ? s.name : ''), grade: l.grade || (s ? s.grade : ''),
+        book: l.book || (s ? s.book : ''), status: l.status, level: l.level,
+        intent: l.intent, channel: l.channel,
+        lastFollowAt: l.lastFollowAt, nextFollowAt: l.nextFollowAt,
+        studentName: s ? s.name : '', remain: s ? s.remain : null,
+        teacherName: s ? (s.teacherName || '未分配') : '',
+        orderCount: os.length, dealAmount: deals, openRenewals: rn,
+        feedbackCount: s ? agentFeedbacksForStudent(s.id).length : 0,
+        updatedAt: l.updatedAt, converted: !!s
+      });
+    });
+    /* 有订单但线索未转换的历史客户也进入列表，保证成交归属可追溯 */
+    db.orders.filter(function (o) { return o.agentId === self; }).forEach(function (o) {
+      if (seenStudent[o.studentId]) return;
+      var s = student(o.studentId);
+      if (!s) return;
+      seenStudent[o.studentId] = 1;
+      var os = db.orders.filter(function (x) { return x.studentId === s.id && x.agentId === self; });
+      var deals = os.filter(function (x) { return x.status === ORDER.CREDITED; })
+        .reduce(function (n, x) { return n + Number(x.amount || 0); }, 0);
+      rows.push({
+        leadId: o.leadId || '', studentId: s.id, customerName: s.parentName || s.name,
+        phone: s.phone, kidName: s.name, grade: s.grade, book: s.book,
+        status: LEAD.DEAL, level: '高', intent: '', channel: '历史成交',
+        lastFollowAt: o.createdAt, nextFollowAt: '',
+        studentName: s.name, remain: s.remain, teacherName: s.teacherName || '未分配',
+        orderCount: os.length, dealAmount: deals,
+        openRenewals: db.renewalOpportunities.filter(function (r) {
+          return r.studentId === s.id && (r.status === RENEWAL.PENDING || r.status === RENEWAL.FOLLOWING);
+        }).length,
+        feedbackCount: agentFeedbacksForStudent(s.id).length,
+        updatedAt: o.updatedAt || o.createdAt, converted: true
+      });
+    });
+    return rows.sort(function (a, b) { return a.updatedAt < b.updatedAt ? 1 : -1; });
+  }
+
+  function agentOverview(agentId) {
+    var self = session.role === 'agent' ? sessionAgentId() : (agentId || defaultAgentId());
+    if (session.role === 'agent') assertSelfAgent(self);
+    var rows = agentCustomers({ agentId: self });
+    var byStatus = {};
+    LEAD_STATUS.forEach(function (s) { byStatus[s] = 0; });
+    rows.forEach(function (r) { if (byStatus[r.status] !== undefined) byStatus[r.status]++; });
+    var credited = db.orders.filter(function (o) { return o.agentId === self && o.status === ORDER.CREDITED; });
+    return {
+      agent: agent(self), agentId: self, customers: rows.length,
+      byStatus: byStatus,
+      pendingLeads: rows.filter(function (r) { return r.status !== LEAD.DEAL && r.status !== LEAD.INVALID && r.status !== LEAD.CLOSED; }).length,
+      deals: rows.filter(function (r) { return r.status === LEAD.DEAL || r.converted; }).length,
+      orders: db.orders.filter(function (o) { return o.agentId === self; }).length,
+      creditedOrders: credited.length,
+      amount: credited.reduce(function (n, o) { return n + Number(o.amount || 0); }, 0),
+      renewals: db.renewalOpportunities.filter(function (r) {
+        return r.agentId === self && (r.status === RENEWAL.PENDING || r.status === RENEWAL.FOLLOWING);
+      }).length,
+      commission: agentCommissionPreview(self)
+    };
+  }
+
+  /** 代理视角的客户详情：客户 + 跟进 + 订单 + 已发布反馈 + 续费机会；不含内部流水/收款明细 */
+  function agentLeadView(leadId) {
+    var l = assertLeadAccess(lead(leadId));
+    var s = l.convertedStudentId ? student(l.convertedStudentId) : null;
+    var os = leadOrders(l.id);
+    return {
+      lead: {
+        id: l.id, code: l.code, name: l.name, phone: l.phone, kidName: l.kidName,
+        grade: l.grade, book: l.book, channel: l.channel, status: l.status, level: l.level,
+        intent: l.intent, intentProductId: l.intentProductId,
+        lastFollowAt: l.lastFollowAt, nextFollowAt: l.nextFollowAt,
+        agentId: l.agentId, followerName: l.followerName,
+        convertedStudentId: l.convertedStudentId, convertedAt: l.convertedAt
+      },
+      followUps: leadFollowUpsOf(l.id),
+      orders: os.map(function (o) {
+        return {
+          id: o.id, type: o.type, productName: o.productName, totalHours: o.totalHours,
+          amount: o.amount, paidAmount: o.paidAmount, status: o.status,
+          createdAt: o.createdAt, creditedAt: o.creditedAt
+        };
+      }),
+      student: s ? {
+        id: s.id, name: s.name, grade: s.grade, book: s.book, school: s.school,
+        teacherName: s.teacherName || '未分配', remain: s.remain, status: s.status
+      } : null,
+      renewals: db.renewalOpportunities.filter(function (r) {
+        return (r.leadId === l.id || (s && r.studentId === s.id)) && r.status !== RENEWAL.CLOSED;
+      }),
+      feedbacks: s ? agentFeedbacksForStudent(s.id) : [],
+      commission: agentCommissionPreview(l.agentId, os),
+      policy: { canSeePaymentDetail: false, note: '代理端不展示收款流水、内部日志与其他代理客户' }
+    };
+  }
+  function agentStudentView(studentId) {
+    var s = student(studentId);
+    if (!s) throw bizError('STUDENT_NOT_FOUND', '学员不存在');
+    var at = studentAttribution(studentId);
+    if (session.role === 'agent' && at.agentId !== sessionAgentId()) {
+      throw bizError('FORBIDDEN', '该学员不在你负责的客户范围内');
+    }
+    var l = at.leadId ? lead(at.leadId) : null;
+    if (l) return agentLeadView(l.id);
+    var os = db.orders.filter(function (o) { return o.studentId === studentId; });
+    return {
+      lead: null,
+      followUps: [],
+      orders: os.map(function (o) {
+        return {
+          id: o.id, type: o.type, productName: o.productName, totalHours: o.totalHours,
+          amount: o.amount, paidAmount: o.paidAmount, status: o.status,
+          createdAt: o.createdAt, creditedAt: o.creditedAt
+        };
+      }),
+      student: {
+        id: s.id, name: s.name, grade: s.grade, book: s.book, school: s.school,
+        teacherName: s.teacherName || '未分配', remain: s.remain, status: s.status
+      },
+      renewals: db.renewalOpportunities.filter(function (r) {
+        return r.studentId === studentId && r.status !== RENEWAL.CLOSED;
+      }),
+      feedbacks: agentFeedbacksForStudent(studentId),
+      commission: agentCommissionPreview(at.agentId, os),
+      policy: { canSeePaymentDetail: false }
+    };
+  }
+
+  /* ---------------- 代理招募 ---------------- */
+  function agentsOf(query) {
+    query = query || {};
+    return db.agents.filter(function (a) {
+      if (query.status && a.status !== query.status) return false;
+      if (query.kw) {
+        var hay = [a.id, a.name, a.phone, a.wechat, a.type, a.ruleText].join(' ').toLowerCase();
+        if (hay.indexOf(String(query.kw).toLowerCase()) < 0) return false;
+      }
+      return true;
+    }).map(function (a) {
+      var rows = agentCustomers({ agentId: a.id });
+      var credited = db.orders.filter(function (o) { return o.agentId === a.id && o.status === ORDER.CREDITED; });
+      return {
+        agent: a, customers: rows.length,
+        deals: rows.filter(function (r) { return r.converted; }).length,
+        orders: db.orders.filter(function (o) { return o.agentId === a.id; }).length,
+        amount: credited.reduce(function (n, o) { return n + Number(o.amount || 0); }, 0),
+        commission: agentCommissionPreview(a.id)
+      };
+    });
+  }
+  /** 招募代理：先建档为待审核，审核通过后才能获客 */
+  function recruitAgent(input) {
+    assertCan('agent.recruit');
+    input = input || {};
+    var name = String(input.name || '').trim();
+    var phone = String(input.phone || '').trim();
+    if (!name) throw bizError('NAME_REQUIRED', '请填写代理姓名');
+    if (!/^\d{6,}$/.test(phone)) throw bizError('PHONE_INVALID', '请填写有效的代理手机号');
+    if (db.agents.some(function (a) { return a.phone === phone; })) {
+      throw bizError('AGENT_PHONE_DUP', '该手机号已登记为代理');
+    }
+    var ruleText = String(input.ruleText || '').trim();
+    if (!ruleText) throw bizError('RULE_REQUIRED', '请填写佣金规则（本轮只做展示，不做结算）');
+    var id = 'A' + pad(seq('AG', 3), 3);
+    var a = {
+      id: id, name: name, phone: phone, wechat: String(input.wechat || '').trim(),
+      type: AGENT_TYPES.indexOf(input.type) >= 0 ? input.type : '个人代理',
+      status: '待审核', recruiterId: session.operatorId || operatorNameNow(),
+      ownerId: session.operatorId || operatorNameNow(),
+      ruleType: input.ruleType || 'none', ruleValue: Number(input.ruleValue) || 0,
+      ruleText: ruleText, remark: String(input.remark || ''),
+      createdBy: operatorNameNow(), approvedBy: '', approvedAt: '',
+      createdAt: stamp(), updatedAt: stamp()
+    };
+    db.agents.push(a);
+    agentLog(id, 'CREATED', '代理招募建档，待审核：' + name + '（' + ruleText + '）', '', '待审核');
+    save();
+    return a;
+  }
+  function reviewAgent(agentId, opt) {
+    assertCan('agent.review');
+    opt = opt || {};
+    var a = agent(agentId);
+    if (!a) throw bizError('AGENT_NOT_FOUND', '代理不存在');
+    var pass = opt.pass !== false;
+    if (!pass && !String(opt.remark || '').trim()) throw bizError('REMARK_REQUIRED', '驳回代理必须填写原因');
+    var from = a.status;
+    a.status = pass ? '启用' : '停用';
+    a.approvedBy = operatorNameNow();
+    a.approvedAt = stamp();
+    a.remark = String(opt.remark || a.remark || '');
+    a.updatedAt = stamp();
+    agentLog(a.id, pass ? 'APPROVED' : 'REJECTED',
+      (pass ? '审核通过' : '审核驳回') + (a.remark ? '：' + a.remark : ''), from, a.status);
+    save();
+    return a;
+  }
+  function setAgentStatus(agentId, status, opt) {
+    assertCan('agent.manage');
+    opt = opt || {};
+    if (AGENT_STATUS.indexOf(status) < 0) throw bizError('STATUS_INVALID', '代理状态不合法');
+    var a = agent(agentId);
+    if (!a) throw bizError('AGENT_NOT_FOUND', '代理不存在');
+    if (status === '停用' && !String(opt.remark || '').trim()) throw bizError('REMARK_REQUIRED', '停用代理必须填写原因');
+    var from = a.status;
+    a.status = status;
+    a.remark = String(opt.remark || a.remark || '');
+    a.updatedAt = stamp();
+    agentLog(a.id, 'STATUS_CHANGED', (opt.remark || '状态变更'), from, status);
+    save();
+    return a;
+  }
+  function agentLogsOf(agentId) {
+    return db.agentLogs.filter(function (l) { return l.agentId === agentId; })
+      .sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+  }
+
+  /* ---------------- 客户线索与跟进 ---------------- */
+  function leads(query) {
+    query = query || {};
+    return db.leads.filter(function (l) {
+      if (query.status && l.status !== query.status) return false;
+      if (query.agentId && l.agentId !== query.agentId) return false;
+      if (query.followerId && l.followerId !== query.followerId) return false;
+      if (query.kw) {
+        var hay = [l.id, l.name, l.phone, l.kidName, l.grade, l.book, l.intent, l.channel]
+          .join(' ').toLowerCase();
+        if (hay.indexOf(String(query.kw).toLowerCase()) < 0) return false;
+      }
+      return true;
+    }).map(function (l) {
+      var s = l.convertedStudentId ? student(l.convertedStudentId) : null;
+      var os = leadOrders(l.id);
+      return {
+        lead: l, student: s, agent: l.agentId ? agent(l.agentId) : null,
+        orders: os.length,
+        credited: os.filter(function (o) { return o.status === ORDER.CREDITED; }).length,
+        openRenewals: db.renewalOpportunities.filter(function (r) {
+          return (r.leadId === l.id || (s && r.studentId === s.id)) &&
+            (r.status === RENEWAL.PENDING || r.status === RENEWAL.FOLLOWING);
+        }).length
+      };
+    }).sort(function (a, b) { return a.lead.updatedAt < b.lead.updatedAt ? 1 : -1; });
+  }
+  function leadRowCounts() {
+    var m = {};
+    LEAD_STATUS.forEach(function (s) { m[s] = 0; });
+    db.leads.forEach(function (l) { m[l.status] = (m[l.status] || 0) + 1; });
+    return m;
+  }
+  function leadView(leadId) {
+    var l = lead(leadId);
+    if (!l) throw bizError('LEAD_NOT_FOUND', '客户线索不存在');
+    if (session.role === 'agent') return agentLeadView(leadId);
+    var s = l.convertedStudentId ? student(l.convertedStudentId) : null;
+    return {
+      lead: l, student: s, parent: s && s.parent ? parent(s.parent) : null,
+      agent: l.agentId ? agent(l.agentId) : null,
+      followUps: leadFollowUpsOf(l.id),
+      logs: db.leadLogs.filter(function (x) { return x.leadId === l.id; })
+        .sort(function (a, b) { return a.at < b.at ? 1 : -1; }),
+      orders: leadOrders(l.id).map(orderSummary),
+      renewals: db.renewalOpportunities.filter(function (r) {
+        return r.leadId === l.id || (s && r.studentId === s.id);
+      }),
+      feedbacks: s ? (session.role === 'parent' ? parentFeedbacks(s.parent) : learningFeedbacksOfStudent(s.id)) : []
+    };
+  }
+  function createLead(input) {
+    assertCan('lead.create');
+    input = input || {};
+    var name = String(input.name || '').trim();
+    var phone = String(input.phone || '').trim();
+    if (!name) throw bizError('NAME_REQUIRED', '请填写家长姓名');
+    if (!/^1\d{10}$/.test(phone)) throw bizError('PHONE_INVALID', '请填写 11 位家长手机号');
+    var dup = db.leads.filter(function (l) {
+      return l.phone === phone && l.status !== LEAD.INVALID && l.status !== LEAD.CLOSED;
+    })[0];
+    if (dup) throw bizError('LEAD_DUP', '该手机号已有未关闭线索（' + dup.id + '，' + dup.name + '）', { lead: dup });
+
+    var selfAgent = '';
+    if (session.role === 'agent') {
+      selfAgent = assertSelfAgent(sessionAgentId());
+      assertAgentEnabled(selfAgent);
+    } else if (input.agentId) {
+      var a = agent(input.agentId);
+      if (!a) throw bizError('AGENT_NOT_FOUND', '代理不存在');
+      if (a.status !== '启用') throw bizError('AGENT_DISABLED', '代理「' + a.name + '」不是启用状态，不能录入客户');
+      selfAgent = a.id;
+    }
+    var id = nextLeadId();
+    var followerId = session.role === 'agent' ? selfAgent : (input.followerId || session.operatorId || '');
+    var l = {
+      id: id, code: id, name: name, phone: phone,
+      kidName: String(input.kidName || '').trim(), grade: String(input.grade || '').trim(),
+      book: String(input.book || '').trim(), channel: input.channel || '其他',
+      agentId: selfAgent, followerId: followerId, followerName: input.followerName || followerId,
+      intent: String(input.intent || ''), intentProductId: input.intentProductId || '',
+      status: LEAD.NEW, level: LEAD_LEVELS.indexOf(input.level) >= 0 ? input.level : '中',
+      lastFollowAt: '', nextFollowAt: input.nextFollowAt || '',
+      convertedStudentId: '', convertedAt: '',
+      createdBy: operatorNameNow(), createdAt: stamp(), updatedAt: stamp(),
+      invalidReason: '', remark: String(input.remark || '')
+    };
+    db.leads.push(l);
+    leadLog(id, LEAD_ACTION.CREATED,
+      '线索建立（' + l.channel + '）' + (selfAgent ? '，代理归属 ' + (agent(selfAgent) || {}).name : '，机构直营'),
+      '', LEAD.NEW);
+    save();
+    return l;
+  }
+  function addLeadFollowUp(leadId, input) {
+    assertCan('lead.follow');
+    var l = assertLeadAccess(lead(leadId));
+    if ([LEAD.DEAL, LEAD.INVALID, LEAD.CLOSED].indexOf(l.status) >= 0) {
+      throw bizError('LEAD_CLOSED', '线索当前为「' + l.status + '」，不能再新增跟进');
+    }
+    input = input || {};
+    var content = String(input.content || '').trim();
+    if (!content) throw bizError('CONTENT_REQUIRED', '请填写本次跟进内容');
+    var to = input.status || '';
+    if (to && to === l.status) to = '';
+    if (to) {
+      var allowed = LEAD_NEXT[l.status] || [];
+      if (allowed.indexOf(to) < 0) {
+        throw bizError('STATUS_TRANSITION_INVALID',
+          '线索不能从「' + l.status + '」直接变为「' + to + '」，允许：' +
+          (allowed.length ? allowed.join('、') : '无（终态）'));
+      }
+      if ((to === LEAD.INVALID || to === LEAD.CLOSED) && !String(input.invalidReason || input.reason || '').trim()) {
+        throw bizError('REASON_REQUIRED', '标记为「' + to + '」必须填写原因');
+      }
+    } else if (l.status === LEAD.NEW || l.status === LEAD.TO_CONTACT) {
+      to = LEAD.FOLLOWING;
+    }
+    var from = l.status;
+    var f = {
+      id: nextId('LF', 'LF', 3), leadId: l.id,
+      type: input.type || '电话', content: content,
+      result: String(input.result || ''), nextAt: input.nextAt || '',
+      by: operatorNameNow(), byId: session.operatorId || '', at: stamp()
+    };
+    db.leadFollowUps.push(f);
+    l.lastFollowAt = f.at;
+    l.nextFollowAt = input.nextAt || l.nextFollowAt;
+    l.updatedAt = f.at;
+    if (to && to !== from) {
+      l.status = to;
+      if (to === LEAD.INVALID || to === LEAD.CLOSED) l.invalidReason = input.invalidReason || input.reason || '';
+      leadLog(l.id, LEAD_ACTION.STATUS_CHANGED, '跟进后状态变更：' + content, from, to);
+    } else {
+      leadLog(l.id, LEAD_ACTION.FOLLOWED, '新增跟进：' + content, l.status, l.status);
+    }
+    save();
+    return { lead: l, followUp: f };
+  }
+  /** 意向转化：至少一条跟进记录，且只能从「待联系 / 跟进中」进入「意向明确」 */
+  function markLeadIntent(leadId, opt) {
+    assertCan('lead.convert');
+    opt = opt || {};
+    var l = assertLeadAccess(lead(leadId));
+    if (l.status === LEAD.INTENT) return l;
+    if (l.status !== LEAD.TO_CONTACT && l.status !== LEAD.FOLLOWING) {
+      throw bizError('STATUS_NOT_ALLOWED',
+        '线索当前为「' + l.status + '」，请先录入跟进并把状态推进到「待联系 / 跟进中」');
+    }
+    if (!leadFollowUpsOf(l.id).length) throw bizError('FOLLOWUP_REQUIRED', '转为意向之前必须至少录入一条跟进记录');
+    var from = l.status;
+    l.status = LEAD.INTENT;
+    l.intent = String(opt.intent || l.intent || '');
+    l.intentProductId = opt.productId || l.intentProductId || '';
+    if (opt.level && LEAD_LEVELS.indexOf(opt.level) >= 0) l.level = opt.level;
+    l.updatedAt = stamp();
+    leadLog(l.id, LEAD_ACTION.INTENT, '意向明确：' + (l.intent || '待选套餐') +
+      (l.intentProductId ? '（' + (product(l.intentProductId) || {}).name + '）' : ''), from, l.status);
+    save();
+    return l;
+  }
+  function assignLead(leadId, input) {
+    assertCan('lead.assign');
+    input = input || {};
+    var l = lead(leadId);
+    if (!l) throw bizError('LEAD_NOT_FOUND', '客户线索不存在');
+    var reason = String(input.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '调整客户归属必须填写原因');
+    var toAgent = input.agentId || l.agentId;
+    if (toAgent) {
+      var a = agent(toAgent);
+      if (!a) throw bizError('AGENT_NOT_FOUND', '目标代理不存在');
+      if (a.status !== '启用') throw bizError('AGENT_DISABLED', '目标代理「' + a.name + '」不是启用状态');
+    }
+    var toFollower = input.followerId || l.followerId;
+    var from = { agentId: l.agentId, followerId: l.followerId };
+    l.agentId = toAgent || '';
+    l.followerId = toFollower || '';
+    l.followerName = input.followerName || toFollower || '';
+    l.updatedAt = stamp();
+    leadLog(l.id, LEAD_ACTION.ASSIGNED,
+      '归属调整：代理 ' + (from.agentId || '机构直营') + ' → ' + (l.agentId || '机构直营') +
+      '；维护人 ' + (from.followerId || '未指定') + ' → ' + (l.followerId || '未指定') + '；原因：' + reason,
+      from.agentId + '/' + from.followerId, l.agentId + '/' + l.followerId);
+    save();
+    return l;
+  }
+
+  /* ---------------- 建档 + 订单（原子） ---------------- */
+  function findOrCreateParent(leadObj, opt) {
+    var phone = String(opt.phone || leadObj.phone || '').trim();
+    var exist = db.parents.filter(function (p) { return p.phone === phone; })[0];
+    if (exist) return exist;
+    var p = {
+      id: nextParentId(), name: opt.parentName || leadObj.name, phone: phone,
+      wechat: String(opt.wechat || ''), relation: opt.relation || '家长',
+      kids: [], first: TODAY, status: '启用',
+      createdAt: stamp(), updatedAt: stamp()
+    };
+    db.parents.push(p);
+    return p;
+  }
+  function findOrCreateStudent(leadObj, parentObj, opt) {
+    if (leadObj.convertedStudentId) {
+      var linked = student(leadObj.convertedStudentId);
+      if (linked) return linked;
+    }
+    var name = String(opt.studentName || leadObj.kidName || '').trim();
+    if (!name) throw bizError('STUDENT_NAME_REQUIRED', '请填写学员姓名后再提交报名订单');
+    var dup = db.students.filter(function (s) { return s.name === name && s.parent === parentObj.id; })[0];
+    if (dup) {
+      if (leadObj.convertedStudentId !== dup.id) {
+        leadObj.convertedStudentId = dup.id;
+        leadObj.convertedAt = leadObj.convertedAt || stamp();
+      }
+      return dup;
+    }
+    var s = {
+      id: nextStudentId(), name: name, gender: opt.gender || '',
+      grade: String(opt.grade || leadObj.grade || '').trim(),
+      parent: parentObj.id, parentName: parentObj.name, phone: parentObj.phone,
+      teacher: '', teacherName: '未分配',
+      product: '', remain: 0,                       /* 新建学员永远 0 课时 */
+      status: '在读', created: TODAY, book: String(opt.book || leadObj.book || '').trim(),
+      school: String(opt.school || ''), source: leadObj.channel || '代理推荐',
+      agentId: leadObj.agentId || '', sourceLeadId: leadObj.id,
+      words: { total: 0, mastered: 0, review: 0 },
+      lastCourse: '', lastContent: '',
+      createdAt: stamp(), updatedAt: stamp()
+    };
+    db.students.push(s);
+    parentObj.kids = parentObj.kids || [];
+    if (parentObj.kids.indexOf(s.id) < 0) parentObj.kids.push(s.id);
+    if (leadObj.convertedStudentId !== s.id) {
+      leadObj.convertedStudentId = s.id;
+      leadObj.convertedAt = stamp();
+    }
+    return s;
+  }
+  function createOrderRecord(input) {
+    var p = product(input.productId);
+    if (!p) throw bizError('PRODUCT_NOT_FOUND', '套餐不存在');
+    if (p.status === '停用') throw bizError('PRODUCT_DISABLED', '套餐「' + p.name + '」已停用，不能下单');
+    var hours = Number(p.hours) || 0;
+    if (hours <= 0) throw bizError('PRODUCT_INVALID', '套餐课时数不合法');
+    var o = {
+      id: nextOrderId(), code: '',
+      type: input.type || ORDER_TYPE.NEW,
+      leadId: input.leadId || '', studentId: input.studentId || '',
+      parentId: input.parentId || '', agentId: input.agentId || '',
+      followerId: input.followerId || '', ownerAgentId: input.agentId || '',
+      productId: p.id, productName: p.name, hours: hours, gift: Number(p.gift) || 0,
+      totalHours: hours + (Number(p.gift) || 0),
+      amount: Number(p.amount || p.price) || 0, paidAmount: 0,
+      status: ORDER.PENDING, payMethod: '', paymentId: '', lessonAccountId: '',
+      creditedAt: '', creditBy: '', reviewedBy: '', reviewedAt: '',
+      renewalOpportunityId: input.renewalOpportunityId || '',
+      createdBy: operatorNameNow(), createdAt: stamp(), updatedAt: stamp(),
+      cancelReason: '', remark: String(input.remark || '')
+    };
+    o.code = o.id;
+    db.orders.push(o);
+    orderLog(o.id, 'CREATED',
+      '提交报名订单：' + p.name + ' / ' + o.totalHours + ' 课时 / ¥' + o.amount +
+      '（未收款，不产生课时）', '', ORDER.PENDING);
+    return o;
+  }
+  /** 代理提交新签订单：线索必须已转意向；学员/家长不存在时在同一事务内建档 */
+  function submitEnrollmentOrder(input) {
+    assertCan('order.create');
+    input = input || {};
+    var l = assertLeadAccess(lead(input.leadId));
+    if (l.status !== LEAD.INTENT) {
+      throw bizError('LEAD_STATUS_INVALID',
+        '线索当前为「' + l.status + '」，只有「意向明确」的客户才能提交报名订单');
+    }
+    var agentId = session.role === 'agent' ? assertSelfAgent(sessionAgentId()) : (input.agentId || l.agentId);
+    if (agentId) assertAgentEnabled(agentId);
+    var snap = JSON.stringify(db);
+    try {
+      var p = product(input.productId || l.intentProductId);
+      if (!p) throw bizError('PRODUCT_REQUIRED', '请选择报名套餐');
+      var parentObj = findOrCreateParent(l, input.parent || input);
+      var stu = findOrCreateStudent(l, parentObj, input.student || input);
+      var o = createOrderRecord({
+        type: ORDER_TYPE.NEW, leadId: l.id, studentId: stu.id, parentId: parentObj.id,
+        agentId: agentId, followerId: l.followerId, productId: p.id,
+        remark: input.remark || ''
+      });
+      l.updatedAt = stamp();
+      leadLog(l.id, LEAD_ACTION.ORDERED,
+        '提交报名订单 ' + o.id + '：' + p.name + '，金额 ¥' + o.amount + '，待管理员审核收款',
+        l.status, l.status);
+      save();
+      return orderView(o.id);
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'ORDER_SUBMIT_FAILED',
+        '报名订单提交失败，已回滚（不保留孤立学员档案）：' + e.message, e.data);
+    }
+  }
+
+  /* ---------------- 收款确认 → 课时入账 ---------------- */
+  function orderOf(id) {
+    var o = order(id);
+    if (!o) throw bizError('ORDER_NOT_FOUND', '订单不存在');
+    return o;
+  }
+  function orderView(id) {
+    var o = orderOf(id);
+    var s = studentOfOrder(o), a = agentOfOrder(o), l = o.leadId ? lead(o.leadId) : null;
+    return {
+      order: o, student: s, agent: a, lead: l,
+      parent: o.parentId ? parent(o.parentId) : (s && s.parent ? parent(s.parent) : null),
+      payments: orderPayments(o.id), logs: orderLogsOf(o.id),
+      account: o.lessonAccountId ? account(o.lessonAccountId) : null,
+      renewal: o.renewalOpportunityId ? renewal(o.renewalOpportunityId) : null
+    };
+  }
+  function orderLogsOf(orderId) {
+    return db.orderLogs.filter(function (x) { return x.orderId === orderId; })
+      .sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+  }
+  function orderRows(query) {
+    query = query || {};
+    return db.orders.filter(function (o) {
+      if (query.status && o.status !== query.status) return false;
+      if (query.type && o.type !== query.type) return false;
+      if (query.agentId && o.agentId !== query.agentId) return false;
+      if (query.studentId && o.studentId !== query.studentId) return false;
+      if (query.kw) {
+        var s = student(o.studentId);
+        var hay = [o.id, s ? s.name : '', o.productName, o.agentId, o.status].join(' ').toLowerCase();
+        if (hay.indexOf(String(query.kw).toLowerCase()) < 0) return false;
+      }
+      return true;
+    }).map(orderSummary).sort(function (a, b) {
+      return a.order.createdAt < b.order.createdAt ? 1 : -1;
+    });
+  }
+  function reviewOrder(id, opt) {
+    assertCan('order.review');
+    opt = opt || {};
+    var o = orderOf(id);
+    if (o.status !== ORDER.PENDING) throw bizError('ORDER_STATUS_INVALID', '订单当前为「' + o.status + '」，只有「待审核」可审核');
+    var pass = opt.pass !== false;
+    var from = o.status;
+    if (!pass) {
+      var reason = String(opt.reason || '').trim();
+      if (!reason) throw bizError('REASON_REQUIRED', '驳回订单必须填写原因');
+      o.status = ORDER.CANCELLED;
+      o.cancelReason = reason;
+      o.reviewedBy = operatorNameNow();
+      o.reviewedAt = stamp();
+      o.updatedAt = o.reviewedAt;
+      orderLog(o.id, 'REJECTED', '审核驳回：' + reason, from, o.status);
+      save();
+      return o;
+    }
+    o.status = ORDER.REVIEWED;
+    o.reviewedBy = operatorNameNow();
+    o.reviewedAt = stamp();
+    o.updatedAt = o.reviewedAt;
+    orderLog(o.id, 'REVIEWED', '审核通过，待确认收款（未收款不产生课时）', from, o.status);
+    save();
+    return o;
+  }
+  function syncStudentRemain(studentId) {
+    var s = student(studentId);
+    if (!s) return 0;
+    var sum = db.accounts.filter(function (a) {
+      return (a.studentId && a.studentId === s.id) || (!a.studentId && a.student === s.name);
+    }).reduce(function (n, a) { return n + Number(a.remain || 0); }, 0);
+    s.remain = sum;
+    return sum;
+  }
+  function newAccountForOrder(o, stu, p) {
+    var id = 'ACC-' + TODAY.slice(0, 4) + '-' + pad(seq('ACC', 4), 4);
+    var total = Number(o.totalHours) || 0;
+    var acc = {
+      id: id, student: stu.name, studentId: stu.id, parent: stu.parentName, parentId: stu.parent,
+      product: p.name, buy: o.hours, gift: o.gift, used: 0, adjust: 0,
+      remain: total, hours: o.hours, gift: o.gift,
+      valid: addMonths(TODAY, p.validMonths || 12),
+      expireAt: addMonths(TODAY, p.validMonths || 12),
+      status: total >= 1 ? '正常' : '已用完',
+      orderId: o.id, createdAt: stamp(), updatedAt: stamp()
+    };
+    db.accounts.push(acc);
+    return acc;
+  }
+  function pushFlow(payload) {
+    var f = {
+      id: 'FL' + TODAY.replace(/-/g, '') + pad(seq('FL', 3), 3),
+      student: payload.student, studentId: payload.studentId || '',
+      account: payload.account, accountId: payload.account,
+      type: payload.type, delta: payload.delta,
+      before: payload.before, after: payload.after,
+      ref: payload.ref || '', op: operatorNameNow(), time: stamp(),
+      note: payload.note || '', orderId: payload.orderId || '',
+      paymentId: payload.paymentId || '', courseId: payload.courseId || ''
+    };
+    db.flows.push(f);
+    return f;
+  }
+  function setLessonAccountStatus(acc, threshold) {
+    var t = Number(threshold || db.config.renewal.lessonThreshold);
+    acc.status = Number(acc.remain) <= 0 ? '已用完' : (Number(acc.remain) < t ? '余额不足' : '正常');
+  }
+  /**
+   * 管理员确认收款：收款记录 + 课时账户 + 入账流水 + 线索成交 + 续费机会关闭，
+   * 全部在一个事务里完成；任一步失败整体回滚，不会出现「收了钱没课时」或「有课时没订单」。
+   */
+  function confirmOrderPayment(id, opt) {
+    assertCan('payment.confirm');
+    opt = opt || {};
+    var o = orderOf(id);
+    if (o.status === ORDER.CREDITED) throw bizError('ALREADY_CREDITED', '该订单已完成收款并入账，不能重复操作');
+    if (o.status === ORDER.CANCELLED) throw bizError('ORDER_CANCELLED', '订单已取消，不能确认收款');
+    if (o.status === ORDER.REFUNDED) throw bizError('ORDER_REFUNDED', '订单已退款，不能再次确认收款');
+    if (o.status !== ORDER.PENDING && o.status !== ORDER.REVIEWED) {
+      throw bizError('ORDER_STATUS_INVALID', '订单当前为「' + o.status + '」，不能确认收款');
+    }
+    var amount = opt.amount === undefined ? o.amount : Number(opt.amount);
+    if (!(amount > 0)) throw bizError('AMOUNT_INVALID', '收款金额必须大于 0');
+    if (amount !== Number(o.amount)) {
+      throw bizError('AMOUNT_MISMATCH',
+        '收款金额 ¥' + amount + ' 与订单金额 ¥' + o.amount + ' 不一致；部分收款不生成课时，请改走分期/调整流程');
+    }
+    var stu = student(o.studentId);
+    if (!stu) throw bizError('STUDENT_NOT_FOUND', '订单关联学员不存在，无法入账');
+    var p = product(o.productId) || { name: o.productName, validMonths: 12 };
+    var snap = JSON.stringify(db);
+    try {
+      var from = o.status;
+      var pay = {
+        id: nextId('PY', 'PY', 3), orderId: o.id, amount: amount,
+        method: PAY_METHODS.indexOf(opt.method) >= 0 ? opt.method : (opt.method || '微信'),
+        status: PAY.CONFIRMED, confirmedBy: operatorNameNow(), confirmedAt: stamp(),
+        note: String(opt.note || '管理员确认收款'), createdAt: stamp(), updatedAt: stamp()
+      };
+      db.payments.push(pay);
+      o.paymentId = pay.id;
+      o.paidAmount = amount;
+      o.status = ORDER.CREDITED;
+      o.payMethod = pay.method;
+      o.creditedAt = stamp();
+      o.creditBy = operatorNameNow();
+      o.reviewedBy = o.reviewedBy || operatorNameNow();
+      o.reviewedAt = o.reviewedAt || o.creditedAt;
+      o.updatedAt = o.creditedAt;
+
+      var acc = newAccountForOrder(o, stu, p);
+      o.lessonAccountId = acc.id;
+      var before = 0;
+      if (o.hours > 0) {
+        pushFlow({
+          student: stu.name, studentId: stu.id, account: acc.id,
+          type: '购买入账', delta: Number(o.hours), before: before, after: Number(o.hours),
+          ref: o.id + ' 收款确认', note: '订单收款确认后入账', orderId: o.id, paymentId: pay.id
+        });
+        before = Number(o.hours);
+      }
+      if (Number(o.gift) > 0) {
+        pushFlow({
+          student: stu.name, studentId: stu.id, account: acc.id,
+          type: '赠送入账', delta: Number(o.gift), before: before, after: Number(o.hours) + Number(o.gift),
+          ref: o.id + ' 赠送课时', note: '套餐赠送 ' + o.gift + ' 课时', orderId: o.id, paymentId: pay.id
+        });
+      }
+      setLessonAccountStatus(acc, db.config.renewal.lessonThreshold);
+      syncStudentRemain(stu.id);
+      stu.product = stu.product || p.name;
+      stu.status = stu.status === '暂停' ? '在读' : stu.status;
+      stu.updatedAt = o.creditedAt;
+
+      orderLog(o.id, 'CREDITED',
+        '收款确认 ¥' + amount + '（' + pay.method + '），课时入账 ' + o.totalHours +
+        ' 课时，余额 ' + stu.remain, from, ORDER.CREDITED);
+
+      if (o.leadId) {
+        var l = lead(o.leadId);
+        if (l) {
+          if (l.convertedStudentId !== stu.id) {
+            l.convertedStudentId = stu.id;
+            l.convertedAt = l.convertedAt || o.creditedAt;
+          }
+          if (l.status !== LEAD.DEAL) {
+            var lf = l.status;
+            l.status = LEAD.DEAL;
+            l.updatedAt = o.creditedAt;
+            leadLog(l.id, LEAD_ACTION.DEAL, '报名订单 ' + o.id + ' 收款确认，线索成交', lf, LEAD.DEAL);
+          }
+        }
+      }
+      /* 续费单：对应机会推进到「已转订单」；其余未关闭机会在本单补齐课时后自动关闭 */
+      if (o.renewalOpportunityId) {
+        var rn = renewal(o.renewalOpportunityId);
+        if (rn) {
+          rn.status = RENEWAL.ORDERED;
+          rn.renewalOrderId = o.id;
+          rn.updatedAt = o.creditedAt;
+          rn.remark = (rn.remark ? rn.remark + '；' : '') + '续费订单 ' + o.id + ' 已收款入账';
+        }
+      }
+      db.renewalOpportunities.forEach(function (r) {
+        if (r.studentId === stu.id && r.id !== o.renewalOpportunityId &&
+          (r.status === RENEWAL.PENDING || r.status === RENEWAL.FOLLOWING)) {
+          r.status = RENEWAL.CLOSED;
+          r.remark = (r.remark ? r.remark + '；' : '') + '学员已补充课时，自动关闭';
+          r.updatedAt = o.creditedAt;
+        }
+      });
+      save();
+      refreshRenewalOpportunities(stu.id);
+      save();
+      return orderView(o.id);
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'PAYMENT_FAILED',
+        '收款确认未完成，已整体回滚（不会产生课时）：' + e.message, e.data);
+    }
+  }
+  function cancelOrder(id, opt) {
+    assertCan('order.create');
+    opt = opt || {};
+    var o = orderOf(id);
+    if (session.role === 'agent') {
+      var self = assertSelfAgent(sessionAgentId());
+      if (o.agentId !== self) throw bizError('FORBIDDEN', '只能取消自己客户的待审核订单');
+    }
+    if (o.status !== ORDER.PENDING && o.status !== ORDER.REVIEWED) {
+      throw bizError('ORDER_STATUS_INVALID', '只有「待审核 / 待收款」订单可以取消');
+    }
+    var reason = String(opt.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '取消订单必须填写原因');
+    var from = o.status;
+    o.status = ORDER.CANCELLED;
+    o.cancelReason = reason;
+    o.updatedAt = stamp();
+    orderLog(o.id, 'CANCELLED', '订单取消：' + reason, from, ORDER.CANCELLED);
+    if (o.renewalOpportunityId) {
+      var rn = renewal(o.renewalOpportunityId);
+      if (rn && rn.status === RENEWAL.ORDERED) {
+        rn.status = RENEWAL.PENDING;
+        rn.renewalOrderId = '';
+        rn.updatedAt = stamp();
+      }
+    }
+    save();
+    return o;
+  }
+  /** 订单与课时账核对：用于验收与管理员自查 */
+  function orderCheck(id) {
+    var o = orderOf(id);
+    var acc = o.lessonAccountId ? account(o.lessonAccountId) : null;
+    var pay = orderPayments(o.id).filter(function (p) { return p.status === PAY.CONFIRMED; })[0] || null;
+    var creditedFlows = db.flows.filter(function (f) {
+      return f.orderId === o.id && (f.type === '购买入账' || f.type === '赠送入账');
+    });
+    var allFlows = db.flows.filter(function (f) { return f.orderId === o.id; });
+    var flowHours = creditedFlows.reduce(function (n, f) { return n + Number(f.delta || 0); }, 0);
+    var ok = true, reasons = [];
+    if (o.status === ORDER.CREDITED) {
+      if (!pay) { ok = false; reasons.push('已入账订单缺少已确认收款记录'); }
+      if (!acc) { ok = false; reasons.push('已入账订单缺少课时账户'); }
+      if (acc && Number(acc.hours) !== Number(o.hours)) { ok = false; reasons.push('账户购买课时与订单不一致'); }
+      if (acc && Number(acc.gift) !== Number(o.gift)) { ok = false; reasons.push('账户赠送课时与订单不一致'); }
+      if (flowHours !== Number(o.totalHours)) { ok = false; reasons.push('入账流水合计 ' + flowHours + ' 与订单总课时 ' + o.totalHours + ' 不一致'); }
+    } else {
+      if (acc) { ok = false; reasons.push('未入账订单却存在课时账户'); }
+      if (creditedFlows.length) { ok = false; reasons.push('未入账订单却存在入账流水'); }
+    }
+    return {
+      ok: ok, order: o, account: acc, payment: pay,
+      flows: creditedFlows, allFlows: allFlows, flowHours: flowHours, reasons: reasons
+    };
+  }
+
+  /* ---------------- 课时调整 ---------------- */
+  function adjustLessons(studentId, delta, reason, opt) {
+    assertCan('lesson.adjust');
+    opt = opt || {};
+    delta = Number(delta);
+    if (!delta) throw bizError('DELTA_INVALID', '调整课时不能为 0');
+    var s = student(studentId);
+    if (!s) throw bizError('STUDENT_NOT_FOUND', '学员不存在');
+    var why = String(reason || '').trim();
+    if (!why) throw bizError('REASON_REQUIRED', '课时调整必须填写原因');
+    var accs = db.accounts.filter(function (a) { return a.studentId === studentId || a.student === s.name; });
+    if (!accs.length) throw bizError('NO_ACCOUNT', '该学员没有课时账户，不能凭空调整课时');
+    var acc = delta > 0 ? accs[accs.length - 1] : (accs.filter(function (a) { return Number(a.remain) > 0; })[0] || accs[0]);
+    if (delta < 0 && Number(acc.remain) < Math.abs(delta)) {
+      throw bizError('INSUFFICIENT_HOURS', '可用课时不足（当前剩余 ' + acc.remain + ' 课时）');
+    }
+    var snap = JSON.stringify(db);
+    try {
+      var before = Number(acc.remain || 0);
+      acc.remain = before + delta;
+      acc.adjust = Number(acc.adjust || 0) + delta;
+      acc.updatedAt = stamp();
+      setLessonAccountStatus(acc, db.config.renewal.lessonThreshold);
+      pushFlow({
+        student: s.name, studentId: s.id, account: acc.id,
+        type: '课时调整', delta: delta, before: before, after: acc.remain,
+        ref: opt.ref || '有权限的课时调整', note: why
+      });
+      syncStudentRemain(s.id);
+      save();
+      refreshRenewalOpportunities(s.id);
+      save();
+      return { account: acc, remaining: acc.remain, student: s };
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'ADJUST_FAILED', '课时调整未完成，已回滚：' + e.message);
+    }
+  }
+
+  /* ---------------- 续费机会 ---------------- */
+  function refreshRenewalOpportunities(studentId) {
+    var targets = studentId ? [student(studentId)].filter(Boolean) : db.students;
+    var created = [];
+    var threshold = Number(db.config.renewal.lessonThreshold || LESSON_ALERT_THRESHOLD);
+    var days = Number(db.config.renewal.expireDays || EXPIRE_ALERT_DAYS);
+    targets.forEach(function (s) {
+      var at = studentAttribution(s.id);
+      if (!at.agentId) return;
+      var accs = db.accounts.filter(function (a) { return a.studentId === s.id || a.student === s.name; });
+      accs.forEach(function (a) {
+        var low = Number(a.remain) < threshold;
+        var near = a.expireAt && a.expireAt >= TODAY && a.expireAt <= addDays(TODAY, days);
+        var source = low ? '课时不足' : (near ? '套餐临期' : '');
+        var open = db.renewalOpportunities.filter(function (r) {
+          return r.studentId === s.id && r.accountId === a.id &&
+            (r.status === RENEWAL.PENDING || r.status === RENEWAL.FOLLOWING);
+        })[0];
+        var current = db.renewalOpportunities.filter(function (r) {
+          return r.studentId === s.id && r.accountId === a.id && r.status === RENEWAL.ORDERED;
+        })[0];
+        if (!source) {
+          if (open) {
+            open.status = RENEWAL.CLOSED;
+            open.remark = (open.remark ? open.remark + '；' : '') + '课时/有效期已恢复，自动关闭';
+            open.updatedAt = stamp();
+          }
+          return;
+        }
+        if (current) return;
+        if (open) {
+          open.sourceType = source;
+          open.remain = a.remain;
+          open.expireAt = a.expireAt || '';
+          open.agentId = at.agentId;
+          open.updatedAt = stamp();
+          return;
+        }
+        var r = {
+          id: nextId('RN', 'RN', 3), studentId: s.id, leadId: at.leadId || '',
+          agentId: at.agentId, accountId: a.id, orderId: at.orderId || '',
+          sourceType: source, remain: a.remain, threshold: threshold,
+          expireAt: a.expireAt || '', status: RENEWAL.PENDING,
+          handledBy: '', remark: '', renewalOrderId: '',
+          createdAt: stamp(), updatedAt: stamp()
+        };
+        db.renewalOpportunities.push(r);
+        created.push(r);
+      });
+    });
+    return created;
+  }
+  function renewalRows(query) {
+    query = query || {};
+    return db.renewalOpportunities.filter(function (r) {
+      if (query.status && r.status !== query.status) return false;
+      if (query.agentId && r.agentId !== query.agentId) return false;
+      if (query.studentId && r.studentId !== query.studentId) return false;
+      return true;
+    }).map(function (r) {
+      var s = student(r.studentId), a = agent(r.agentId), acc = r.accountId ? account(r.accountId) : null;
+      return {
+        renewal: r, student: s, agent: a, account: acc,
+        studentName: s ? s.name : '', agentName: a ? a.name : '机构直营',
+        grade: s ? s.grade : '', remain: r.remain, expireAt: r.expireAt,
+        teacherName: s ? s.teacherName : ''
+      };
+    }).sort(function (a, b) { return a.renewal.createdAt < b.renewal.createdAt ? 1 : -1; });
+  }
+  function agentRenewals(agentId) {
+    var self = session.role === 'agent' ? assertSelfAgent(sessionAgentId()) : (agentId || defaultAgentId());
+    return renewalRows({ agentId: self }).filter(function (x) {
+      return x.renewal.agentId === self;
+    });
+  }
+  function handleRenewal(id, opt) {
+    assertCan('renewal.handle');
+    opt = opt || {};
+    var r = assertRenewalAccess(renewal(id));
+    if (r.status === RENEWAL.ORDERED || r.status === RENEWAL.CLOSED) {
+      throw bizError('RENEWAL_CLOSED', '该续费机会已「' + r.status + '」，不能再跟进');
+    }
+    var remark = String(opt.remark || '').trim();
+    if (!remark) throw bizError('REMARK_REQUIRED', '记录续费跟进必须填写内容');
+    r.status = RENEWAL.FOLLOWING;
+    r.handledBy = operatorNameNow();
+    r.remark = remark;
+    r.updatedAt = stamp();
+    save();
+    return r;
+  }
+  function closeRenewal(id, opt) {
+    assertCan('renewal.handle');
+    opt = opt || {};
+    var r = assertRenewalAccess(renewal(id));
+    if (r.status === RENEWAL.ORDERED) throw bizError('RENEWAL_ORDERED', '该续费机会已经转成订单，不能关闭');
+    var remark = String(opt.remark || '').trim();
+    if (!remark) throw bizError('REMARK_REQUIRED', '关闭续费机会必须填写原因');
+    r.status = RENEWAL.CLOSED;
+    r.remark = remark;
+    r.handledBy = operatorNameNow();
+    r.updatedAt = stamp();
+    save();
+    return r;
+  }
+  /** 代理发起续费订单：必须来自自己的续费机会，套餐课时按当前售价重新下单 */
+  function submitRenewalOrder(renewalId, productId, opt) {
+    assertCan('order.create');
+    opt = opt || {};
+    var r = assertRenewalAccess(renewal(renewalId));
+    if (r.status === RENEWAL.ORDERED) throw bizError('RENEWAL_ORDERED', '该续费机会已转成订单，不能重复提交');
+    if (r.status === RENEWAL.CLOSED) throw bizError('RENEWAL_CLOSED', '该续费机会已关闭');
+    var s = student(r.studentId);
+    if (!s) throw bizError('STUDENT_NOT_FOUND', '学员不存在');
+    var p = product(productId || r.productId);
+    if (!p) throw bizError('PRODUCT_REQUIRED', '请选择续费套餐');
+    var snap = JSON.stringify(db);
+    try {
+      var o = createOrderRecord({
+        type: ORDER_TYPE.RENEW, leadId: r.leadId, studentId: s.id, parentId: s.parent,
+        agentId: r.agentId, followerId: '', productId: p.id,
+        renewalOpportunityId: r.id, remark: opt.remark || ''
+      });
+      r.status = RENEWAL.ORDERED;
+      r.renewalOrderId = o.id;
+      r.handledBy = operatorNameNow();
+      r.updatedAt = stamp();
+      if (r.leadId) {
+        leadLog(r.leadId, LEAD_ACTION.ORDERED,
+          '代理发起续费订单 ' + o.id + '：' + p.name + '，待审核收款', '', '');
+      }
+      save();
+      return orderView(o.id);
+    } catch (e) {
+      db = JSON.parse(snap);
+      throw bizError(e.code || 'RENEWAL_ORDER_FAILED',
+        '续费订单提交失败，已回滚：' + e.message, e.data);
+    }
+  }
+
+  /* ---------------- 学习反馈 ---------------- */
+  function syncFeedbackFromReport(rp) {
+    if (!rp) return null;
+    if (db.learningFeedbacks.some(function (f) { return f.reportId === rp.id; })) return null;
+    var f = {
+      id: feedbackId(), studentId: rp.studentId, teacherId: rp.teacherId,
+      courseId: rp.courseId, reportId: rp.id, title: rp.title,
+      performance: rp.content.performance || '', weak: rp.content.weak || '',
+      next: rp.content.next || '', status: '已发布', visibleToAgent: true,
+      createdAt: rp.createdAt || stamp(), publishedAt: rp.publishedAt || stamp()
+    };
+    db.learningFeedbacks.push(f);
+    return f;
+  }
+  function createLearningFeedback(input) {
+    assertCan('feedback.create');
+    input = input || {};
+    var s = student(input.studentId);
+    if (!s) throw bizError('STUDENT_NOT_FOUND', '学员不存在');
+    var teacherId = input.teacherId || session.teacherId;
+    if (session.role === 'teacher') {
+      teacherId = assertSelfTeacher(teacherId);
+      assertMyStudent(s.id);
+    }
+    var courseId = input.courseId || '';
+    if (courseId) {
+      var c = course(courseId);
+      if (!c) throw bizError('COURSE_NOT_FOUND', '课程不存在');
+      if (c.studentId !== s.id) throw bizError('COURSE_STUDENT_MISMATCH', '该课程不属于此学员');
+    }
+    var title = String(input.title || '').trim() || '课堂学习反馈';
+    if (!String(input.performance || '').trim()) throw bizError('CONTENT_REQUIRED', '请填写本节表现');
+    var publish = input.publish !== false;
+    var f = {
+      id: feedbackId(), studentId: s.id, teacherId: teacherId || '',
+      courseId: courseId, reportId: input.reportId || '', title: title,
+      performance: String(input.performance || ''), weak: String(input.weak || ''),
+      next: String(input.next || ''), status: publish ? '已发布' : '草稿',
+      visibleToAgent: input.visibleToAgent !== false,
+      createdAt: stamp(), publishedAt: publish ? stamp() : ''
+    };
+    db.learningFeedbacks.push(f);
+    save();
+    return f;
+  }
+  function learningFeedbacksOfStudent(studentId) {
+    return db.learningFeedbacks.filter(function (f) {
+      return f.studentId === studentId && f.status === '已发布' && f.visibleToAgent;
+    }).sort(function (a, b) { return a.publishedAt < b.publishedAt ? 1 : -1; });
+  }
+  /** 代理只能看到自己客户学员的已发布反馈，字段也做最小投影 */
+  function agentFeedbacksForStudent(studentId) {
+    var s = student(studentId);
+    if (!s) return [];
+    return learningFeedbacksOfStudent(studentId).map(function (f) {
+      var t = teacher(f.teacherId);
+      return {
+        id: f.id, studentId: f.studentId, studentName: s.name,
+        teacherId: f.teacherId, teacherName: t ? t.name : '教师',
+        courseId: f.courseId, title: f.title,
+        performance: f.performance, weak: f.weak, next: f.next,
+        publishedAt: f.publishedAt, status: f.status
+      };
+    });
+  }
+  function agentFeedbacks(agentId) {
+    var self = session.role === 'agent' ? assertSelfAgent(sessionAgentId()) : (agentId || defaultAgentId());
+    var ids = agentStudentIds(self);
+    var out = [];
+    ids.forEach(function (sid) { out = out.concat(agentFeedbacksForStudent(sid)); });
+    return out.sort(function (a, b) { return a.publishedAt < b.publishedAt ? 1 : -1; });
+  }
+  function parentFeedbacks(parentId) {
+    var pid = resolveParentId(parentId);
+    var out = [];
+    parentStudents(pid).forEach(function (s) {
+      learningFeedbacksOfStudent(s.id).forEach(function (f) {
+        var t = teacher(f.teacherId);
+        out.push({
+          id: f.id, studentId: s.id, studentName: s.name, title: f.title,
+          teacherName: t ? t.name : '教师', performance: f.performance,
+          weak: f.weak, next: f.next, publishedAt: f.publishedAt
+        });
+      });
+    });
+    return out.sort(function (a, b) { return a.publishedAt < b.publishedAt ? 1 : -1; });
+  }
+
+  /* ---------------- 家长端投影：只有孩子的，且不暴露内部财务流水 ---------------- */
+  function resolveParentId(parentId) {
+    if (session.role === 'parent') {
+      if (parentId) assertSelfParent(parentId);
+      return sessionParentId();
+    }
+    return parentId || defaultParentId();
+  }
+  function parentChildren(parentId) {
+    var pid = resolveParentId(parentId);
+    return parentStudents(pid).map(function (s) {
+      var accs = db.accounts.filter(function (a) { return a.studentId === s.id || a.student === s.name; });
+      return {
+        id: s.id, name: s.name, gender: s.gender, grade: s.grade, book: s.book,
+        school: s.school, teacherName: s.teacherName || '未分配', status: s.status,
+        remain: s.remain,
+        totalHours: accs.reduce(function (n, a) { return n + Number(a.buy || 0) + Number(a.gift || 0); }, 0),
+        usedHours: accs.reduce(function (n, a) { return n + Number(a.used || 0); }, 0),
+        lastCourse: s.lastCourse || '', lastContent: s.lastContent || '',
+        latestFeedback: learningFeedbacksOfStudent(s.id)[0] || null
+      };
+    });
+  }
+  function parentOrders(parentId) {
+    var pid = resolveParentId(parentId);
+    var kids = parentStudents(pid).map(function (s) { return s.id; });
+    return db.orders.filter(function (o) {
+      return o.parentId === pid || kids.indexOf(o.studentId) >= 0;
+    }).map(function (o) {
+      return {
+        id: o.id, type: o.type, studentId: o.studentId,
+        studentName: (student(o.studentId) || {}).name || '',
+        productName: o.productName, totalHours: o.totalHours, amount: o.amount,
+        paidAmount: o.paidAmount, status: o.status, createdAt: o.createdAt, creditedAt: o.creditedAt
+      };
+    }).sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+  }
+  function parentHours(parentId) {
+    var pid = resolveParentId(parentId);
+    return parentStudents(pid).map(function (s) {
+      return {
+        studentId: s.id, studentName: s.name, remain: s.remain,
+        accounts: db.accounts.filter(function (a) {
+          return a.studentId === s.id || a.student === s.name;
+        }).map(function (a) {
+          return {
+            id: a.id, product: a.product, totalHours: Number(a.buy || 0) + Number(a.gift || 0),
+            usedHours: Number(a.used || 0), remain: Number(a.remain || 0),
+            expireAt: a.expireAt || a.valid || '', status: a.status
+          };
+        })
+      };
+    });
+  }
+  function parentView(parentId) {
+    var pid = resolveParentId(parentId);
+    var p = parent(pid);
+    if (!p) throw bizError('PARENT_NOT_FOUND', '家长档案不存在');
+    return {
+      parent: { id: p.id, name: p.name, phone: p.phone, relation: p.relation, kids: p.kids || [] },
+      children: parentChildren(pid), orders: parentOrders(pid), hours: parentHours(pid),
+      feedbacks: parentFeedbacks(pid),
+      policy: { canSeeInternalFlows: false, note: '家长端只展示自己孩子的订单状态、课时余额汇总与已发布反馈' }
+    };
+  }
+
+  /* ---------------- 佣金：本轮只占位预估，不做结算 ---------------- */
+  function agentCommissionPreview(agentId, ordersInput) {
+    var a = agent(agentId);
+    if (!a) return null;
+    var os = (ordersInput || db.orders.filter(function (o) { return o.agentId === agentId; }))
+      .filter ? ordersInput || null : null;
+    var list = ordersInput || db.orders.filter(function (o) { return o.agentId === agentId && o.status === ORDER.CREDITED; });
+    var amount = list.filter(function (o) { return o.status === ORDER.CREDITED; })
+      .reduce(function (n, o) { return n + Number(o.amount || 0); }, 0);
+    var count = list.filter(function (o) { return o.status === ORDER.CREDITED; }).length;
+    var estimate = 0;
+    if (a.ruleType === 'percent') estimate = amount * Number(a.ruleValue || 0) / 100;
+    else if (a.ruleType === 'fixed') estimate = Number(a.ruleValue || 0) * count;
+    return {
+      agentId: a.id, agentName: a.name, ruleText: a.ruleText,
+      ruleType: a.ruleType, ruleValue: a.ruleValue,
+      creditedOrders: count, creditedAmount: amount,
+      estimatedCommission: Math.round(estimate * 100) / 100,
+      settled: false, settlementStatus: '未结算',
+      note: '本轮只展示佣金预估；完整结算（应结/已结/打款/冲正）不在范围内，接口已预留 getCommission/agentCommissionPreview。'
+    };
+  }
+  function commissionSummary() {
+    return db.agents.filter(function (a) { return a.status === '启用'; }).map(function (a) {
+      return agentCommissionPreview(a.id);
+    });
+  }
+
+  /* ---------------- 迁移提示 ---------------- */
+  function migrationInfo() {
+    return db.meta && db.meta.migration ? clone(db.meta.migration) : null;
+  }
+
   /* ---------------- 对外 ---------------- */
   var Store = {
     TODAY: TODAY,
@@ -7169,6 +9321,46 @@
     /* 家长端 */
     reviewWords: reviewWords, familyCheck: familyCheck, familyChecksOf: familyChecksOf,
     toggleFamilyCheck: toggleFamilyCheck,
+    /* ---------- 第七轮：代理 / 线索 / 订单 / 收款 / 课时 / 续费 / 反馈 ---------- */
+    currentAgentId: sessionAgentId, currentParentId: sessionParentId,
+    operatorForRole: operatorForRole,
+    defaultAgentId: defaultAgentId, defaultParentId: defaultParentId,
+    agents: agents, agent: agent, agentsOf: agentsOf,
+    recruitAgent: recruitAgent, reviewAgent: reviewAgent, setAgentStatus: setAgentStatus,
+    agentLogsOf: agentLogsOf, agentOverview: agentOverview,
+    products: products, product: product,
+    leads: leads, lead: lead, leadView: leadView, leadRowCounts: leadRowCounts,
+    agentCustomers: agentCustomers, agentLeadView: agentLeadView, agentStudentView: agentStudentView,
+    createLead: createLead, addLeadFollowUp: addLeadFollowUp, markLeadIntent: markLeadIntent,
+    assignLead: assignLead, leadFollowUpsOf: leadFollowUpsOf, leadOrders: leadOrders,
+    leadLogsOf: function (leadId) {
+      return db.leadLogs.filter(function (x) { return x.leadId === leadId; })
+        .sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+    },
+    submitEnrollmentOrder: submitEnrollmentOrder,
+    orders: orderRows, order: orderOf, orderView: orderView, orderOf: orderOf,
+    orderRows: orderRows, orderLogsOf: orderLogsOf, orderPayments: orderPayments,
+    reviewOrder: reviewOrder, confirmOrderPayment: confirmOrderPayment, cancelOrder: cancelOrder,
+    orderCheck: orderCheck,
+    payments: function () { return db.payments; },
+    adjustLessons: adjustLessons, syncStudentRemain: syncStudentRemain,
+    refreshRenewalOpportunities: refreshRenewalOpportunities,
+    renewals: renewalRows, renewal: renewal, agentRenewals: agentRenewals,
+    handleRenewal: handleRenewal, closeRenewal: closeRenewal, submitRenewalOrder: submitRenewalOrder,
+    createLearningFeedback: createLearningFeedback, learningFeedbacksOfStudent: learningFeedbacksOfStudent,
+    agentFeedbacks: agentFeedbacks, parentFeedbacks: parentFeedbacks,
+    parent: parent, parentChildren: parentChildren, parentOrders: parentOrders,
+    parentHours: parentHours, parentView: parentView,
+    agentCommissionPreview: agentCommissionPreview, commissionSummary: commissionSummary,
+    migrationInfo: migrationInfo,
+    LEAD_STATUS: LEAD_STATUS, LEAD: LEAD, LEAD_NEXT: LEAD_NEXT, LEAD_TONE: LEAD_TONE,
+    LEAD_LEVELS: LEAD_LEVELS, LEAD_CHANNELS: LEAD_CHANNELS,
+    LESSON_ALERT_THRESHOLD: LESSON_ALERT_THRESHOLD, EXPIRE_ALERT_DAYS: EXPIRE_ALERT_DAYS,
+    ORDER_STATUS: ORDER_STATUS, ORDER: ORDER, ORDER_TONE: ORDER_TONE, ORDER_TYPE: ORDER_TYPE,
+    PAY_STATUS: PAY_STATUS, PAY: PAY, PAY_METHODS: PAY_METHODS,
+    AGENT_STATUS: AGENT_STATUS, AGENT_TONE: AGENT_TONE, AGENT_TYPES: AGENT_TYPES,
+    RENEWAL_STATUS: RENEWAL_STATUS, RENEWAL: RENEWAL, RENEWAL_TONE: RENEWAL_TONE,
+    RENEWAL_SOURCE: RENEWAL_SOURCE,
     /* 状态词表 */
     STATUS: STATUS, COURSE_STATUS: COURSE_STATUS, REPORT_STATUS: REPORT_STATUS,
     statusTone: statusTone, isOpen: isOpen, isDone: isDone, isActive: isActive,

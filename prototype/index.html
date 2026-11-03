@@ -53,6 +53,7 @@
         <a href="admin/lead-list.html">客户线索<span class="code">admin/lead-list</span></a>
         <a href="admin/lead-detail.html">线索详情 / 转学员<span class="code">admin/lead-detail</span></a>
         <a href="admin/agent-list.html">代理管理<span class="code">admin/agent-list</span></a>
+        <a href="admin/renewal-list.html">续费机会<span class="code">admin/renewal-list</span></a>
         <a href="admin/product-list.html">课程商品<span class="code">admin/product-list</span></a>
         <a href="admin/order-list.html">订单管理<span class="code">admin/order-list</span></a>
         <a href="admin/order-create.html">创建订单（4 步）<span class="code">admin/order-create</span></a>
@@ -135,6 +136,7 @@
         <a href="agent/my-customers.html">我的客户<span class="code">agent/my-customers</span></a>
         <a href="agent/customer-create.html">客户报备（重复检测）<span class="code">customer-create</span></a>
         <a href="agent/customer-detail.html">客户详情 / 跟进<span class="code">customer-detail</span></a>
+        <a href="agent/renewal-list.html">续费机会<span class="code">agent/renewal-list</span></a>
         <a href="agent/commission.html">佣金记录<span class="code">agent/commission</span></a>
       </div>
     </div>
@@ -338,6 +340,70 @@
             <a class="btn btn-sm" href="teacher/article-training.html">④ 文章训练</a>
             <a class="btn btn-sm" href="parent/review-words.html">⑤ 家长端词表</a>
             <a class="btn btn-sm" href="admin/hour-flow.html">⑥ 课时流水</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-head">
+      <div class="card-title">第七轮迭代 · 代理获客与报名续费全流程线上化
+        <span class="hint">代理归属 / 维护归属 / 成交归属分开留痕 · 收款才入课时 · 续费机会自动生成</span></div>
+      <div class="flex gap8">
+        <span class="badge-role">存储版本 v8</span>
+        <button class="btn btn-sm" onclick="resetStore()">重置演示数据</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div><b>本轮把招生链路全部落到 Store：</b>
+          代理招募 → 客户线索 → 跟进记录 → 意向转化 → 报名订单 → 收款确认 → 课时入账 →
+          教学服务 → 学习反馈 → 续费跟进 → 再次购买。
+          学员课时只来自「订单收款入账」或有权限的课时调整流水，
+          <b>新建家长 / 学员一律不产生课时</b>；建档 + 订单、收款 + 入账、续费下单均为原子事务，失败整体回滚。</div></div>
+
+      <div class="grid g2" style="gap:16px">
+        <div>
+          <div class="section-title">这一轮新增了什么</div>
+          <div class="note-list">
+            <div style="margin-bottom:9px"><b>1 · 代理全生命周期</b><br>
+              招募建档（待审核）→ 审核通过（启用）→ 停用 / 恢复；代理身份由会话提供，
+              页面不写死任何工号或姓名。</div>
+            <div style="margin-bottom:9px"><b>2 · 线索与跟进</b><br>
+              线索状态：新线索 → 待联系 → 跟进中 → 意向明确 → 已成交 / 无效 / 已关闭，
+              <b>只允许向前流转</b>；每次跟进、状态变更、归属调整都写线索日志（只追加）。</div>
+            <div style="margin-bottom:9px"><b>3 · 报名订单与收款入账</b><br>
+              待审核 → 待收款 → 已入账；收款金额必须与订单一致，部分收款不生成课时。
+              收款确认在同一事务中完成：写收款记录、创建课时账户、写购买/赠送流水、
+              重算学员余额、推进线索成交、关闭续费机会。</div>
+            <div style="margin-bottom:9px"><b>4 · 最小数据投影</b><br>
+              代理只看自己负责的客户、订单与已发布学习反馈；家长只看自己孩子的订单状态、
+              课时汇总与已发布报告，<b>不展示收款流水与他人信息</b>。</div>
+            <div><b>5 · 续费与佣金边界</b><br>
+              剩余课时低于阈值或套餐临期自动生成续费机会；续费仍走订单收款入账。
+              完整佣金结算、企微机器人、第三方支付接入本轮不做，只保留规则文本与预估接口、
+              状态字段与方式占位。</div>
+          </div>
+        </div>
+        <div>
+          <div class="section-title">端到端验证路径（一条链路）</div>
+          <div class="note-list">
+            <div style="margin-bottom:8px"><b>①</b> 代理端报备新家长 → 生成线索（重复手机号被阻断并提示归属审核）。</div>
+            <div style="margin-bottom:8px"><b>②</b> 记录至少一条跟进 → 转为意向明确 → 提交报名订单。</div>
+            <div style="margin-bottom:8px"><b>③</b> 管理端审核订单 → 确认收款 → 学员课时 = 订单总课时。</div>
+            <div style="margin-bottom:8px"><b>④</b> 教务分配教师 → 教师授课并发布学习反馈 → 代理端可见该客户反馈。</div>
+            <div style="margin-bottom:8px"><b>⑤</b> 课时低于阈值 → 自动生成续费机会 → 代理发起续费订单。</div>
+            <div style="margin-bottom:8px"><b>⑥</b> 管理员确认续费收款 → 课时累加，订单与课时账核对一致。</div>
+            <div><b>⑦</b> 越权与身份：代理看不到其他代理客户；家长看不到内部流水；
+              全流程责任人均取自会话。</div>
+          </div>
+          <div class="flex gap8 mt12" style="flex-wrap:wrap">
+            <a class="btn btn-sm btn-primary" href="agent/workbench.html">代理工作台</a>
+            <a class="btn btn-sm" href="admin/lead-list.html">客户线索</a>
+            <a class="btn btn-sm" href="admin/order-list.html">订单与收款</a>
+            <a class="btn btn-sm" href="admin/renewal-list.html">续费机会</a>
+            <a class="btn btn-sm" href="parent/home.html">家长端</a>
           </div>
         </div>
       </div>

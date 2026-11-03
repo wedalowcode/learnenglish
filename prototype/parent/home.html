@@ -12,78 +12,14 @@
 
   <div class="m-head">
     <div class="grow">
-      <div class="m-title" style="font-size:15px">陈志强，您好</div>
+      <div class="m-title" style="font-size:15px" id="greet">您好</div>
       <div class="small muted">启航英语 · 城东校区</div>
     </div>
-    <div class="avatar">陈</div>
+    <div class="avatar" id="avatar">家</div>
   </div>
 
-  <div class="m-body">
-
-    <!-- 孩子切换 -->
-    <div class="m-seg" id="kidSeg">
-      <div class="on" onclick="switchKid(this,'陈可欣','七年级',42)">陈可欣</div>
-      <div onclick="switchKid(this,'付嘉禾','七年级',28)">付嘉禾</div>
-    </div>
-
-    <!-- 课时 -->
-    <div class="m-hero">
-      <div class="flex jcb aic">
-        <div>
-          <div class="t">当前可用课时</div>
-          <div class="n" id="heroHours">42</div>
-          <div class="s">60 课时包 · 有效期至 2027-09-11</div>
-        </div>
-        <span class="m-chip">在读</span>
-      </div>
-      <div class="flex gap8 mt12">
-        <a href="hours.html" style="flex:1;background:rgba(255,255,255,.18);color:#fff;text-align:center;
-          padding:7px 0;border-radius:8px;font-size:12px">课时明细</a>
-        <a href="course-records.html" style="flex:1;background:rgba(255,255,255,.18);color:#fff;text-align:center;
-          padding:7px 0;border-radius:8px;font-size:12px">课程记录</a>
-      </div>
-    </div>
-
-    <!-- 最近课程 -->
-    <div class="m-card">
-      <div class="m-card-title">最近一次课程
-        <a href="course-records.html" class="small" style="font-weight:400">全部</a></div>
-      <div class="m-row"><span class="k">上课时间</span><span>11-02 09:00-10:05</span></div>
-      <div class="m-row"><span class="k">授课教师</span><span>李婉</span></div>
-      <div class="m-row"><span class="k">课程主题</span><span style="max-width:170px;text-align:right">Unit 1 词汇强化</span></div>
-      <div class="m-row"><span class="k">课程状态</span><span class="tag tag-green">已完成</span></div>
-      <div class="m-row"><span class="k">学习报告</span>
-        <span><span class="tag tag-amber">教师撰写中</span></span></div>
-    </div>
-
-    <!-- 最近报告 -->
-    <div class="m-card">
-      <div class="m-card-title">最近学习报告
-        <a href="report.html" class="small" style="font-weight:400">查看</a></div>
-      <div class="small muted mb8">10-31 · Unit 3 词汇强化 + 短文听读</div>
-      <div class="m-stat" style="margin-bottom:10px">
-        <div><div class="v">23</div><div class="k">训练单词</div></div>
-        <div><div class="v" style="color:var(--success)">16</div><div class="k">本次通过</div></div>
-        <div><div class="v" style="color:var(--warning)">7</div><div class="k">待复习</div></div>
-      </div>
-      <div style="background:var(--bg);border-radius:8px;padding:9px 11px;font-size:12.5px;color:var(--text-2);line-height:1.7">
-        本次课听读流畅，能在提示下完成整篇短文跟读。7 个单词进入复习体系，请协助每日朗读 5 分钟。
-      </div>
-      <a class="btn btn-block btn-primary mt12" href="report.html">查看完整报告</a>
-    </div>
-
-    <!-- 待复习 -->
-    <div class="m-card">
-      <div class="m-card-title">待复习单词
-        <a href="review-words.html" class="small" style="font-weight:400">查看 / 打印</a></div>
-      <div class="m-stat">
-        <div><div class="v" style="color:var(--warning)">34</div><div class="k">待复习</div></div>
-        <div><div class="v">18</div><div class="k">今日到期</div></div>
-        <div><div class="v" style="color:var(--success)">132</div><div class="k">已掌握</div></div>
-      </div>
-      <div class="small muted mt8">家庭勾选仅作辅助记录，不会改变孩子的正式学习状态。</div>
-    </div>
-
+  <div class="m-body" id="body">
+    <div class="empty" style="padding:40px 10px"><p>正在加载…</p></div>
   </div>
 
   <div class="m-tabbar">
@@ -95,15 +31,102 @@
   </div>
 </div>
 
-<script>
-function switchKid(el, name, grade, hours) {
-  document.querySelectorAll('#kidSeg > *').forEach(x => x.classList.remove('on'));
-  el.classList.add('on');
-  document.getElementById('heroHours').textContent = hours;
-  document.querySelector('.m-hero .s').textContent =
-    (name === '陈可欣' ? '60 课时包 · 有效期至 2027-09-11' : '30 课时包 · 有效期至 2027-04-17');
-}
-</script>
+<script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const S = Store;
+const PID = Proto.parentId();
+S.setSession({ role: 'parent', parentId: PID, operatorName: Proto.parentName() });
+
+let VIEW = null;
+let curKid = '';
+
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+try { VIEW = S.parentView(PID); } catch (e) {
+  document.getElementById('body').innerHTML =
+    `<div class="m-card"><div class="small" style="color:var(--danger)">${esc(e.message)}</div></div>`;
+  throw e;
+}
+
+const P = VIEW.parent;
+document.getElementById('greet').textContent = `${P.name}，您好`;
+document.getElementById('avatar').textContent = (P.name || '家').slice(0, 1);
+curKid = VIEW.children.length ? VIEW.children[0].id : '';
+
+function kid() { return VIEW.children.filter(k => k.id === curKid)[0] || VIEW.children[0]; }
+
+function render() {
+  const c = kid();
+  if (!c) {
+    document.getElementById('body').innerHTML =
+      '<div class="m-card"><div class="small muted">暂无在读孩子档案，请联系教务。</div></div>';
+    return;
+  }
+  const fb = c.latestFeedback;
+  const orders = VIEW.orders.filter(o => o.studentId === c.id);
+  document.getElementById('body').innerHTML = `
+    <div class="m-seg" id="kidSeg">
+      ${VIEW.children.map(k => `<div class="${k.id === c.id ? 'on' : ''}" onclick="switchKid('${k.id}')">${esc(k.name)}</div>`).join('')}
+    </div>
+
+    <div class="m-hero">
+      <div class="flex jcb aic">
+        <div>
+          <div class="t">当前可用课时</div>
+          <div class="n" id="heroHours">${c.remain}</div>
+          <div class="s">累计购买 ${c.totalHours} 课时 · 已使用 ${c.usedHours}</div>
+        </div>
+        <span class="m-chip">${esc(c.status)}</span>
+      </div>
+      <div class="flex gap8 mt12">
+        <a href="hours.html" style="flex:1;background:rgba(255,255,255,.18);color:#fff;text-align:center;
+          padding:7px 0;border-radius:8px;font-size:12px">课时明细</a>
+        <a href="course-records.html" style="flex:1;background:rgba(255,255,255,.18);color:#fff;text-align:center;
+          padding:7px 0;border-radius:8px;font-size:12px">课程记录</a>
+      </div>
+    </div>
+
+    <div class="m-card">
+      <div class="m-card-title">最近一次课程
+        <a href="course-records.html" class="small" style="font-weight:400">全部</a></div>
+      <div class="m-row"><span class="k">上课时间</span><span>${esc(c.lastCourse || '暂无')}</span></div>
+      <div class="m-row"><span class="k">授课教师</span><span>${esc(c.teacherName)}</span></div>
+      <div class="m-row"><span class="k">课程主题</span><span style="max-width:170px;text-align:right">${esc(c.lastContent || '暂无')}</span></div>
+      <div class="m-row"><span class="k">学习反馈</span>
+        <span>${fb ? `<span class="tag tag-green">${esc(fb.publishedAt ? fb.publishedAt.slice(5, 10) : '已发布')}</span>` : '<span class="tag tag-amber">待发布</span>'}</span></div>
+    </div>
+
+    <div class="m-card">
+      <div class="m-card-title">最近学习反馈
+        <a href="report.html" class="small" style="font-weight:400">查看</a></div>
+      ${fb ? `<div class="small muted mb8">${esc(fb.title)} · ${esc((fb.publishedAt || '').slice(0, 10))}</div>
+        <div style="background:var(--bg);border-radius:8px;padding:9px 11px;font-size:12.5px;color:var(--text-2);line-height:1.7">
+          表现：${esc(fb.performance)}${fb.weak ? '<br>薄弱点：' + esc(fb.weak) : ''}${fb.next ? '<br>下一步：' + esc(fb.next) : ''}
+        </div>
+        <a class="btn btn-block btn-primary mt12" href="report.html">查看完整报告</a>`
+        : '<div class="small muted">教师发布学习反馈后，这里会同步显示。</div>'}
+    </div>
+
+    <div class="m-card">
+      <div class="m-card-title">报名订单
+        <a href="hours.html" class="small" style="font-weight:400">课时明细</a></div>
+      ${orders.length ? orders.slice(0, 3).map(o => `
+        <div class="m-row"><span class="k">${esc(o.productName)} · ${esc(o.createdAt.slice(0, 10))}</span>
+          <span><span class="tag tag-${S.ORDER_TONE[o.status] || 'slate'}">${o.status}</span></span></div>`).join('')
+        : '<div class="small muted">暂无订单</div>'}
+      <div class="small muted mt8">课时只来自订单收款入账；家长端不展示收款流水与内部操作记录。</div>
+    </div>`;
+}
+
+function switchKid(id) {
+  curKid = id;
+  render();
+}
+
+render();
+</script>
 </body>
 </html>

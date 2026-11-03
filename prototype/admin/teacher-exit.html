@@ -46,7 +46,7 @@
 <script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'admin', active: 'teacher-list' });
-Store.setSession({ role: 'admin', operatorName: '张敏' });
+Store.setSession({ role: 'admin' });
 const S = Store;
 const TID = new URLSearchParams(location.search).get('id') || '';
 let T = S.teacher(TID);

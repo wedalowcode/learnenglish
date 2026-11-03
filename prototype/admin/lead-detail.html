@@ -11,151 +11,12 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar" id="topbar"></header>
-    <main class="content">
-
-      <div class="page-head">
-        <div>
-          <div class="crumb">招生管理<span class="sep">/</span><a href="lead-list.html">客户线索</a><span class="sep">/</span>线索详情</div>
-          <h1 class="page-title">郑先生 <span class="tag tag-purple" style="font-size:12px;vertical-align:middle">意向明确</span></h1>
-          <div class="page-sub">L2026052 · 13612223333 · 学生 郑欣 · 七年级 · 来源 转介绍</div>
-        </div>
-        <div class="page-actions">
-          <a class="btn" href="lead-list.html">返回</a>
-          <button class="btn" onclick="Proto.toast('打开编辑表单（示意）')">编辑资料</button>
-          <button class="btn" onclick="Proto.openModal('followModal')">记录跟进</button>
-          <button class="btn btn-primary" onclick="toStudent()">转为学员</button>
-        </div>
-      </div>
-
-      <div class="grid g-2-1" style="align-items:start">
-        <div>
-          <!-- 客户信息 -->
-          <div class="card">
-            <div class="card-head"><div class="card-title">客户基础信息</div>
-              <span class="tag tag-amber nodot">意向等级：高</span></div>
-            <div class="card-body">
-              <div class="desc g3">
-                <div class="desc-item"><span class="k">家长姓名</span><span class="v">郑先生</span></div>
-                <div class="desc-item"><span class="k">联系电话</span><span class="v mono">13612223333</span></div>
-                <div class="desc-item"><span class="k">学生姓名</span><span class="v">郑欣</span></div>
-                <div class="desc-item"><span class="k">学生年级</span><span class="v">七年级</span></div>
-                <div class="desc-item"><span class="k">所在地区</span><span class="v">城东片区</span></div>
-                <div class="desc-item"><span class="k">意向教材</span><span class="v">人教版</span></div>
-                <div class="desc-item"><span class="k">意向课程</span><span class="v">60 课时包（一对一）</span></div>
-                <div class="desc-item"><span class="k">首次沟通</span><span class="v">2026-10-18</span></div>
-                <div class="desc-item"><span class="k">下次跟进</span><span class="v" style="color:var(--danger)">2026-11-03</span></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 来源与归属 -->
-          <div class="card">
-            <div class="card-head"><div class="card-title">来源与归属</div></div>
-            <div class="card-body">
-              <div class="desc g3">
-                <div class="desc-item"><span class="k">来源渠道</span><span class="v">转介绍</span></div>
-                <div class="desc-item"><span class="k">推荐代理</span><span class="v">刘倩（A002 · 合作机构）</span></div>
-                <div class="desc-item"><span class="k">推荐人</span><span class="v">老学员家长 周女士</span></div>
-                <div class="desc-item"><span class="k">当前跟进人</span><span class="v">张敏</span></div>
-                <div class="desc-item"><span class="k">创建时间</span><span class="v">2026-10-18 09:20</span></div>
-                <div class="desc-item"><span class="k">线索状态</span><span class="v"><span class="tag tag-purple">意向明确</span></span></div>
-              </div>
-              <div class="alert alert-info mt12"><span class="ico">i</span>
-                <div>该手机号在库内<b>仅有一条</b>记录，无重复报备冲突。若后续出现同号报备，将进入归属审核流程。</div></div>
-            </div>
-          </div>
-
-          <!-- 跟进时间轴 -->
-          <div class="card">
-            <div class="card-head"><div class="card-title">跟进时间轴<span class="hint">共 4 次</span></div>
-              <button class="btn btn-sm" onclick="Proto.openModal('followModal')">+ 记录跟进</button></div>
-            <div class="card-body">
-              <div class="timeline">
-                <div class="tl-item on">
-                  <div class="tl-head"><b>微信</b><span class="tag tag-purple nodot" style="font-size:11px">意向 高</span>
-                    <span class="tl-time">2026-11-01 10:05 · 张敏</span></div>
-                  <div class="tl-body">家长确认希望本周内安排一次试听，关注词汇与发音；已发送 60 课时包报价单。
-                    <div class="box">下次跟进：2026-11-03 · 试听时间待定（家长周六上午方便）</div></div>
-                </div>
-                <div class="tl-item">
-                  <div class="tl-head"><b>电话</b><span class="tag tag-amber nodot" style="font-size:11px">意向 中</span>
-                    <span class="tl-time">2026-10-26 16:40 · 张敏</span></div>
-                  <div class="tl-body">介绍课程体系与师资，家长询问是否能固定教师。已说明可指定主负责教师，历史课程保留授课教师。</div>
-                </div>
-                <div class="tl-item">
-                  <div class="tl-head"><b>微信</b><span class="tag tag-amber nodot" style="font-size:11px">意向 中</span>
-                    <span class="tl-time">2026-10-21 11:15 · 张敏</span></div>
-                  <div class="tl-body">发送机构介绍与学员案例，家长回复「先了解一下」。</div>
-                </div>
-                <div class="tl-item">
-                  <div class="tl-head"><b>首次联系</b><span class="tl-time">2026-10-18 09:35 · 张敏</span></div>
-                  <div class="tl-body">线索来源于老学员家长转介绍，孩子七年级，词汇基础薄弱，希望提升校内成绩。</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 右侧 -->
-        <div>
-          <div class="card">
-            <div class="card-head"><div class="card-title">状态流转</div></div>
-            <div class="card-body">
-              <div class="timeline">
-                <div class="tl-item on"><div class="tl-head"><b>新线索</b><span class="tl-time">10-18</span></div></div>
-                <div class="tl-item on"><div class="tl-head"><b>待联系</b><span class="tl-time">10-18</span></div></div>
-                <div class="tl-item on"><div class="tl-head"><b>跟进中</b><span class="tl-time">10-21</span></div></div>
-                <div class="tl-item on"><div class="tl-head"><b>意向明确</b><span class="tag tag-purple nodot" style="font-size:11px">当前</span></div></div>
-                <div class="tl-item"><div class="tl-head" style="color:var(--text-3)"><b>已成交</b>
-                  <span class="tl-time">需关联有效订单</span></div></div>
-              </div>
-              <div class="alert alert-warn mt8"><span class="ico">!</span>
-                <div>「已成交」必须关联有效订单，或由管理员确认成交条件；仅改状态不产生业绩与佣金。</div></div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-head"><div class="card-title">报价 / 意向课程</div></div>
-            <div class="card-body">
-              <div class="m-row"><span class="k">60 课时包（一对一）</span><b class="mono">¥ 6,980</b></div>
-              <div class="m-row"><span class="k">30 课时包（一对一）</span><span class="mono">¥ 3,680</span></div>
-              <div class="m-row"><span class="k">课时单价</span><span class="mono">¥ 116.33</span></div>
-              <div class="m-row"><span class="k">已报优惠</span><span class="mono" style="color:var(--success)">−¥ 200</span></div>
-              <div class="flex gap8 mt12">
-                <button class="btn btn-sm grow" onclick="Proto.toast('已发送报价单（示意）','ok')">发送报价单</button>
-                <a class="btn btn-sm grow btn-primary" href="order-create.html">创建订单</a>
-              </div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-head"><div class="card-title">关联订单</div></div>
-            <div class="card-body">
-              <div class="empty" style="padding:24px 8px">
-                <div class="e-ico">▤</div>
-                <p>暂未关联订单</p>
-                <p class="small">成交后订单会自动关联到本线索，并保留代理归属</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-head"><div class="card-title">后续动作</div></div>
-            <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
-              <button class="btn btn-primary btn-block" onclick="toStudent()">转为学员</button>
-              <button class="btn btn-block" onclick="Proto.openModal('followModal')">记录本次跟进</button>
-              <button class="btn btn-block" onclick="Proto.toast('打开分配跟进人（示意）')">分配跟进人</button>
-              <button class="btn btn-block" onclick="Proto.confirmBox('关闭线索','关闭后线索不再进入跟进提醒，历史记录保留。','确认关闭',()=>Proto.toast('线索已关闭','ok'))">关闭线索</button>
-              <button class="btn btn-block btn-danger" onclick="Proto.confirmBox('标记无效','标记为无效后不再跟进，记录保留。','标记无效',()=>Proto.toast('已标记无效','ok'))">标记无效</button>
-            </div>
-          </div>
-        </div>
-      </div>
+    <main class="content" id="page">
+      <div class="empty" style="padding:60px 20px"><div class="e-ico">▤</div><p>正在加载线索…</p></div>
     </main>
   </div>
 </div>
 
-<!-- 跟进表单 -->
 <div class="mask" id="followModal">
   <div class="modal">
     <div class="modal-head"><div class="modal-title">记录跟进</div>
@@ -163,22 +24,12 @@
     <div class="modal-body">
       <div class="form-grid">
         <div class="field"><label>跟进方式 <span class="req">*</span></label>
-          <select class="select"><option>电话</option><option>微信</option><option>面谈</option><option>其他</option></select></div>
-        <div class="field"><label>跟进时间 <span class="req">*</span></label>
-          <input class="input" type="datetime-local" value="2026-11-02T09:30"></div>
+          <select class="select" id="f_type"><option>电话</option><option>微信</option><option>面谈</option><option>其他</option></select></div>
+        <div class="field"><label>下次跟进时间</label><input class="input" type="date" id="f_next"></div>
         <div class="field full"><label>沟通内容 <span class="req">*</span></label>
-          <textarea class="textarea" placeholder="必填，记录客户诉求与你的回复"></textarea></div>
-        <div class="field"><label>客户意向</label>
-          <div class="radio-row">
-            <label class="radio"><input type="radio" name="lv">高</label>
-            <label class="radio"><input type="radio" name="lv" checked>中</label>
-            <label class="radio"><input type="radio" name="lv">低</label>
-          </div></div>
-        <div class="field"><label>下次跟进时间</label>
-          <input class="input" type="datetime-local" value="2026-11-04T10:00"></div>
-        <div class="field full"><label>附件</label>
-          <input class="input" type="file" style="padding:5px 8px;height:auto">
-          <div class="tip">选填，支持图片 / PDF，单个不超过 10MB</div></div>
+          <textarea class="textarea" id="f_content" placeholder="必填，记录客户诉求与你的回复"></textarea></div>
+        <div class="field full"><label>推进状态（只能向前流转）</label>
+          <select class="select" id="f_status"></select></div>
       </div>
     </div>
     <div class="modal-foot">
@@ -188,28 +39,294 @@
   </div>
 </div>
 
+<div class="mask" id="orderModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">提交报名订单</div>
+      <button class="modal-close" onclick="Proto.closeModal('orderModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span>
+        <div>订单进入「待审核」；<b>管理员确认收款后才创建课时账户并入账</b>。未收款不产生任何课时。</div></div>
+      <div class="field"><label>报名套餐 <span class="req">*</span></label>
+        <select class="select" id="o_product"></select></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('orderModal')">取消</button>
+      <button class="btn btn-primary" onclick="submitOrder()">提交订单</button>
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="assignModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">调整客户归属</div>
+      <button class="modal-close" onclick="Proto.closeModal('assignModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-warn mb16"><span class="ico">!</span>
+        <div>归属调整会写入线索日志，原归属保留可追溯；成交归属仍以实际收款订单的代理为准。</div></div>
+      <div class="field"><label>调整到代理</label><select class="select" id="a_agent"></select></div>
+      <div class="field"><label>调整原因 <span class="req">*</span></label>
+        <textarea class="textarea" id="a_reason" placeholder="必填，例如：重复报备核对后归属原报备人"></textarea></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('assignModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveAssign()">确认调整</button>
+    </div>
+  </div>
+</div>
+
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
+const S = Store;
+S.setSession({ role: 'admin' });
 Proto.shell({ role: 'admin', active: 'lead-list' });
 
-function saveFollow() {
-  Proto.closeModal('followModal');
-  Proto.toast('跟进已记录，线索状态更新为「意向明确」', 'ok');
+const Q = new URLSearchParams(location.search);
+const LEAD_ID = Q.get('id') || '';
+const IS_NEW = Q.get('new') === '1';
+let VIEW = null;
+
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function newForm() {
+  document.getElementById('page').innerHTML = `
+    <div class="page-head">
+      <div><div class="crumb">招生管理<span class="sep">/</span><a href="lead-list.html">客户线索</a><span class="sep">/</span>新增线索</div>
+        <h1 class="page-title">新增客户线索</h1>
+        <div class="page-sub">机构代录线索：可指定代理归属；手机号重复会被 Store 阻断</div></div>
+      <div class="page-actions"><a class="btn" href="lead-list.html">返回</a>
+        <button class="btn btn-primary" onclick="createLead()">保存线索</button></div>
+    </div>
+    <div class="card"><div class="card-body">
+      <div class="form-grid">
+        <div class="field" id="f_name"><label>家长姓名 <span class="req">*</span></label><input class="input" id="i_name"><div class="err">请填写家长姓名</div></div>
+        <div class="field" id="f_phone"><label>联系电话 <span class="req">*</span></label><input class="input" id="i_phone" maxlength="11"><div class="err">请输入 11 位手机号</div></div>
+        <div class="field"><label>学生姓名</label><input class="input" id="i_kid"></div>
+        <div class="field"><label>学生年级</label><select class="select" id="i_grade"><option value="">请选择</option>${S.TEACHER_GRADES.map(g => `<option>${g}</option>`).join('')}</select></div>
+        <div class="field"><label>意向课程</label><select class="select" id="i_product"></select></div>
+        <div class="field"><label>来源渠道</label><select class="select" id="i_channel">${S.LEAD_CHANNELS.map(c => `<option>${c}</option>`).join('')}</select></div>
+        <div class="field"><label>代理归属</label><select class="select" id="i_agent"></select></div>
+        <div class="field"><label>备注</label><input class="input" id="i_remark"></div>
+      </div>
+      <div class="divider"></div>
+      <div class="flex gap8" style="justify-content:flex-end">
+        <a class="btn" href="lead-list.html">取消</a>
+        <button class="btn btn-primary" onclick="createLead()">保存线索</button>
+      </div>
+    </div></div>`;
+  document.getElementById('i_product').innerHTML = '<option value="">暂不确定</option>' +
+    S.products().filter(p => p.status !== '停用').map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  document.getElementById('i_agent').innerHTML = '<option value="">机构直营</option>' +
+    S.agents().filter(a => a.status === '启用').map(a => `<option value="${a.id}">${a.name}（${a.id}）</option>`).join('');
 }
 
-function toStudent() {
-  Proto.confirmBox('线索转学员',
-    `将 <b>郑先生</b> 转为学员，系统按以下顺序处理：<br><br>
-     1. 检查是否存在同手机号客户（本次无重复）<br>
-     2. 选择已有家长或创建家长<br>
-     3. 创建学员档案：郑欣 · 七年级 · 人教版<br>
-     4. 建立线索与学员关联<br>
-     5. 保留原始代理归属：刘倩（A002）<br>
-     6. <b>不自动扣课，也不创建虚构收款</b>`, '继续转学员',
-    () => location.href = 'student-form.html');
+function createLead() {
+  const name = document.getElementById('i_name').value.trim();
+  const phone = document.getElementById('i_phone').value.trim();
+  let bad = false;
+  Proto.markInvalid('f_name', !name); if (!name) bad = true;
+  Proto.markInvalid('f_phone', !Proto.isPhone(phone)); if (!Proto.isPhone(phone)) bad = true;
+  if (bad) { Proto.toast('请检查标红的必填项', 'err'); return; }
+  try {
+    const p = S.product(document.getElementById('i_product').value);
+    const lead = S.createLead({
+      name: name, phone: phone,
+      kidName: document.getElementById('i_kid').value.trim(),
+      grade: document.getElementById('i_grade').value,
+      channel: document.getElementById('i_channel').value,
+      intent: p ? p.name : '', intentProductId: p ? p.id : '',
+      agentId: document.getElementById('i_agent').value,
+      followerId: S.currentSession().operatorId,
+      followerName: '机构',
+      remark: document.getElementById('i_remark').value.trim()
+    });
+    Proto.toast('线索 ' + lead.id + ' 已创建', 'ok');
+    location.href = 'lead-detail.html?id=' + lead.id;
+  } catch (e) { Proto.toast(e.message, 'err'); }
 }
+
+function render() {
+  try { VIEW = S.leadView(LEAD_ID); }
+  catch (e) {
+    document.getElementById('page').innerHTML =
+      `<div class="card"><div class="card-body"><div class="alert alert-warn"><span class="ico">!</span><div>${esc(e.message)}</div></div>
+       <a class="btn mt12" href="lead-list.html">返回线索列表</a></div></div>`;
+    return;
+  }
+  const L = VIEW.lead, STU = VIEW.student, AG = VIEW.agent;
+  const nexts = S.LEAD_NEXT[L.status] || [];
+  const closed = [S.LEAD.DEAL, S.LEAD.INVALID, S.LEAD.CLOSED].indexOf(L.status) >= 0;
+
+  document.getElementById('page').innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="crumb">招生管理<span class="sep">/</span><a href="lead-list.html">客户线索</a><span class="sep">/</span>线索详情</div>
+        <h1 class="page-title">${esc(L.name)} <span class="tag tag-${S.LEAD_TONE[L.status] || 'slate'}" style="font-size:12px;vertical-align:middle">${L.status}</span></h1>
+        <div class="page-sub">${L.id} · ${esc(L.phone)} · ${esc(L.kidName || (STU ? STU.name : '—'))} · ${esc(L.grade || '—')} · 来源 ${esc(L.channel)}</div>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="lead-list.html">返回</a>
+        <button class="btn" onclick="openAssign()">调整归属</button>
+        ${closed ? '' : '<button class="btn" onclick="openFollow()">记录跟进</button>'}
+        ${[S.LEAD.TO_CONTACT, S.LEAD.FOLLOWING].indexOf(L.status) >= 0
+          ? '<button class="btn btn-primary" onclick="toIntent()">转为意向</button>' : ''}
+        ${L.status === S.LEAD.INTENT
+          ? '<button class="btn btn-primary" onclick="openOrder()">创建报名订单</button>' : ''}
+      </div>
+    </div>
+
+    <div class="grid g-2-1" style="align-items:start">
+      <div>
+        <div class="card">
+          <div class="card-head"><div class="card-title">客户基础信息</div>
+            <span class="tag tag-amber nodot">意向等级：${esc(L.level || '—')}</span></div>
+          <div class="card-body"><div class="desc g3">
+            <div class="desc-item"><span class="k">家长姓名</span><span class="v">${esc(L.name)}</span></div>
+            <div class="desc-item"><span class="k">联系电话</span><span class="v mono">${esc(L.phone)}</span></div>
+            <div class="desc-item"><span class="k">学生姓名</span><span class="v">${esc(L.kidName || (STU ? STU.name : '—'))}</span></div>
+            <div class="desc-item"><span class="k">学生年级</span><span class="v">${esc(L.grade || '—')}</span></div>
+            <div class="desc-item"><span class="k">意向教材</span><span class="v">${esc(L.book || '—')}</span></div>
+            <div class="desc-item"><span class="k">意向课程</span><span class="v">${esc(L.intent || '—')}</span></div>
+            <div class="desc-item"><span class="k">下次跟进</span><span class="v">${esc(L.nextFollowAt ? L.nextFollowAt.slice(0, 16) : '—')}</span></div>
+            <div class="desc-item"><span class="k">创建时间</span><span class="v">${esc(L.createdAt)}</span></div>
+          </div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">归属信息<span class="hint">三处归属分开留痕</span></div></div>
+          <div class="card-body"><div class="desc g3">
+            <div class="desc-item"><span class="k">代理归属</span><span class="v">${AG ? esc(AG.name) + '（' + AG.id + '）' : '机构直营'}</span></div>
+            <div class="desc-item"><span class="k">维护归属</span><span class="v">${esc(L.followerName || '—')}</span></div>
+            <div class="desc-item"><span class="k">成交归属</span><span class="v">${VIEW.orders.filter(o => o.order.status === S.ORDER.CREDITED).length ? (AG ? esc(AG.name) : '机构直营') : '待成交'}</span></div>
+          </div></div>
+        </div>
+
+        <div class="card" id="follow">
+          <div class="card-head"><div class="card-title">跟进时间轴<span class="hint">共 ${VIEW.followUps.length} 次</span></div>
+            ${closed ? '' : '<button class="btn btn-sm" onclick="openFollow()">+ 记录跟进</button>'}</div>
+          <div class="card-body">
+            ${VIEW.followUps.length ? `<div class="timeline">${VIEW.followUps.map((f, i) => `
+              <div class="tl-item ${i === 0 ? 'on' : ''}"><div class="tl-head"><b>${esc(f.type)}</b>
+                <span class="tl-time">${esc(f.at)} · ${esc(f.by)}</span></div>
+                <div class="tl-body">${esc(f.content)}${f.nextAt ? `<div class="box">下次跟进：${esc(f.nextAt)}</div>` : ''}</div></div>`).join('')}</div>`
+              : '<div class="empty" style="padding:24px 8px"><p>尚未记录跟进</p><p class="small">至少一条跟进后才能转为意向</p></div>'}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">关联订单</div></div>
+          <div class="card-body ${VIEW.orders.length ? 'tight' : ''}">
+            ${VIEW.orders.length ? `<table class="table compact">
+              <thead><tr><th>订单</th><th>类型</th><th>套餐</th><th class="right">课时</th><th class="right">金额</th><th>状态</th><th>下单</th></tr></thead>
+              <tbody>${VIEW.orders.map(x => { const o = x.order; return `<tr>
+                <td class="mono small"><a href="order-detail.html?id=${o.id}">${o.id}</a></td>
+                <td class="small">${o.type}</td><td class="small">${esc(o.productName)}</td>
+                <td class="right mono">${o.totalHours}</td><td class="right mono">${Proto.money(o.amount)}</td>
+                <td><span class="tag tag-${S.ORDER_TONE[o.status] || 'slate'}">${o.status}</span></td>
+                <td class="small muted">${esc(o.createdAt)}</td></tr>`; }).join('')}</tbody></table>`
+              : '<div class="empty" style="padding:24px 8px"><div class="e-ico">▤</div><p>暂未关联订单</p><p class="small">只有「意向明确」可提交报名订单</p></div>'}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="card-head"><div class="card-title">操作日志<span class="hint">只追加</span></div></div>
+          <div class="card-body">
+            ${VIEW.logs.length ? `<div class="timeline">${VIEW.logs.slice(0, 8).map(l => `
+              <div class="tl-item on"><div class="tl-head"><b>${esc(l.action)}</b>
+                <span class="tl-time">${esc(l.at)} · ${esc(l.by || '系统')}</span></div>
+                <div class="tl-body">${esc(l.detail || '')}${l.from ? `<div class="small muted">${esc(l.from)} → ${esc(l.to)}</div>` : ''}</div></div>`).join('')}</div>`
+              : '<div class="small muted">暂无日志</div>'}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">后续动作</div></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
+            ${[S.LEAD.TO_CONTACT, S.LEAD.FOLLOWING].indexOf(L.status) >= 0
+              ? '<button class="btn btn-primary btn-block" onclick="toIntent()">转为意向明确</button>' : ''}
+            ${L.status === S.LEAD.INTENT
+              ? '<button class="btn btn-primary btn-block" onclick="openOrder()">提交报名订单</button>' : ''}
+            ${closed ? '<div class="small muted">线索已结束，只能查看历史记录。</div>'
+              : `<button class="btn btn-block" onclick="openFollow()">记录本次跟进</button>
+                 <button class="btn btn-block" onclick="openAssign()">调整归属</button>`}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">学员与课时</div></div>
+          <div class="card-body">
+            ${STU ? `<div class="m-row"><span class="k">学员</span><b>${esc(STU.name)}</b></div>
+              <div class="m-row"><span class="k">家长</span><span>${VIEW.parent ? esc(VIEW.parent.name) + '（' + VIEW.parent.id + '）' : '—'}</span></div>
+              <div class="m-row"><span class="k">当前教师</span><span>${esc(STU.teacherName || '未分配')}</span></div>
+              <div class="m-row" style="border-bottom:none"><span class="k">剩余课时</span><b class="mono">${STU.remain}</b></div>`
+              : '<div class="small muted">成交并收款后才会创建学员档案与课时账户。</div>'}
+          </div>
+        </div>
+
+        <div class="alert alert-info mt16"><span class="ico">i</span>
+          <div>「已成交」由收款确认自动推进，改状态不产生业绩；课时只能来自订单收款入账或有权限的调整流水。</div></div>
+      </div>
+    </div>`;
+
+  document.getElementById('f_status').innerHTML = '<option value="">保持当前状态</option>' +
+    nexts.map(s => `<option>${s}</option>`).join('');
+  document.getElementById('o_product').innerHTML = S.products().filter(p => p.status !== '停用')
+    .map(p => `<option value="${p.id}"${p.id === L.intentProductId ? ' selected' : ''}>${p.name} · ${p.hours}课时 · ${Proto.money(p.amount)}</option>`).join('');
+  document.getElementById('a_agent').innerHTML = '<option value="">机构直营（无代理）</option>' +
+    S.agents().filter(a => a.status === '启用' || a.id === L.agentId)
+      .map(a => `<option value="${a.id}"${a.id === L.agentId ? ' selected' : ''}>${a.name}（${a.id}）</option>`).join('');
+}
+
+function openFollow() { Proto.openModal('followModal'); }
+function saveFollow() {
+  try {
+    S.addLeadFollowUp(LEAD_ID, {
+      type: document.getElementById('f_type').value,
+      content: document.getElementById('f_content').value.trim(),
+      nextAt: document.getElementById('f_next').value,
+      status: document.getElementById('f_status').value
+    });
+    Proto.closeModal('followModal');
+    document.getElementById('f_content').value = '';
+    Proto.toast('跟进已记录', 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function toIntent() {
+  try { S.markLeadIntent(LEAD_ID, { intent: VIEW.lead.intent }); Proto.toast('已转为意向明确', 'ok'); render(); }
+  catch (e) { Proto.toast(e.message, 'err'); }
+}
+function openOrder() { Proto.openModal('orderModal'); }
+function submitOrder() {
+  try {
+    const o = S.submitEnrollmentOrder({
+      leadId: LEAD_ID, productId: document.getElementById('o_product').value,
+      agentId: VIEW.lead.agentId || ''
+    });
+    Proto.closeModal('orderModal');
+    Proto.toast('报名订单 ' + o.order.id + ' 已提交，等待审核收款', 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function openAssign() { Proto.openModal('assignModal'); }
+function saveAssign() {
+  try {
+    S.assignLead(LEAD_ID, {
+      agentId: document.getElementById('a_agent').value,
+      reason: document.getElementById('a_reason').value.trim()
+    });
+    Proto.closeModal('assignModal');
+    Proto.toast('归属已调整，并写入线索日志', 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+if (IS_NEW || !LEAD_ID) newForm();
+else render();
 </script>
 </body>
 </html>

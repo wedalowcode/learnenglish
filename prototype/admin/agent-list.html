@@ -17,25 +17,23 @@
         <div>
           <div class="crumb">招生管理<span class="sep">/</span>代理管理</div>
           <h1 class="page-title">代理管理</h1>
-          <div class="page-sub">共 4 位代理 · 启用 3 · 停用 1 · 累计成交 ¥80,340</div>
+          <div class="page-sub" id="sub">—</div>
         </div>
         <div class="page-actions">
           <button class="btn" onclick="Proto.toast('导出代理业绩（示意）','ok')">导出业绩</button>
-          <button class="btn btn-primary" onclick="openForm()">+ 新增代理</button>
+          <button class="btn btn-primary" onclick="openForm()">+ 招募代理</button>
         </div>
       </div>
 
       <div class="alert alert-warn"><span class="ico">!</span>
         <div><b>佣金规则待业务确认：</b>按订单比例还是固定金额、何时确认佣金、退款如何冲回、结算周期，均列为待确认项。
-        原型中佣金规则以配置文本展示，不做自动计算假设。</div>
+        原型只展示规则文本与佣金预估，<b>不做自动结算</b>。</div>
       </div>
 
       <div class="card filter mt16">
         <div class="field"><label>姓名 / 手机号</label><input class="input" id="kw" placeholder="输入姓名或手机号" oninput="render()"></div>
-        <div class="field"><label>代理类型</label>
-          <select class="select" id="tp" onchange="render()"><option value="">全部</option><option>个人代理</option><option>合作机构</option></select></div>
         <div class="field"><label>代理状态</label>
-          <select class="select" id="st" onchange="render()"><option value="">全部</option><option>启用</option><option>停用</option></select></div>
+          <select class="select" id="st" onchange="render()"><option value="">全部</option></select></div>
         <div class="filter-actions"><button class="btn btn-primary" onclick="render()">查询</button></div>
       </div>
 
@@ -46,36 +44,12 @@
               <thead>
                 <tr><th style="width:70px">编号</th><th>姓名</th><th>手机号</th><th>类型</th><th>客户数</th>
                   <th class="right">成交客户</th><th class="right">成交订单</th><th class="right">成交金额</th>
-                  <th class="right">待结算佣金</th><th class="right">已结算</th><th>状态</th><th style="width:150px">操作</th></tr>
+                  <th class="right">佣金预估</th><th>规则</th><th>状态</th><th style="width:170px">操作</th></tr>
               </thead>
               <tbody id="rows"></tbody>
             </table>
           </div>
-          <div class="pager"><span>共 <b id="total">4</b> 条</span>
-            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card mt16">
-        <div class="card-head"><div class="card-title">佣金规则配置<span class="hint">规则变更只影响之后产生的佣金，不篡改历史</span></div></div>
-        <div class="card-body">
-          <div class="table-wrap">
-            <table class="table compact">
-              <thead><tr><th>代理</th><th>规则类型</th><th>规则内容</th><th>确认时点</th><th>退款处理</th><th>结算周期</th><th>状态</th></tr></thead>
-              <tbody>
-                <tr><td class="strong">王磊</td><td>按订单比例</td><td>成交额 8%</td>
-                  <td><span class="tag tag-amber nodot">待确认</span></td><td><span class="tag tag-amber nodot">待确认</span></td>
-                  <td><span class="tag tag-amber nodot">待确认</span></td><td>启用</td></tr>
-                <tr><td class="strong">刘倩</td><td>按订单比例</td><td>成交额 10%</td>
-                  <td><span class="tag tag-amber nodot">待确认</span></td><td><span class="tag tag-amber nodot">待确认</span></td>
-                  <td><span class="tag tag-amber nodot">待确认</span></td><td>启用</td></tr>
-                <tr><td class="strong">赵勇</td><td>固定金额</td><td>300 元 / 单</td>
-                  <td><span class="tag tag-amber nodot">待确认</span></td><td><span class="tag tag-amber nodot">待确认</span></td>
-                  <td><span class="tag tag-amber nodot">待确认</span></td><td>启用</td></tr>
-              </tbody>
-            </table>
-          </div>
+          <div class="pager"><span>共 <b id="total">0</b> 条</span></div>
         </div>
       </div>
 
@@ -83,38 +57,32 @@
   </div>
 </div>
 
-<!-- 新增/编辑代理 -->
 <div class="mask" id="formModal">
   <div class="modal wide">
-    <div class="modal-head"><div class="modal-title" id="ftitle">新增代理</div>
+    <div class="modal-head"><div class="modal-title">招募代理</div>
       <button class="modal-close" onclick="Proto.closeModal('formModal')">×</button></div>
     <div class="modal-body">
       <div class="form-grid g3">
-        <div class="field"><label>姓名 <span class="req">*</span></label><input class="input" placeholder="代理姓名"></div>
-        <div class="field"><label>手机号 <span class="req">*</span></label><input class="input" placeholder="11 位手机号" maxlength="11"></div>
-        <div class="field"><label>微信号</label><input class="input" placeholder="选填"></div>
-        <div class="field"><label>代理类型</label>
-          <select class="select"><option>个人代理</option><option>合作机构</option></select></div>
-        <div class="field"><label>归属负责人</label>
-          <select class="select"><option>张敏</option><option>教务处</option></select></div>
-        <div class="field"><label>状态</label>
-          <select class="select"><option>启用</option><option>停用</option></select></div>
-        <div class="field"><label>佣金规则类型</label>
-          <select class="select"><option>按订单比例</option><option>固定金额 / 单</option></select></div>
-        <div class="field"><label>佣金比例 / 金额</label><input class="input" placeholder="如 8% 或 300"></div>
-        <div class="field"><label>结算周期</label>
-          <select class="select"><option>月结</option><option>订单确认后即时</option><option>待确认</option></select></div>
-        <div class="field full"><label>收款信息（按权限展示）</label>
-          <textarea class="textarea" placeholder="开户行 / 账号 / 支付宝等，仅财务权限可见"></textarea>
-          <div class="tip">该字段受权限控制，无财务权限的角色不可见</div></div>
-        <div class="field full"><label>备注</label><textarea class="textarea"></textarea></div>
+        <div class="field" id="f_name"><label>姓名 <span class="req">*</span></label><input class="input" id="i_name"><div class="err">请填写姓名</div></div>
+        <div class="field" id="f_phone"><label>手机号 <span class="req">*</span></label><input class="input" id="i_phone" maxlength="11"><div class="err">请填写手机号</div></div>
+        <div class="field"><label>微信号</label><input class="input" id="i_wechat"></div>
+        <div class="field"><label>代理类型</label><select class="select" id="i_type"></select></div>
+        <div class="field"><label>规则类型</label>
+          <select class="select" id="i_ruleType">
+            <option value="percent">按订单比例</option><option value="fixed">固定金额 / 单</option><option value="none">暂不确定</option>
+          </select></div>
+        <div class="field"><label>比例 / 金额</label><input class="input" id="i_ruleValue" placeholder="如 8 或 300"></div>
+        <div class="field full"><label>规则说明 <span class="req">*</span></label>
+          <input class="input" id="i_ruleText" placeholder="如 成交额 8%（确认时点与结算周期待业务确认）">
+          <div class="tip">本轮只展示规则，不做完整结算</div></div>
+        <div class="field full"><label>备注</label><textarea class="textarea" id="i_remark"></textarea></div>
       </div>
-      <div class="alert alert-warn mt16"><span class="ico">!</span>
-        <div>佣金确认时点、退款冲回规则仍待业务确认，保存后规则状态标记为「待确认」，不参与自动结算。</div></div>
+      <div class="alert alert-info mt16"><span class="ico">i</span>
+        <div>招募后代理状态为「待审核」，审核通过（启用）后才能获客与提交报名订单。</div></div>
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="Proto.closeModal('formModal')">取消</button>
-      <button class="btn btn-primary" onclick="Proto.closeModal('formModal');Proto.toast('代理信息已保存','ok')">保存</button>
+      <button class="btn btn-primary" onclick="saveAgent()">保存</button>
     </div>
   </div>
 </div>
@@ -122,45 +90,103 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
+const S = Store;
+S.setSession({ role: 'admin' });
 Proto.shell({ role: 'admin', active: 'agent-list' });
+
+document.getElementById('st').innerHTML = '<option value="">全部</option>' +
+  S.AGENT_STATUS.map(s => `<option>${s}</option>`).join('');
+document.getElementById('i_type').innerHTML = S.AGENT_TYPES.map(t => `<option>${t}</option>`).join('');
 
 function render() {
   const kw = document.getElementById('kw').value.trim();
-  const tp = document.getElementById('tp').value;
   const st = document.getElementById('st').value;
-  const rows = DB.agents.filter(a => {
-    if (kw && !(a.name.includes(kw) || a.phone.includes(kw))) return false;
-    if (tp && a.type !== tp) return false;
-    if (st && a.status !== st) return false;
-    return true;
-  });
+  const rows = S.agentsOf({ kw: kw, status: st }).filter(x => !st || x.agent.status === st);
+  const all = S.agents();
+  document.getElementById('sub').textContent =
+    `共 ${all.length} 位代理 · 启用 ${all.filter(a => a.status === '启用').length} · 待审核 ${all.filter(a => a.status === '待审核').length} · 停用 ${all.filter(a => a.status === '停用').length}`;
   document.getElementById('total').textContent = rows.length;
 
-  Proto.renderRows('rows', rows, a => `
-    <tr>
+  Proto.renderRows('rows', rows, x => {
+    const a = x.agent, cm = x.commission || {};
+    return `<tr>
       <td class="mono small">${a.id}</td>
       <td class="strong">${a.name}</td>
       <td class="mono">${a.phone}</td>
       <td class="small">${a.type}</td>
-      <td class="mono">${a.customers}</td>
-      <td class="right mono">${a.deals}</td>
-      <td class="right mono">${a.orders}</td>
-      <td class="right mono">${Proto.money(a.amount)}</td>
-      <td class="right mono" style="color:var(--warning)">${Proto.money(a.pending)}</td>
-      <td class="right mono muted">${Proto.money(a.settled)}</td>
-      <td>${a.status === '启用' ? '<span class="tag tag-green">启用</span>' : '<span class="tag tag-slate">停用</span>'}</td>
+      <td class="mono">${x.customers}</td>
+      <td class="right mono">${x.deals}</td>
+      <td class="right mono">${x.orders}</td>
+      <td class="right mono">${Proto.money(x.amount)}</td>
+      <td class="right mono" style="color:var(--warning)">${Proto.money(cm.estimatedCommission || 0)}</td>
+      <td class="small">${a.ruleText || '—'}</td>
+      <td><span class="tag tag-${S.AGENT_TONE[a.status] || 'slate'}">${a.status}</span></td>
       <td class="ops">
-        <button class="btn-link" onclick="openForm('${a.name}')">详情</button>
-        <button class="btn-link" onclick="openForm('${a.name}')">编辑</button>
-        <button class="btn-link mute" onclick="Proto.toast('查看该代理客户列表（示意）')">客户</button>
+        ${a.status === '待审核' ? `<button class="btn-link" onclick="review('${a.id}',true)">审核通过</button>
+          <button class="btn-link danger" onclick="review('${a.id}',false)">驳回</button>`
+          : `<button class="btn-link" onclick="toggle('${a.id}','${a.status}')">${a.status === '启用' ? '停用' : '启用'}</button>`}
+        <button class="btn-link" onclick="showLogs('${a.id}')">流水</button>
       </td>
-    </tr>`, 12, '没有符合条件的代理');
+    </tr>`;
+  }, 12, '没有符合条件的代理');
 }
 
-function openForm(name) {
-  document.getElementById('ftitle').textContent = name ? '代理详情 · ' + name : '新增代理';
-  Proto.openModal('formModal');
+function openForm() { Proto.openModal('formModal'); }
+function saveAgent() {
+  const name = document.getElementById('i_name').value.trim();
+  const phone = document.getElementById('i_phone').value.trim();
+  let bad = false;
+  Proto.markInvalid('f_name', !name); if (!name) bad = true;
+  Proto.markInvalid('f_phone', !Proto.isPhone(phone)); if (!Proto.isPhone(phone)) bad = true;
+  if (bad) { Proto.toast('请检查标红的必填项', 'err'); return; }
+  try {
+    const a = S.recruitAgent({
+      name: name, phone: phone,
+      wechat: document.getElementById('i_wechat').value.trim(),
+      type: document.getElementById('i_type').value,
+      ruleType: document.getElementById('i_ruleType').value,
+      ruleValue: document.getElementById('i_ruleValue').value,
+      ruleText: document.getElementById('i_ruleText').value.trim(),
+      remark: document.getElementById('i_remark').value.trim()
+    });
+    Proto.closeModal('formModal');
+    Proto.toast('代理 ' + a.name + '（' + a.id + '）已建档，等待审核', 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function review(id, pass) {
+  let remark = '';
+  if (!pass) {
+    remark = prompt('请填写驳回原因');
+    if (!remark) return;
+  }
+  try {
+    S.reviewAgent(id, { pass: pass, remark: remark });
+    Proto.toast(pass ? '代理审核通过，已启用' : '代理已驳回', 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function toggle(id, cur) {
+  const to = cur === '启用' ? '停用' : '启用';
+  let remark = '';
+  if (to === '停用') {
+    remark = prompt('请填写停用原因');
+    if (!remark) return;
+  }
+  try {
+    S.setAgentStatus(id, to, { remark: remark || '恢复启用' });
+    Proto.toast('代理状态已变更为「' + to + '」', 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function showLogs(id) {
+  const logs = S.agentLogsOf(id);
+  Proto.confirmBox('代理操作流水',
+    logs.length ? logs.map(l => `<div style="margin-bottom:6px"><b>${l.action}</b> · ${l.at} · ${l.by || '系统'}<br>
+      <span style="color:#64748b">${l.detail || ''}</span></div>`).join('')
+      : '暂无流水', '关闭', null);
 }
 render();
 </script>

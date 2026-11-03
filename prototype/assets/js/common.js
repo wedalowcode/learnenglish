@@ -17,6 +17,7 @@ const Proto = (() => {
       { group: '招生管理', items: [
         { id: 'lead-list', label: '客户线索', href: 'admin/lead-list.html' },
         { id: 'agent-list', label: '代理管理', href: 'admin/agent-list.html' },
+        { id: 'renewal-list', label: '续费机会', href: 'admin/renewal-list.html' },
       ]},
       { group: '教学管理', items: [
         { id: 'student-list', label: '学员管理', href: 'admin/student-list.html' },
@@ -95,8 +96,17 @@ const Proto = (() => {
         { id: 'agent-customers', label: '我的客户', href: 'agent/my-customers.html' },
         { id: 'agent-report', label: '客户报备', href: 'agent/customer-create.html' },
       ]},
-      { group: '佣金管理', items: [
+      { group: '续费与佣金', items: [
+        { id: 'agent-renewal', label: '续费机会', href: 'agent/renewal-list.html' },
         { id: 'agent-commission', label: '佣金记录', href: 'agent/commission.html' },
+      ]},
+    ],
+    parent: [
+      { group: '孩子学习', items: [
+        { id: 'parent-home', label: '学习首页', href: 'parent/home.html' },
+        { id: 'parent-hours', label: '课时余额', href: 'parent/hours.html' },
+        { id: 'parent-records', label: '上课记录', href: 'parent/course-records.html' },
+        { id: 'parent-reports', label: '学习报告', href: 'parent/report.html' },
       ]},
     ],
   };
@@ -107,6 +117,7 @@ const Proto = (() => {
     ops: { name: '王敏（教学资源管理员）', org: '启航英语 · 城东校区', avatar: '王', cls: 'c' },
     teacher: { name: '李婉（教师）', org: '启航英语 · 城东校区', avatar: '李', cls: 'g' },
     agent: { name: '王磊（招生代理）', org: '启航英语 · 城东校区', avatar: '王', cls: 'a' },
+    parent: { name: '陈志强（家长）', org: '启航英语 · 城东校区', avatar: '陈', cls: 'b' },
   };
 
   /* ---------------- 布局外壳 ---------------- */
@@ -333,10 +344,42 @@ const Proto = (() => {
     return (Store.teacher(id) || {}).name || '';
   }
 
+  /** 当前登录代理 ID：取自会话；演示环境会话为空时才用第一位启用代理兜底并写回会话 */
+  function agentId() {
+    const s = Store.currentSession();
+    if (s.agentId) return s.agentId;
+    const id = Store.defaultAgentId();
+    Store.setSession({
+      role: 'agent', agentId: id,
+      operatorName: (Store.agent(id) || {}).name || ''
+    });
+    return id;
+  }
+  function agentName() {
+    const id = agentId();
+    return (Store.agent(id) || {}).name || '';
+  }
+
+  /** 当前登录家长 ID：取自会话；演示环境才用第一位家长兜底 */
+  function parentId() {
+    const s = Store.currentSession();
+    if (s.parentId) return s.parentId;
+    const id = Store.defaultParentId();
+    Store.setSession({
+      role: 'parent', parentId: id,
+      operatorName: (Store.parent(id) || {}).name || ''
+    });
+    return id;
+  }
+  function parentName() {
+    const id = parentId();
+    return (Store.parent(id) || {}).name || '';
+  }
+
   return {
     shell, $, $$, money, int, toast, openModal, closeModal, openDrawer, closeDrawer,
     confirmBox, initTabs, switchTab, renderRows, speak, playAudio, isPhone, markInvalid, setText,
-    teacherId, teacherName,
+    teacherId, teacherName, agentId, agentName, parentId, parentName,
     MENUS, roleName,
   };
 })();

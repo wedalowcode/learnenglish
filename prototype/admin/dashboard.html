@@ -237,7 +237,7 @@ Proto.renderRows('recentCourses', Store.courses().slice(0, 6), c => `
 
 /* ---------------- 排行 ---------------- */
 /* 教师排行：合作状态与授课量都来自 Store，暂停/退出教师不参与 */
-Store.setSession({ role: 'admin', operatorName: '张敏' });
+Store.setSession({ role: 'admin' });
 const tRank = Store.teacherRanking({ limit: 5 });
 const maxMonth = Math.max(1, ...tRank.map(x => x.monthCourses));
 Proto.renderRows('teacherRank', tRank, (t, i) => `

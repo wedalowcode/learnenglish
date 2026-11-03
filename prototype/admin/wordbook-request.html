@@ -178,8 +178,7 @@ const S = Store;
 
 Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: TAB === 'pending' ? 'wordbook-request' : 'wordbook-grant' });
 
-const OPERATOR = { admin: '张敏', staff: '陈静', ops: '王敏' };
-S.setSession({ role: ROLE, operatorName: OPERATOR[ROLE] || '王敏' });
+S.setSession({ role: ROLE, operatorName: Store.operatorForRole(ROLE) });
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function switchRole(r) { location.href = 'wordbook-request.html?tab=' + TAB + '&as=' + r; }
@@ -214,7 +213,7 @@ function renderStats() {
     <div class="stat-foot">${c.s}</div></div>`).join('');
 
   document.getElementById('pageSub').textContent =
-    `${OPERATOR[ROLE]} · ${S.ROLE_LABEL[ROLE]} · 词库资源、学员授权、教师使用三者分开记录`;
+    `${Store.operatorForRole(ROLE)} · ${S.ROLE_LABEL[ROLE]} · 词库资源、学员授权、教师使用三者分开记录`;
 }
 
 /* ---------- Tab1 待处理申请 ---------- */

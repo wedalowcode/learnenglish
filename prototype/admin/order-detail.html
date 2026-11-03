@@ -11,159 +11,29 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar" id="topbar"></header>
-    <main class="content">
-
-      <div class="page-head">
-        <div>
-          <div class="crumb">商品订单<span class="sep">/</span><a href="order-list.html">订单管理</a><span class="sep">/</span>订单详情</div>
-          <h1 class="page-title">OD20261008002 <span class="tag tag-amber" style="font-size:12px;vertical-align:middle">部分付款</span></h1>
-          <div class="page-sub">赵一诺 · 赵明 · 60 课时包（一对一） · 下单 2026-10-08 14:05</div>
-        </div>
-        <div class="page-actions">
-          <a class="btn" href="order-list.html">返回</a>
-          <button class="btn" onclick="Proto.openModal('payModal')">登记收款</button>
-          <button class="btn btn-primary" onclick="activate()">确认生效</button>
-        </div>
-      </div>
-
-      <div class="grid g4 mb16">
-        <div class="card stat"><div class="stat-label">应收金额</div><div class="stat-value">¥ 6,980.00</div></div>
-        <div class="card stat"><div class="stat-label">已收金额</div><div class="stat-value" style="color:var(--success)">¥ 3,000.00</div></div>
-        <div class="card stat"><div class="stat-label">待收金额</div><div class="stat-value" style="color:var(--warning)">¥ 3,980.00</div></div>
-        <div class="card stat"><div class="stat-label">课时入账</div>
-          <div class="stat-value" style="color:var(--text-3);font-size:20px">未入账</div>
-          <div class="stat-foot">需收齐并确认生效后入账</div></div>
-      </div>
-
-      <div class="grid g-2-1" style="align-items:start">
-        <div>
-          <div class="card">
-            <div class="card-head"><div class="card-title">订单信息</div>
-              <span class="tag tag-amber nodot">部分付款</span></div>
-            <div class="card-body">
-              <div class="desc g3">
-                <div class="desc-item"><span class="k">订单编号</span><span class="v mono">OD20261008002</span></div>
-                <div class="desc-item"><span class="k">下单时间</span><span class="v">2026-10-08 14:05</span></div>
-                <div class="desc-item"><span class="k">下单人</span><span class="v">教务处-小陈</span></div>
-                <div class="desc-item"><span class="k">学员</span><span class="v">赵一诺（S2026003）</span></div>
-                <div class="desc-item"><span class="k">家长</span><span class="v">赵明（父亲）</span></div>
-                <div class="desc-item"><span class="k">联系电话</span><span class="v mono">13903334444</span></div>
-                <div class="desc-item"><span class="k">关联线索</span><span class="v">L2026033（已成交）</span></div>
-                <div class="desc-item"><span class="k">代理归属</span><span class="v">无（自然到访）</span></div>
-                <div class="desc-item"><span class="k">销售负责人</span><span class="v">张敏</span></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-head"><div class="card-title">商品快照</div>
-              <span class="small muted">下单时的商品信息，不随商品后续修改而变</span></div>
-            <div class="card-body">
-              <div class="desc g3">
-                <div class="desc-item"><span class="k">商品名称</span><span class="v">60 课时包（一对一）</span></div>
-                <div class="desc-item"><span class="k">商品编号</span><span class="v mono">PRD01</span></div>
-                <div class="desc-item"><span class="k">购买课时</span><span class="v mono">60</span></div>
-                <div class="desc-item"><span class="k">赠送课时</span><span class="v mono">0</span></div>
-                <div class="desc-item"><span class="k">商品价格</span><span class="v mono">¥ 6,980.00</span></div>
-                <div class="desc-item"><span class="k">有效期</span><span class="v">12 个月（至 2027-10-07）</span></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-head"><div class="card-title">收款记录<span class="hint">实收与应收分开保存</span></div>
-              <button class="btn btn-sm" onclick="Proto.openModal('payModal')">+ 登记收款</button></div>
-            <div class="card-body tight">
-              <table class="table compact">
-                <thead><tr><th>收款时间</th><th>方式</th><th class="right">金额</th><th>凭证</th><th>登记人</th><th>备注</th></tr></thead>
-                <tbody>
-                  <tr><td>2026-10-08 14:20</td><td>银行转账</td><td class="right mono">¥ 3,000.00</td>
-                    <td><a class="btn-link" href="#" onclick="Proto.toast('查看凭证（示意）');return false">查看</a></td>
-                    <td>教务处-小陈</td><td class="small muted">家长先付首款，余款月内补齐</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="card-foot">
-              <span class="small muted grow">合计已收 ¥3,000.00 · 待收 ¥3,980.00</span>
-              <button class="btn btn-sm" onclick="Proto.openModal('payModal')">登记收款</button>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-head"><div class="card-title">课时入账结果</div></div>
-            <div class="card-body">
-              <div class="alert alert-warn"><span class="ico">!</span>
-                <div>订单尚未确认生效，<b>未生成课时账户与入账流水</b>。<br>
-                未付款订单不能直接增加可用课时（赊销规则待机构确认）。</div></div>
-              <div class="mt12 small muted">预期入账：账户 ACC-2026-0003 增加 60 课时，生成「购买入账」流水 1 条。</div>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <div class="card">
-            <div class="card-head"><div class="card-title">状态流转</div></div>
-            <div class="card-body">
-              <div class="timeline">
-                <div class="tl-item on"><div class="tl-head"><b>草稿</b><span class="tl-time">10-08 14:05</span></div></div>
-                <div class="tl-item on"><div class="tl-head"><b>部分付款</b><span class="tl-time">10-08 14:20</span></div>
-                  <div class="tl-body">已收 ¥3,000 / 应收 ¥6,980</div></div>
-                <div class="tl-item"><div class="tl-head" style="color:var(--text-3)"><b>已付款</b>
-                  <span class="tl-time">待收齐 ¥3,980</span></div></div>
-                <div class="tl-item"><div class="tl-head" style="color:var(--text-3)"><b>已生效</b>
-                  <span class="tl-time">生成课时账户</span></div></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-head"><div class="card-title">操作</div></div>
-            <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
-              <button class="btn btn-block" onclick="Proto.openModal('payModal')">登记收款</button>
-              <button class="btn btn-primary btn-block" onclick="activate()">确认生效并入账</button>
-              <button class="btn btn-block" onclick="Proto.confirmBox('申请退款','退款需财务权限，且需登记原因。<br><br>退款申请提交后订单进入「退款处理中」。','提交申请',()=>Proto.toast('退款申请已提交','ok'))">申请退款</button>
-              <button class="btn btn-block btn-danger" onclick="Proto.confirmBox('取消订单','取消后不产生课时入账，已收款项需另行处理退款。','确认取消',()=>Proto.toast('订单已取消','ok'))">取消订单</button>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-head"><div class="card-title">操作日志</div></div>
-            <div class="card-body">
-              <div class="timeline">
-                <div class="tl-item on"><div class="tl-head"><b>登记收款</b><span class="tl-time">10-08 14:20 · 教务处-小陈</span></div>
-                  <div class="tl-body">银行转账 ¥3,000.00，订单状态 草稿 → 部分付款。</div></div>
-                <div class="tl-item"><div class="tl-head"><b>创建订单</b><span class="tl-time">10-08 14:05 · 教务处-小陈</span></div>
-                  <div class="tl-body">商品 60 课时包（一对一），应收 ¥6,980.00。</div></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <main class="content" id="page">
+      <div class="empty" style="padding:60px 20px"><div class="e-ico">▤</div><p>正在加载订单…</p></div>
     </main>
   </div>
 </div>
 
 <div class="mask" id="payModal">
   <div class="modal">
-    <div class="modal-head"><div class="modal-title">登记收款</div>
+    <div class="modal-head"><div class="modal-title">确认收款并入账</div>
       <button class="modal-close" onclick="Proto.closeModal('payModal')">×</button></div>
     <div class="modal-body">
-      <div class="alert alert-info mb16"><span class="ico">i</span>
-        <div>应收 ¥6,980.00 · 已收 ¥3,000.00 · <b>待收 ¥3,980.00</b></div></div>
+      <div class="alert alert-warn mb16"><span class="ico">!</span><div id="payTip">—</div></div>
       <div class="form-grid">
-        <div class="field"><label>本次收款金额 <span class="req">*</span></label>
-          <input class="input" type="number" value="3980"></div>
-        <div class="field"><label>支付方式 <span class="req">*</span></label>
-          <select class="select"><option>微信</option><option>支付宝</option><option selected>银行转账</option><option>现金</option></select></div>
-        <div class="field"><label>收款时间 <span class="req">*</span></label>
-          <input class="input" type="datetime-local" value="2026-11-02T09:30"></div>
-        <div class="field"><label>收款凭证</label><input class="input" type="file" style="padding:5px 8px;height:auto"></div>
-        <div class="field full"><label>备注</label><textarea class="textarea"></textarea></div>
+        <div class="field"><label>收款方式 <span class="req">*</span></label>
+          <select class="select" id="p_method"></select></div>
+        <div class="field"><label>收款金额（必须与订单一致）<span class="req">*</span></label>
+          <input class="input" id="p_amount" type="number"></div>
+        <div class="field full"><label>备注</label><input class="input" id="p_note"></div>
       </div>
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="Proto.closeModal('payModal')">取消</button>
-      <button class="btn btn-primary" onclick="Proto.closeModal('payModal');Proto.toast('收款已登记，订单更新为「已付款」','ok')">确认登记</button>
+      <button class="btn btn-primary" onclick="confirmPay()">确认收款并入账</button>
     </div>
   </div>
 </div>
@@ -171,16 +41,160 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
+const S = Store;
+S.setSession({ role: 'admin' });
 Proto.shell({ role: 'admin', active: 'order-list' });
 
-function activate() {
-  Proto.confirmBox('确认订单生效',
-    `订单 <b>OD20261008002</b> 当前实收 ¥3,000 / 应收 ¥6,980，<b>尚未收齐</b>。<br><br>
-     按当前规则，未收齐的订单不能直接生效并增加课时。<br>
-     如需赊销（先上课后付款），须机构明确启用赊销规则（该规则待确认）。`,
-    '仍然生效（管理员强制）', () => Proto.toast('已强制生效，操作已记入日志', 'warn'));
+const ID = new URLSearchParams(location.search).get('id') || '';
+document.getElementById('p_method').innerHTML = S.PAY_METHODS.map(m => `<option>${m}</option>`).join('');
+
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function render() {
+  let V;
+  try { V = S.orderView(ID); }
+  catch (e) {
+    document.getElementById('page').innerHTML =
+      `<div class="card"><div class="card-body"><div class="alert alert-warn"><span class="ico">!</span><div>${esc(e.message)}</div></div>
+       <a class="btn mt12" href="order-list.html">返回订单列表</a></div></div>`;
+    return;
+  }
+  const o = V.order, st = V.student, ck = S.orderCheck(ID);
+  const canReview = o.status === S.ORDER.PENDING;
+  const canPay = [S.ORDER.PENDING, S.ORDER.REVIEWED].indexOf(o.status) >= 0;
+  document.getElementById('page').innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="crumb">商品订单<span class="sep">/</span><a href="order-list.html">订单管理</a><span class="sep">/</span>订单详情</div>
+        <h1 class="page-title">${o.id} <span class="tag tag-${S.ORDER_TONE[o.status] || 'slate'}" style="font-size:12px;vertical-align:middle">${o.status}</span></h1>
+        <div class="page-sub">${esc(o.type)} · ${esc(o.productName)} · 学员 ${esc(st ? st.name : '—')} · 下单 ${esc(o.createdAt)}</div>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="order-list.html">返回</a>
+        ${canReview ? `<button class="btn" onclick="review(true)">审核通过</button>
+          <button class="btn" onclick="review(false)">驳回</button>` : ''}
+        ${canPay ? '<button class="btn btn-primary" onclick="openPay()">确认收款并入账</button>' : ''}
+      </div>
+    </div>
+
+    <div class="grid g-2-1" style="align-items:start">
+      <div>
+        <div class="card">
+          <div class="card-head"><div class="card-title">订单信息</div>
+            <span class="tag tag-${ck.ok ? 'green' : 'red'} nodot">${ck.ok ? '账实一致' : '存在差异'}</span></div>
+          <div class="card-body"><div class="desc g3">
+            <div class="desc-item"><span class="k">订单编号</span><span class="v mono">${o.id}</span></div>
+            <div class="desc-item"><span class="k">订单类型</span><span class="v">${esc(o.type)}</span></div>
+            <div class="desc-item"><span class="k">课程商品</span><span class="v">${esc(o.productName)}</span></div>
+            <div class="desc-item"><span class="k">购买课时</span><span class="v mono">${o.hours}</span></div>
+            <div class="desc-item"><span class="k">赠送课时</span><span class="v mono">${o.gift}</span></div>
+            <div class="desc-item"><span class="k">总课时</span><span class="v mono">${o.totalHours}</span></div>
+            <div class="desc-item"><span class="k">订单金额</span><span class="v mono">${Proto.money(o.amount)}</span></div>
+            <div class="desc-item"><span class="k">已收金额</span><span class="v mono">${o.paidAmount ? Proto.money(o.paidAmount) : '—'}</span></div>
+            <div class="desc-item"><span class="k">收款方式</span><span class="v">${esc(o.payMethod || '—')}</span></div>
+            <div class="desc-item"><span class="k">审核人</span><span class="v">${esc(o.reviewedBy || '—')}</span></div>
+            <div class="desc-item"><span class="k">入账时间</span><span class="v">${esc(o.creditedAt || '—')}</span></div>
+            <div class="desc-item"><span class="k">入账操作人</span><span class="v">${esc(o.creditBy || '—')}</span></div>
+          </div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">归属追溯</div></div>
+          <div class="card-body"><div class="desc g3">
+            <div class="desc-item"><span class="k">代理归属</span><span class="v">${V.agent ? esc(V.agent.name) + '（' + V.agent.id + '）' : '机构直营'}</span></div>
+            <div class="desc-item"><span class="k">关联线索</span><span class="v mono">${esc(o.leadId || '—')}</span></div>
+            <div class="desc-item"><span class="k">续费来源</span><span class="v mono">${esc(o.renewalOpportunityId || '—')}</span></div>
+            <div class="desc-item"><span class="k">家长账号</span><span class="v">${V.parent ? esc(V.parent.name) + '（' + V.parent.id + '）' : '—'}</span></div>
+            <div class="desc-item"><span class="k">当前教师</span><span class="v">${esc(st ? st.teacherName : '—')}</span></div>
+            <div class="desc-item"><span class="k">课时账户</span><span class="v mono">${esc(o.lessonAccountId || '—')}</span></div>
+          </div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">课时核对<span class="hint">订单 / 收款 / 账户 / 流水</span></div>
+            <span class="tag tag-${ck.ok ? 'green' : 'red'} nodot">${ck.ok ? '通过' : '不通过'}</span></div>
+          <div class="card-body">
+            ${ck.reasons.length ? `<div class="alert alert-warn mb16"><span class="ico">!</span><div>${ck.reasons.map(esc).join('<br>')}</div></div>` : ''}
+            <div class="desc g3">
+              <div class="desc-item"><span class="k">订单总课时</span><span class="v mono">${o.totalHours}</span></div>
+              <div class="desc-item"><span class="k">入账流水合计</span><span class="v mono">${ck.flowHours}</span></div>
+              <div class="desc-item"><span class="k">账户购买课时</span><span class="v mono">${ck.account ? ck.account.hours : '—'}</span></div>
+              <div class="desc-item"><span class="k">账户赠送课时</span><span class="v mono">${ck.account ? ck.account.gift : '—'}</span></div>
+              <div class="desc-item"><span class="k">收款记录</span><span class="v">${ck.payment ? esc(ck.payment.id) + ' · ' + Proto.money(ck.payment.amount) : '无'}</span></div>
+              <div class="desc-item"><span class="k">账户剩余</span><span class="v mono">${ck.account ? ck.account.remain : '—'}</span></div>
+            </div>
+            ${o.status !== S.ORDER.CREDITED ? `<div class="alert alert-info mt12"><span class="ico">i</span>
+              <div>未入账订单不应存在课时账户与入账流水；当前核对已确认无凭空课时。</div></div>` : ''}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="card-head"><div class="card-title">收款记录</div></div>
+          <div class="card-body">
+            ${V.payments.length ? V.payments.map(p => `
+              <div class="m-row" style="display:block">
+                <div class="flex jcb aic"><b class="mono">${Proto.money(p.amount)}</b>
+                  <span class="tag tag-${p.status === S.PAY.CONFIRMED ? 'green' : 'amber'}">${p.status}</span></div>
+                <div class="small muted mt4">${esc(p.method)} · ${esc(p.confirmedAt || p.createdAt)} · ${esc(p.confirmedBy || '')}</div>
+                <div class="small mt4">${esc(p.note || '')}</div>
+              </div>`).join('')
+              : '<div class="small muted">尚未收款。确认收款后才创建课时账户。</div>'}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">操作日志</div></div>
+          <div class="card-body">
+            ${V.logs.length ? `<div class="timeline">${V.logs.map(l => `
+              <div class="tl-item on"><div class="tl-head"><b>${esc(l.action)}</b>
+                <span class="tl-time">${esc(l.at)} · ${esc(l.by || '系统')}</span></div>
+                <div class="tl-body">${esc(l.detail || '')}</div></div>`).join('')}</div>`
+              : '<div class="small muted">暂无日志</div>'}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">边界说明</div></div>
+          <div class="card-body" style="font-size:12.5px;color:var(--text-2);line-height:1.9">
+            · 第三方支付接入不在本轮范围，收款方式仅做登记；<br>
+            · 部分收款不生成课时，金额不一致会被 Store 阻断；<br>
+            · 退款后课时如何冲回待业务确认，当前仅保留「已退款」状态。
+          </div>
+        </div>
+      </div>
+    </div>`;
 }
+
+function review(pass) {
+  let remark = '';
+  if (!pass) { remark = prompt('请填写驳回原因'); if (!remark) return; }
+  try { S.reviewOrder(ID, { pass: pass, remark: remark }); Proto.toast(pass ? '审核通过' : '已驳回', 'ok'); render(); }
+  catch (e) { Proto.toast(e.message, 'err'); }
+}
+function openPay() {
+  const o = S.order(ID);
+  document.getElementById('p_amount').value = o.amount;
+  document.getElementById('payTip').textContent =
+    `订单应收 ${Proto.money(o.amount)} · ${o.totalHours} 课时。收款金额必须一致，确认后创建账户并入账。`;
+  Proto.openModal('payModal');
+}
+function confirmPay() {
+  try {
+    const o = S.confirmOrderPayment(ID, {
+      method: document.getElementById('p_method').value,
+      amount: document.getElementById('p_amount').value,
+      note: document.getElementById('p_note').value.trim() || '管理员确认收款'
+    });
+    Proto.closeModal('payModal');
+    Proto.toast('已确认收款并入账，学员课时 ' + o.totalHours, 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+render();
 </script>
 </body>
 </html>

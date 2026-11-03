@@ -101,8 +101,7 @@ const ROLE = Q.get('as') || 'staff';
 const TID = Q.get('id') || '';
 Proto.shell({ role: ROLE === 'staff' ? 'admin' : ROLE, active: 'demand-list' });
 
-const OPERATOR = { admin: '张敏', staff: '陈静', ops: '王敏', teacher: '李婉' };
-Store.setSession({ role: ROLE, operatorName: OPERATOR[ROLE] || '陈静' });
+Store.setSession({ role: ROLE, operatorName: Store.operatorForRole(ROLE) });
 const S = Store;
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
