@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>角色与权限</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .inline-form { display:none; }
+  .inline-form.show { display:block; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">系统设置<span class="sep">/</span>角色与权限</div>
+          <h1 class="page-title">角色与权限</h1>
+          <div class="page-sub">角色决定菜单、可执行操作与数据范围；修改后刷新页面立即生效</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="system.html">返回系统设置</a>
+          <button class="btn btn-primary" id="btnNew" style="display:none">+ 新建角色</button>
+        </div>
+      </div>
+
+      <div id="noAccess" class="mb16"></div>
+      <div id="body" style="display:none">
+        <div class="alert alert-info mb16"><span class="ico">i</span>
+          <div>「数据范围」是读取过滤条件，「操作权限」是写操作校验；两者都由当前角色配置决定，页面隐藏按钮只是体验层。</div></div>
+
+        <div class="card mb16 inline-form" id="createPanel">
+          <div class="card-head"><div class="card-title">新建角色</div>
+            <button class="btn-link" id="btnCancel">取消</button></div>
+          <div class="card-body">
+            <div class="form-grid g3">
+              <div class="field"><label>角色名称 <span class="req">*</span></label><input class="input" id="fName" placeholder="如：校区主管"></div>
+              <div class="field"><label>角色编码 <span class="req">*</span></label><input class="input" id="fCode" placeholder="字母/数字，如 campus_lead"></div>
+              <div class="field"><label>数据范围</label><select class="select" id="fScope"></select></div>
+              <div class="field full"><label>角色说明</label><input class="input" id="fDesc" placeholder="这个角色负责什么"></div>
+            </div>
+            <div class="card-foot" style="padding:14px 0 0;border:0">
+              <button class="btn btn-primary" id="btnCreate">创建并配置权限</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">角色列表 <span class="hint" id="hint"></span></div></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>角色</th><th>编码</th><th>数据范围</th><th class="num">成员</th><th class="num">已启用权限</th><th>类型</th><th>最近更新</th><th style="width:90px">操作</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const PAGE_ROLE = Proto.pageRole('admin');
+const SHELL_ROLE = PAGE_ROLE === 'staff' ? 'admin' : PAGE_ROLE;
+Proto.shell({ role: SHELL_ROLE, identityRole: PAGE_ROLE, active: 'system' });
+
+(function () {
+  const esc = Proto.escHtml;
+  if (!Store.hasPermission('', 'role.view')) {
+    document.getElementById('noAccess').innerHTML =
+      '<div class="alert alert-warn"><span class="ico">!</span><div>当前身份没有查看角色的权限。</div></div>';
+    return;
+  }
+  document.getElementById('body').style.display = '';
+  const canEdit = Store.hasPermission('', 'role.edit');
+  document.getElementById('btnNew').style.display = canEdit ? '' : 'none';
+
+  document.getElementById('fScope').innerHTML = ['ALL', 'ASSIGNED', 'OWN', 'RELATED'].map(s =>
+    '<option value="' + s + '">' + esc(Store.DATA_SCOPE_LABEL[s] || s) + '</option>').join('');
+
+  function render() {
+    const rows = Store.roleRows();
+    document.getElementById('hint').textContent = rows.length + ' 个角色 · ' + Store.permissionCatalog().length + ' 项权限';
+    document.getElementById('rows').innerHTML = rows.map(r =>
+      '<tr><td class="strong">' + esc(r.name) + '<div class="small muted">' + esc(r.description) + '</div></td>' +
+      '<td class="mono small">' + esc(r.code) + '</td>' +
+      '<td class="small">' + esc(r.dataScopeLabel) + '</td>' +
+      '<td class="num">' + r.memberCount + '</td>' +
+      '<td class="num">' + r.permissionCount + ' / ' + r.totalPermissionCount + '</td>' +
+      '<td><span class="tag ' + (r.system ? 'tag-blue' : 'tag-slate') + ' nodot">' + (r.system ? '系统角色' : '自定义') + '</span></td>' +
+      '<td class="small muted">' + esc(r.updatedAt || '—') + '</td>' +
+      '<td class="ops"><a class="btn-link" href="role-detail.html?id=' + encodeURIComponent(r.id) + '">权限</a></td></tr>'
+    ).join('');
+  }
+
+  document.getElementById('btnNew').onclick = () => document.getElementById('createPanel').classList.add('show');
+  document.getElementById('btnCancel').onclick = () => document.getElementById('createPanel').classList.remove('show');
+  document.getElementById('btnCreate').onclick = function () {
+    try {
+      const role = Store.createRole({
+        name: document.getElementById('fName').value.trim(),
+        code: document.getElementById('fCode').value.trim(),
+        dataScope: document.getElementById('fScope').value,
+        description: document.getElementById('fDesc').value.trim(),
+        reason: '新建自定义角色'
+      });
+      Proto.toast('角色已创建，请继续配置权限');
+      location.href = 'role-detail.html?id=' + encodeURIComponent(role.id);
+    } catch (e) { Proto.toast(e.message, 'warn'); }
+  };
+
+  render();
+})();
+</script>
+</body>
+</html>

@@ -41,10 +41,8 @@
                 <div class="field"><label>学生姓名</label>
                   <input class="input" id="i_kid" placeholder="如 黄子豪"></div>
                 <div class="field" id="f_grade"><label>学生年级 <span class="req">*</span></label>
-                  <select class="select" id="i_grade"><option value="">请选择</option>
-                    <option>一年级</option><option>二年级</option><option>三年级</option><option>四年级</option>
-                    <option>五年级</option><option>六年级</option><option>七年级</option><option>八年级</option><option>九年级</option>
-                  </select><div class="err">请选择学生年级</div></div>
+                  <select class="select" id="i_grade"><option value="">请选择</option></select>
+                  <div class="err">请选择学生年级</div></div>
                 <div class="field"><label>意向课程</label>
                   <select class="select" id="i_product"></select></div>
                 <div class="field"><label>来源渠道 <span class="req">*</span></label>
@@ -101,7 +99,9 @@ Proto.shell({ role: 'agent', active: 'agent-report' });
 document.getElementById('i_product').innerHTML = '<option value="">暂不确定</option>' +
   S.products().filter(p => p.status !== '停用').map(p =>
     `<option value="${p.id}">${p.name}</option>`).join('');
-document.getElementById('i_channel').innerHTML = S.LEAD_CHANNELS.map(c =>
+document.getElementById('i_grade').innerHTML = '<option value="">请选择</option>' +
+  S.dictionaryOptions('grade').map(g => `<option>${g}</option>`).join('');
+document.getElementById('i_channel').innerHTML = S.dictionaryOptions('lead_channel').map(c =>
   `<option>${c}</option>`).join('');
 
 function checkDup() {

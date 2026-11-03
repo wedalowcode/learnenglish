@@ -66,8 +66,8 @@ function must(name, cond, detail) {
   must('迁移：历史词库保留', S.wordbooks().some(b => b.id === 'B1'),
     'wordbooks=' + S.wordbooks().map(b => b.id).join(','));
   must('迁移：v6 原始 key 保留为备份', !!st.getItem('ee_proto_store_v6'), 'ee_proto_store_v6 未删除');
-  must('迁移：新版本落盘为 v8', JSON.parse(st.getItem('ee_proto_store_v8')).version === 8, 'version=8');
-  const meta = JSON.parse(st.getItem('ee_proto_store_v8')).meta || {};
+  must('迁移：新版本落盘为 v9', JSON.parse(st.getItem('ee_proto_store_v9')).version === 9, 'version=9');
+  const meta = JSON.parse(st.getItem('ee_proto_store_v9')).meta || {};
   must('迁移：记录迁移结果', !!(meta.migration && meta.migration.from === 'v6'),
     JSON.stringify(meta.migration && { carried: meta.migration.carried.length, seeded: meta.migration.seeded.length }));
 })();

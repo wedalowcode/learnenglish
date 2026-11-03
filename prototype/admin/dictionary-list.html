@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数据字典</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .dict-layout { display:grid; grid-template-columns:280px minmax(0,1fr); gap:16px; }
+  .type-list { display:flex; flex-direction:column; gap:4px; padding:8px; }
+  .type-item { display:flex; gap:8px; align-items:center; width:100%; text-align:left; padding:10px 12px; border:1px solid transparent; border-radius:8px; background:transparent; cursor:pointer; font:inherit; color:inherit; }
+  .type-item:hover { background:#f8fafc; }
+  .type-item.on { background:var(--primary-soft); border-color:#dbeafe; color:#1d4ed8; }
+  .type-item .n { font-size:13px; font-weight:500; }
+  .type-item .c { font-size:11px; color:var(--text-3); font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .type-item .cnt { margin-left:auto; font-size:11px; color:var(--text-3); }
+  .item-form { display:none; }
+  .item-form.show { display:block; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">系统设置<span class="sep">/</span>数据字典</div>
+          <h1 class="page-title">数据字典</h1>
+          <div class="page-sub">业务下拉的唯一来源：新增字典项后，对应业务表单立即可选</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="system.html">返回系统设置</a>
+        </div>
+      </div>
+
+      <div id="noAccess" class="mb16"></div>
+      <div id="body" style="display:none">
+        <div class="alert alert-info mb16"><span class="ico">i</span>
+          <div>已被历史业务数据引用的字典项<b>只能停用不能删除</b>；停用后不再出现在新表单下拉，但历史单据仍保留原值。</div></div>
+
+        <div class="dict-layout">
+          <div class="card">
+            <div class="card-head"><div class="card-title">字典类型 <span class="hint" id="typeHint"></span></div></div>
+            <div class="type-list" id="typeList"></div>
+          </div>
+
+          <div>
+            <div class="card mb16">
+              <div class="card-head">
+                <div class="card-title" id="itemTitle">字典项</div>
+                <div class="page-actions">
+                  <button class="btn btn-primary" id="btnNew">+ 新增字典项</button>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead><tr><th>名称</th><th>存值</th><th class="num">排序</th><th>状态</th><th class="num">被引用</th><th>备注</th><th style="width:140px">操作</th></tr></thead>
+                  <tbody id="itemRows"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card item-form" id="formPanel">
+              <div class="card-head"><div class="card-title" id="formTitle">新增字典项</div>
+                <button class="btn-link" id="btnCancel">取消</button></div>
+              <div class="card-body">
+                <div class="form-grid g3">
+                  <div class="field"><label>名称 <span class="req">*</span></label><input class="input" id="fLabel" placeholder="下拉显示的名称"></div>
+                  <div class="field"><label>存值</label><input class="input" id="fValue" placeholder="默认与名称一致"></div>
+                  <div class="field"><label>排序</label><input class="input" id="fSort" placeholder="数字越小越靠前"></div>
+                  <div class="field full"><label>备注</label><input class="input" id="fRemark" placeholder="说明该选项的使用场景"></div>
+                </div>
+                <div class="card-foot" style="padding:14px 0 0;border:0">
+                  <button class="btn btn-primary" id="btnSave">保存</button>
+                  <span class="small muted" id="formTip" style="margin-left:10px"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const PAGE_ROLE = Proto.pageRole('admin');
+const SHELL_ROLE = PAGE_ROLE === 'staff' ? 'admin' : PAGE_ROLE;
+Proto.shell({ role: SHELL_ROLE, identityRole: PAGE_ROLE, active: 'system' });
+
+(function () {
+  const esc = Proto.escHtml;
+  if (!Store.hasPermission('', 'dictionary.manage')) {
+    document.getElementById('noAccess').innerHTML =
+      '<div class="alert alert-warn"><span class="ico">!</span><div>当前身份没有字典管理权限。</div></div>';
+    return;
+  }
+  document.getElementById('body').style.display = '';
+
+  let currentType = '';
+  let editingId = '';
+
+  function renderTypes() {
+    const types = Store.dictionaryTypes(true);
+    if (!currentType) currentType = (types[0] || {}).code || '';
+    document.getElementById('typeHint').textContent = types.length + ' 类';
+    document.getElementById('typeList').innerHTML = types.map(t =>
+      '<button class="type-item ' + (t.code === currentType ? 'on' : '') + '" data-type="' + esc(t.code) + '">' +
+      '<div><div class="n">' + esc(t.name) + (t.status !== '启用' ? ' <span class="tag tag-slate nodot" style="font-size:10px">停用</span>' : '') + '</div>' +
+      '<div class="c">' + esc(t.code) + '</div></div><span class="cnt">' + t.enabledCount + '/' + t.itemCount + '</span></button>'
+    ).join('');
+  }
+
+  function renderItems() {
+    const type = Store.dictionaryTypes(true).filter(t => t.code === currentType)[0];
+    document.getElementById('itemTitle').textContent = (type ? type.name : '字典项') +
+      ' · 业务表单下拉预览：' + (Store.dictionaryOptions(currentType).join(' / ') || '（暂无启用项）');
+    const items = Store.dictionaryItems(currentType, true);
+    document.getElementById('itemRows').innerHTML = items.length ? items.map(it =>
+      '<tr><td class="strong">' + esc(it.label) + '</td><td class="mono small">' + esc(it.value) + '</td>' +
+      '<td class="num">' + it.sort + '</td>' +
+      '<td><span class="tag ' + (it.status === '启用' ? 'tag-green' : 'tag-slate') + ' nodot">' + esc(it.status) + '</span></td>' +
+      '<td class="num">' + it.usage + '</td>' +
+      '<td class="small muted">' + esc(it.remark || '—') + '</td>' +
+      '<td class="ops"><button class="btn-link" data-edit="' + esc(it.id) + '">编辑</button>' +
+      '<button class="btn-link" data-toggle="' + esc(it.id) + '" data-next="' + (it.status === '启用' ? '停用' : '启用') + '">' +
+      (it.status === '启用' ? '停用' : '启用') + '</button>' +
+      '<button class="btn-link danger" data-del="' + esc(it.id) + '">删除</button></td></tr>'
+    ).join('') : '<tr><td colspan="7" class="muted" style="text-align:center;padding:28px">该类型暂无字典项</td></tr>';
+  }
+
+  function render() { renderTypes(); renderItems(); }
+
+  document.getElementById('typeList').addEventListener('click', function (ev) {
+    const b = ev.target.closest('button[data-type]');
+    if (!b) return;
+    currentType = b.dataset.type;
+    editingId = '';
+    document.getElementById('formPanel').classList.remove('show');
+    render();
+  });
+
+  document.getElementById('itemRows').addEventListener('click', function (ev) {
+    const t = ev.target.closest('button');
+    if (!t) return;
+    try {
+      if (t.dataset.edit) {
+        const it = Store.dictionaryItems(currentType, true).filter(x => x.id === t.dataset.edit)[0];
+        if (!it) return;
+        editingId = it.id;
+        document.getElementById('formTitle').textContent = '编辑字典项 · ' + it.label;
+        document.getElementById('fLabel').value = it.label;
+        document.getElementById('fValue').value = it.value;
+        document.getElementById('fSort').value = it.sort;
+        document.getElementById('fRemark').value = it.remark || '';
+        document.getElementById('formTip').textContent = '已被 ' + it.usage + ' 条业务数据引用';
+        document.getElementById('formPanel').classList.add('show');
+      } else if (t.dataset.toggle) {
+        Store.updateDictionaryItem(t.dataset.toggle, { status: t.dataset.next, reason: '字典项' + t.dataset.next });
+        Proto.toast('字典项已' + t.dataset.next);
+        render();
+      } else if (t.dataset.del) {
+        if (!confirm('确认删除该字典项？被业务引用的选项无法删除。')) return;
+        Store.removeDictionaryItem(t.dataset.del, { reason: '删除未被引用的字典项' });
+        Proto.toast('字典项已删除');
+        render();
+      }
+    } catch (e) { Proto.toast(e.message, 'warn'); }
+  });
+
+  document.getElementById('btnNew').onclick = function () {
+    editingId = '';
+    document.getElementById('formTitle').textContent = '新增字典项 · ' + currentType;
+    ['fLabel', 'fValue', 'fSort', 'fRemark'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('formTip').textContent = '保存后立即出现在业务表单下拉';
+    document.getElementById('formPanel').classList.add('show');
+  };
+  document.getElementById('btnCancel').onclick = function () {
+    editingId = '';
+    document.getElementById('formPanel').classList.remove('show');
+  };
+  document.getElementById('btnSave').onclick = function () {
+    try {
+      const input = {
+        typeCode: currentType,
+        label: document.getElementById('fLabel').value.trim(),
+        value: document.getElementById('fValue').value.trim(),
+        sort: document.getElementById('fSort').value.trim(),
+        remark: document.getElementById('fRemark').value.trim(),
+        reason: editingId ? '维护字典项' : '业务需要新增下拉选项'
+      };
+      if (editingId) {
+        Store.updateDictionaryItem(editingId, input);
+        Proto.toast('字典项已更新');
+      } else {
+        Store.createDictionaryItem(input);
+        Proto.toast('字典项已新增，业务表单立即可选');
+      }
+      editingId = '';
+      document.getElementById('formPanel').classList.remove('show');
+      render();
+    } catch (e) { Proto.toast(e.message, 'warn'); }
+  };
+
+  render();
+})();
+</script>
+</body>
+</html>

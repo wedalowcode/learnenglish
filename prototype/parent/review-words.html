@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>待复习单词表 · 打印</title>
+<title>待复习单词表 · 家长端</title>
 <link rel="stylesheet" href="../assets/css/common.css">
 <style>
   body { background:#e2e8f0; padding:20px 12px 40px; }
@@ -28,6 +28,10 @@
   .sheet-foot { margin-top:14px; display:flex; justify-content:space-between; font-size:10.5px; color:var(--text-3); }
   .toolbar { width:210mm; max-width:100%; margin:0 auto 14px; display:flex; gap:8px; align-items:center;
     flex-wrap:wrap; background:#fff; border:1px solid var(--border); border-radius:8px; padding:12px; }
+  .view-seg { display:inline-flex; background:#f1f5f9; border-radius:8px; padding:2px; gap:2px; }
+  .view-seg > button { border:none; background:transparent; font-size:12px; padding:6px 12px;
+    border-radius:6px; color:var(--text-2); cursor:pointer; }
+  .view-seg > button.on { background:#fff; color:var(--primary-dark); font-weight:600; box-shadow:var(--shadow); }
   @media print {
     body { background:#fff; padding:0; }
     .sheet { box-shadow:none; width:100%; padding:0; min-height:0; }
@@ -38,8 +42,13 @@
 <body>
 
 <div class="toolbar no-print">
+  <div class="view-seg" id="viewSeg">
+    <button type="button" class="on" data-v="today">今日待复习</button>
+    <button type="button" data-v="all">全部待复习</button>
+    <button type="button" data-v="passed">已通过</button>
+  </div>
   <div class="field" style="min-width:160px"><label>学员</label>
-    <select class="select" id="fStu" onchange="render()"></select></div>
+    <select class="select" id="fStu" onchange="onKid()"></select></div>
   <div class="field" style="min-width:140px"><label>词库</label>
     <select class="select" id="fBook" onchange="render()"></select></div>
   <div class="field" style="min-width:130px"><label>复习体系</label>
@@ -48,8 +57,6 @@
       <option value="leitner">莱特纳</option>
       <option value="plan21">21 天记忆</option>
     </select></div>
-  <div class="field" style="min-width:120px"><label>日期</label>
-    <input class="input" type="date" id="fDate" value="2026-11-02" readonly></div>
   <label class="check" style="margin-left:4px"><input type="checkbox" id="fPassed" onchange="render()"> 含已通过</label>
   <div class="grow"></div>
   <button class="btn" onclick="Proto.toast('导出 PDF 将在后续版本实现','warn')">导出 PDF</button>
@@ -59,8 +66,8 @@
 <div class="sheet">
   <div class="sheet-head">
     <div>
-      <div class="sheet-title">待复习单词表</div>
-      <div class="sheet-sub" id="sheetSub">启航英语 · 城东校区 · 教师：李婉</div>
+      <div class="sheet-title" id="sheetTitle">今日待复习单词表</div>
+      <div class="sheet-sub" id="sheetSub">启航英语 · 城东校区</div>
     </div>
     <div class="sheet-meta">
       学员：<b id="mStu">—</b><br>
@@ -78,7 +85,7 @@
         <th>中文释义</th>
         <th style="width:96px">教材 / 单元</th>
         <th style="width:66px">学习状态</th>
-        <th style="width:56px">体系</th>
+        <th style="width:74px">体系</th>
         <th style="width:64px">家庭复习</th>
       </tr>
     </thead>
@@ -86,7 +93,7 @@
   </table>
 
   <div class="sheet-foot">
-    <span>说明：家庭复习勾选仅作家长辅助记录（已写入系统辅助表），<b>不修改</b>系统内的正式掌握状态与盒子状态。</span>
+    <span>说明：家庭复习勾选仅作家长辅助记录（已写入系统辅助表），<b>不修改</b>系统内的正式掌握状态、莱特纳盒子与 21 天记忆计划。</span>
     <span id="pageInfo">第 1 页 / 共 1 页</span>
   </div>
 </div>
@@ -96,64 +103,122 @@
 <script src="../assets/js/data.js"></script>
 <script src="../assets/js/store.js"></script>
 <script>
+/* 家长端待复习单词表
+   P0：学员下拉只取 Store.parentChildren（当前家长有权访问的孩子），
+       不再使用全量 Store.students()，越权参数由 Store 拒绝。
+   P1：三视图（今日待复习 / 全部待复习 / 已通过），两套体系独立计算、按词库关联筛选。 */
 const q = new URLSearchParams(location.search);
+const PID = Proto.parentId();
+Store.setSession({ role: 'parent', parentId: PID, operatorName: Proto.parentName() });
+
 const STATE_LABEL = {
   '待复习': '待复习', '暂不确定': '暂不确定', '本次通过': '已通过',
   '待强化训练': '待强化', '待最后复习': '待最后复习', '初筛认识': '初筛认识', '未训练': '未训练'
 };
+let VIEW = 'today';
+let curKid = '';
 let rows = [];
 
+function kids() { return Store.parentChildren(PID); }
+
 function init() {
-  // 学员下拉：来自 Store
+  const list = kids();
   const sel = document.getElementById('fStu');
-  sel.innerHTML = Store.students().map(s =>
-    `<option value="${s.id}">${s.name} · ${s.grade}</option>`).join('');
-  if (q.get('student')) sel.value = q.get('student');
+  if (!list.length) {
+    sel.innerHTML = '<option value="">暂无孩子</option>';
+    document.getElementById('mStu').textContent = '—';
+    document.getElementById('rows').innerHTML =
+      `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:26px 6px">
+        当前家长账号下暂无关联孩子，请联系教务。</td></tr>`;
+    return;
+  }
+  sel.innerHTML = list.map(k => `<option value="${k.id}">${k.name} · ${k.grade}</option>`).join('');
+  /* 统一当前孩子：直接链接 ?student= 优先，其次五页共享状态，最后第一个孩子 */
+  const fromURL = q.get('student');
+  const shared = Store.parentCurrentChild(PID);
+  curKid = (fromURL && list.some(k => k.id === fromURL)) ? fromURL
+    : (shared && list.some(k => k.id === shared)) ? shared : list[0].id;
+  if (curKid !== shared && curKid !== fromURL) { try { Store.setParentCurrentChild(PID, curKid); } catch (e) {} }
+  sel.value = curKid;
 
-  // 词库下拉：来自 Store（含"全部词库"）
-  const bs = document.getElementById('fBook');
-  bs.innerHTML = '<option value="">全部词库</option>' +
-    Store.wordbooks().map(b => `<option value="${b.id}">${b.name}</option>`).join('');
-
-  document.getElementById('fDate').value = Store.TODAY;
   document.getElementById('mDate').textContent = Store.TODAY;
+  document.getElementById('viewSeg').addEventListener('click', e => {
+    const b = e.target.closest('button[data-v]');
+    if (!b) return;
+    VIEW = b.dataset.v;
+    document.querySelectorAll('#viewSeg button').forEach(x => x.classList.toggle('on', x.dataset.v === VIEW));
+    render();
+  });
+  render();
+}
+
+function onKid() {
+  curKid = document.getElementById('fStu').value;
+  if (curKid) { try { Store.setParentCurrentChild(PID, curKid); } catch (e) {} }
   render();
 }
 
 function render() {
-  const sid = document.getElementById('fStu').value;
   const bookId = document.getElementById('fBook').value;
   const system = document.getElementById('fSys').value;
   const includePassed = document.getElementById('fPassed').checked;
+  const titleEl = document.getElementById('sheetTitle');
+  const mSys = document.getElementById('mSys');
 
-  rows = Store.reviewWords(sid, { system, bookId, includePassed });
-  const stu = Store.student(sid);
+  if (!curKid) {
+    document.getElementById('rows').innerHTML =
+      `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:26px 6px">请先选择孩子</td></tr>`;
+    return;
+  }
 
-  document.getElementById('mStu').textContent = stu ? stu.name : sid;
+  /* 已通过视图没有筛选：教师确认掌握的单词 */
+  let rowsAll = [];
+  try { rowsAll = Store.parentReviewWords(PID, curKid, { view: VIEW, system, bookId, includePassed }); }
+  catch (e) {
+    document.getElementById('rows').innerHTML =
+      `<tr><td colspan="8" style="text-align:center;color:#b91c1c;padding:26px 6px">加载失败：${Proto.escHtml ? Proto.escHtml(e.message) : e.message}</td></tr>`;
+    return;
+  }
+  rows = rowsAll;
+
+  /* 词库下拉：只列当前孩子复习数据里真实存在的词库（WordbookWord 关联） */
+  const books = {};
+  rowsAll.forEach(r => (r.bookIds || []).forEach(bid => { books[bid] = 1; }));
+  const bs = document.getElementById('fBook');
+  const curBook = bs.value;
+  bs.innerHTML = '<option value="">全部词库</option>' + Object.keys(books).map(bid => {
+    const wb = Store.wordbook(bid);
+    return `<option value="${bid}" ${bid === curBook ? 'selected' : ''}>${wb ? wb.name : bid}</option>`;
+  }).join('');
+
+  titleEl.textContent = VIEW === 'today' ? '今日待复习单词表'
+    : VIEW === 'all' ? '全部待复习单词表' : '已通过单词表';
+  mSys.textContent = system === 'all' ? '全部体系' : system === 'leitner' ? '莱特纳' : '21 天记忆';
+
+  const stu = Store.student(curKid);
+  document.getElementById('mStu').textContent = stu ? stu.name : curKid;
   document.getElementById('mCnt').textContent = rows.length;
-  document.getElementById('mSys').textContent =
-    system === 'all' ? '全部体系' : system === 'leitner' ? '莱特纳' : '21 天记忆';
-  document.getElementById('sheetSub').textContent =
-    '启航英语 · 城东校区 · 教师：' + (stu ? stu.teacherName : '—') +
-    (bookId ? ' · ' + Store.wordbook(bookId).name : '');
+  document.getElementById('sheetSub').textContent = '启航英语 · 城东校区' +
+    (stu && stu.teacherName ? ' · 教师：' + stu.teacherName : '');
 
   const tb = document.getElementById('rows');
   if (!rows.length) {
-    tb.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:26px 6px">
-      当前筛选条件下没有待复习单词</td></tr>`;
+    const tip = VIEW === 'today' ? '今天没有到期需要复习的单词'
+      : VIEW === 'all' ? '当前筛选条件下没有待复习单词' : '暂无教师确认通过的单词';
+    tb.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:26px 6px">${tip}</td></tr>`;
     return;
   }
   tb.innerHTML = rows.map((r, i) => {
-    const fc = Store.familyCheck(sid, r.wordId);
+    const fc = Store.parentFamilyCheckAt(PID, curKid, r.wordId);
     const on = fc && fc.checked;
     return `<tr>
       <td style="text-align:center;color:#64748b">${i + 1}</td>
       <td style="font-weight:600;font-size:12.5px">${r.en}</td>
       <td style="color:#475569;font-family:'Times New Roman',serif">${r.ph}</td>
       <td>${r.cn}</td>
-      <td style="font-size:10.5px;color:#475569">${r.bookNames[0] || '—'}</td>
+      <td style="font-size:10.5px;color:#475569">${(r.bookNames && r.bookNames[0]) || '—'}</td>
       <td style="font-size:10.5px">${STATE_LABEL[r.state] || r.state}</td>
-      <td style="font-size:10px;color:#475569">${r.systems.join(' / ')}</td>
+      <td style="font-size:10px;color:#475569">${(r.systems || []).join(' / ')}</td>
       <td style="text-align:center">
         <span class="check-box ${on ? 'on' : ''}" title="${on ? '已勾选（辅助记录）' : '点击勾选家庭复习'}"
           onclick="toggle('${r.wordId}', this)">${on ? '✓' : ''}</span></td>
@@ -162,11 +227,11 @@ function render() {
 }
 
 function toggle(wordId, node) {
-  const sid = document.getElementById('fStu').value;
-  const cur = Store.familyCheck(sid, wordId);
+  if (!curKid) return;
+  const cur = Store.parentFamilyCheckAt(PID, curKid, wordId);
   const next = !(cur && cur.checked);
   try {
-    Store.toggleFamilyCheck(sid, wordId, next, '家长');
+    Store.toggleParentFamilyCheck(PID, curKid, wordId, next);
   } catch (e) { Proto.toast(e.message, 'err'); return; }
   node.classList.toggle('on', next);
   node.textContent = next ? '✓' : '';

@@ -6,6 +6,13 @@ function ok(name, cond, extra) {
   if (cond) { pass++; console.log('  ✓ ' + name); }
   else { fail++; console.log('  ✗ ' + name + (extra !== undefined ? ' → ' + JSON.stringify(extra) : '')); }
 }
+/* 统一账号后身份只能来自真实账号：按角色显式登录，不再依赖旧 ?as= 演示兜底 */
+async function loginAs(p, role) {
+  return p.eval(`var a=Store.roleAccounts(${JSON.stringify(role)}).filter(x=>x.available)[0];
+    if(!a) return false;
+    Store.setSession({role:${JSON.stringify(role)},accountId:a.accountId,operatorName:a.name,
+      operatorId:a.profileId,teacherId:'',agentId:'',parentId:''});return true;`);
+}
 
 (async () => {
   const proc = await launch();
@@ -14,6 +21,7 @@ function ok(name, cond, extra) {
   try {
     /* ---- 1. 待分配列表七列 ---- */
     await p.goto(base + '?tab=task&as=ops');
+    await loginAs(p, 'ops');
     let r = await p.eval(`
       var tr = document.querySelector('#taskRows tr');
       return { cols: document.querySelectorAll('#taskRows tr:first-child td').length,
@@ -97,6 +105,7 @@ function ok(name, cond, extra) {
 
     /* ---- 5. 刷新后仍在 ---- */
     await p.goto(base + '?tab=task&as=ops');
+    await loginAs(p, 'ops');
     r = await p.eval(`return { rows: document.querySelectorAll('#taskRows tr').length,
       empty: /还没有|暂无|没有待分配/.test(document.getElementById('taskRows').innerText),
       txt: document.getElementById('taskRows').innerText.replace(/\\s+/g,' ').slice(0,80) };`);
@@ -104,6 +113,7 @@ function ok(name, cond, extra) {
 
     /* ---- 6. 分配记录 Tab ---- */
     await p.goto(base + '?tab=log&as=ops');
+    await loginAs(p, 'ops');
     r = await p.eval(`
       var tr = document.querySelector('#logRows tr');
       return { txt: tr ? tr.innerText.replace(/\\s+/g,' ') : '', rows: document.querySelectorAll('#logRows tr').length };`);
@@ -153,6 +163,7 @@ function ok(name, cond, extra) {
       Store.setSession({role:'staff', operatorName:'陈静'});
       localStorage.setItem('__tmp_demand', d.id);`);
     await p.goto(base + '?tab=task&as=staff');
+    await loginAs(p, 'staff');
     r = await p.eval(`
       var id = localStorage.getItem('__tmp_demand');
       openAssign(id);

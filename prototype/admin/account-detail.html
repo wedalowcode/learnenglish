@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>账号详情</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .desc-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px 20px; }
+  .desc-item .k { font-size:12px; color:var(--text-3); }
+  .desc-item .v { font-size:13px; color:var(--text); margin-top:3px; word-break:break-all; }
+  .json-box { background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:12px; font-family:ui-monospace,Menlo,Consolas,monospace; white-space:pre-wrap; word-break:break-all; max-height:220px; overflow:auto; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">系统设置<span class="sep">/</span><a href="account-list.html">账号管理</a><span class="sep">/</span>账号详情</div>
+          <h1 class="page-title" id="title">账号详情</h1>
+          <div class="page-sub" id="subtitle">—</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="account-list.html">返回账号列表</a>
+          <button class="btn" id="btnReset" style="display:none">重置登录凭证</button>
+          <button class="btn btn-danger" id="btnToggle" style="display:none">禁用账号</button>
+        </div>
+      </div>
+
+      <div id="noAccess" class="mb16"></div>
+      <div id="body" style="display:none">
+        <div class="alert alert-info mb16"><span class="ico">i</span>
+          <div>账号状态只影响登录与身份切换，<b>不改变合作状态与历史业务数据</b>；禁用后该账号无法再被切换为当前身份。</div></div>
+
+        <div class="card mb16">
+          <div class="card-head"><div class="card-title">账号与档案</div>
+            <span id="statusTag"></span></div>
+          <div class="card-body"><div class="desc-grid" id="desc"></div></div>
+        </div>
+
+        <div class="card mb16" id="editCard" style="display:none">
+          <div class="card-head"><div class="card-title">编辑账号</div></div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field"><label>登录名 <span class="req">*</span></label><input class="input" id="fLogin"></div>
+              <div class="field"><label>手机号</label><input class="input" id="fPhone"></div>
+              <div class="field" id="roleField"><label>角色</label><select class="select" id="fRole"></select>
+                <div class="tip">内部员工账号才可调整角色；教师/代理/家长的角色与档案类型绑定。</div></div>
+              <div class="field"><label>变更原因</label><input class="input" id="fReason" placeholder="会写入操作日志"></div>
+            </div>
+            <div class="card-foot" style="padding:14px 0 0;border:0">
+              <button class="btn btn-primary" id="btnSave">保存修改</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">操作轨迹 <span class="hint" id="auditHint"></span></div>
+            <a class="btn-link" href="audit-log.html?resourceType=account&resourceId=">在操作日志中按对象追踪 →</a></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th style="width:150px">时间</th><th>操作人</th><th>动作</th><th>前值 → 后值</th><th>原因</th><th>结果</th></tr></thead>
+              <tbody id="auditRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const PAGE_ROLE = Proto.pageRole('admin');
+const SHELL_ROLE = PAGE_ROLE === 'staff' ? 'admin' : PAGE_ROLE;
+Proto.shell({ role: SHELL_ROLE, identityRole: PAGE_ROLE, active: 'system' });
+
+(function () {
+  const esc = Proto.escHtml;
+  if (!Store.hasPermission('', 'account.view')) {
+    document.getElementById('noAccess').innerHTML =
+      '<div class="alert alert-warn"><span class="ico">!</span><div>当前身份没有查看账号的权限。</div></div>';
+    return;
+  }
+  const id = new URLSearchParams(location.search).get('id') || '';
+  const acc = Store.accountById(id);
+  if (!acc) {
+    document.getElementById('noAccess').innerHTML =
+      '<div class="alert alert-warn"><span class="ico">!</span><div>账号不存在或已被移除：' + esc(id || '（缺少 id 参数）') + '</div></div>';
+    return;
+  }
+  document.getElementById('body').style.display = '';
+
+  const row = Store.accountRows().filter(x => x.id === acc.id)[0] || {};
+  const role = Store.roleOf(acc.roleCode) || {};
+  const typeLabel = { staff: '内部员工', teacher: '教师', agent: '代理', parent: '家长' }[acc.profileType] || acc.profileType;
+  const statusLabel = row.statusLabel || (acc.status === '正常' ? '启用' : acc.status === '已禁用' ? '禁用' : '待激活');
+  const tone = statusLabel === '启用' ? 'tag-green' : statusLabel === '禁用' ? 'tag-red' : 'tag-slate';
+
+  document.getElementById('title').textContent = (row.profileName || acc.loginName) + ' 的账号';
+  document.getElementById('subtitle').textContent = acc.loginName + ' · ' + typeLabel + ' · ' + (role.name || acc.roleCode);
+  document.getElementById('statusTag').innerHTML =
+    '<span class="tag ' + tone + '">' + esc(statusLabel) + '</span>';
+
+  document.getElementById('desc').innerHTML = [
+    ['账号编号', acc.id, true], ['登录名', acc.loginName, true], ['手机号', acc.phone || '—', false],
+    ['人员档案', typeLabel + ' / ' + (acc.profileId || '—'), true],
+    ['姓名', row.profileName || '—', false],
+    ['角色', (role.name || acc.roleCode) + '（' + acc.roleCode + '）', false],
+    ['数据范围', row.dataScopeLabel || '—', false],
+    ['开通时间', acc.openedAt || acc.createdAt || '—', false],
+    ['最近登录', acc.lastLoginAt || '—', false],
+    ['凭证状态', acc.mustChangePassword ? '重置后需重新设置密码' : '正常', false],
+    ['禁用原因', acc.disabledReason || '—', false],
+    ['最后更新', acc.updatedAt || '—', false]
+  ].map(x => '<div class="desc-item"><div class="k">' + x[0] + '</div><div class="v ' +
+    (x[2] ? 'mono' : '') + '">' + esc(x[1]) + '</div></div>').join('');
+
+  /* --- 编辑：只对内部员工开放角色调整 --- */
+  const canEdit = Store.hasPermission('', 'account.edit');
+  if (canEdit) {
+    document.getElementById('editCard').style.display = '';
+    document.getElementById('fLogin').value = acc.loginName;
+    document.getElementById('fPhone').value = acc.phone || '';
+    if (acc.profileType === 'staff') {
+      document.getElementById('fRole').innerHTML = Store.roles()
+        .filter(r => ['admin', 'staff', 'ops'].indexOf(r.code) >= 0)
+        .map(r => '<option value="' + r.code + '"' + (r.code === acc.roleCode ? ' selected' : '') + '>' +
+          esc(r.name) + '</option>').join('');
+    } else {
+      document.getElementById('roleField').style.display = 'none';
+    }
+  }
+  document.getElementById('btnSave').onclick = function () {
+    if (!canEdit) return;
+    try {
+      const input = {
+        loginName: document.getElementById('fLogin').value.trim(),
+        phone: document.getElementById('fPhone').value.trim(),
+        reason: document.getElementById('fReason').value.trim()
+      };
+      if (acc.profileType === 'staff') input.roleCode = document.getElementById('fRole').value;
+      Store.updateAccount(acc.id, input);
+      Proto.toast('账号已更新');
+      setTimeout(() => location.reload(), 400);
+    } catch (e) { Proto.toast(e.message, 'warn'); }
+  };
+
+  /* --- 启停 / 重置凭证 --- */
+  const canDisable = Store.hasPermission('', 'account.disable');
+  const canReset = Store.hasPermission('', 'account.reset_credential');
+  const toggleBtn = document.getElementById('btnToggle');
+  const disabled = statusLabel === '禁用';
+  if (canDisable) {
+    toggleBtn.style.display = '';
+    toggleBtn.textContent = disabled ? '启用账号' : '禁用账号';
+    toggleBtn.className = 'btn ' + (disabled ? '' : 'btn-danger');
+    toggleBtn.onclick = function () {
+      let reason = '';
+      if (!disabled) {
+        reason = prompt('请输入禁用原因（必填，会写入操作日志）') || '';
+        if (!reason.trim()) return;
+      }
+      try {
+        Store.setUserAccountStatus(acc.id, disabled ? '启用' : '禁用', { reason: reason });
+        Proto.toast(disabled ? '账号已启用' : '账号已禁用');
+        setTimeout(() => location.reload(), 400);
+      } catch (e) { Proto.toast(e.message, 'warn'); }
+    };
+  }
+  const resetBtn = document.getElementById('btnReset');
+  if (canReset) {
+    resetBtn.style.display = '';
+    resetBtn.onclick = function () {
+      if (!confirm('确认重置该账号的登录凭证？')) return;
+      try {
+        Store.resetAccountCredential(acc.id, { reason: '管理员重置凭证' });
+        Proto.toast('登录凭证已重置');
+      } catch (e) { Proto.toast(e.message, 'warn'); }
+    };
+  }
+
+  /* --- 操作轨迹 --- */
+  const logs = Store.auditRows({ resourceType: 'account', resourceId: acc.id });
+  document.getElementById('auditHint').textContent = '共 ' + logs.length + ' 条';
+  document.getElementById('auditRows').innerHTML = logs.length ? logs.map(a =>
+    '<tr><td class="small mono">' + esc(a.createdAt) + '</td>' +
+    '<td class="small">' + esc(a.operatorName) + '<div class="muted">' + esc(a.operatorRoleLabel) + '</div></td>' +
+    '<td class="strong">' + esc(a.action) + '</td>' +
+    '<td class="small">' + diffText(a.beforeData, a.afterData) + '</td>' +
+    '<td class="small muted">' + esc(a.reason || '—') + '</td>' +
+    '<td><span class="tag ' + (a.result === '成功' ? 'tag-green' : 'tag-red') + ' nodot">' + esc(a.result) + '</span></td></tr>'
+  ).join('') : '<tr><td colspan="6" class="muted" style="text-align:center;padding:28px">暂无操作记录</td></tr>';
+
+  function diffText(before, after) {
+    if (!before && !after) return '<span class="muted">—</span>';
+    const keys = Object.keys(after || before || {});
+    const parts = keys.map(k => {
+      const b = before && before[k] !== undefined ? before[k] : '—';
+      const a = after && after[k] !== undefined ? after[k] : '—';
+      if (String(b) === String(a)) return '';
+      return '<div>' + esc(k) + '：<span class="muted">' + esc(b) + '</span> → <b>' + esc(a) + '</b></div>';
+    }).filter(Boolean);
+    return parts.length ? parts.join('') : '<span class="muted">无字段变化</span>';
+  }
+})();
+</script>
+</body>
+</html>

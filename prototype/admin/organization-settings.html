@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>机构设置</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">系统设置<span class="sep">/</span>机构设置</div>
+          <h1 class="page-title">机构设置</h1>
+          <div class="page-sub">机构基础信息、课时预警阈值与套餐临期提醒；阈值会被续费机会与工作台真实引用</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="system.html">返回系统设置</a>
+        </div>
+      </div>
+
+      <div id="noAccess" class="mb16"></div>
+      <div id="body" style="display:none">
+        <div class="card mb16">
+          <div class="card-head"><div class="card-title">机构信息</div>
+            <span class="small muted" id="updatedHint"></span></div>
+          <div class="card-body">
+            <div class="form-grid g3">
+              <div class="field"><label>机构名称 <span class="req">*</span></label><input class="input" id="fName"></div>
+              <div class="field"><label>校区 <span class="req">*</span></label><input class="input" id="fCampus"></div>
+              <div class="field"><label>联系电话</label><input class="input" id="fPhone"></div>
+              <div class="field full"><label>地址</label><input class="input" id="fAddress"></div>
+              <div class="field"><label>联系邮箱</label><input class="input" id="fEmail"></div>
+              <div class="field"><label>营业时间</label><input class="input" id="fHours"></div>
+              <div class="field"><label>默认时区</label><input class="input mono" id="fTimezone"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mb16">
+          <div class="card-head"><div class="card-title">业务参数</div></div>
+          <div class="card-body">
+            <div class="form-grid g3">
+              <div class="field"><label>课时预警阈值（节）</label>
+                <input class="input" id="fThreshold" type="number" min="0" step="1">
+                <div class="tip">剩余课时低于该值时，续费机会与教师端工作台提示「课时不足」。</div></div>
+              <div class="field"><label>套餐临期提醒天数</label>
+                <input class="input" id="fExpire" type="number" min="0" step="1">
+                <div class="tip">课时账户有效期进入该天数范围时生成续费提醒。</div></div>
+              <div class="field"><label>代理登记收款</label>
+                <select class="select" id="fAgentPay">
+                  <option value="0">不允许（仅管理员登记/确认）</option>
+                  <option value="1">允许代理登记，仍需管理员确认</option>
+                </select>
+                <div class="tip">登记不等于确认，确认后才触发课时入账。</div></div>
+            </div>
+            <div class="card-foot" style="padding:14px 0 0;border:0">
+              <input class="input" id="fReason" placeholder="变更原因（写入操作日志）" style="max-width:320px">
+              <button class="btn btn-primary" id="btnSave" style="margin-left:10px">保存设置</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">变更记录 <span class="hint" id="logHint"></span></div>
+            <a class="btn-link" href="audit-log.html?resourceType=organization">查看全部操作日志 →</a></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th style="width:150px">时间</th><th>操作人</th><th>动作</th><th>变更摘要</th><th>原因</th></tr></thead>
+              <tbody id="logRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const PAGE_ROLE = Proto.pageRole('admin');
+const SHELL_ROLE = PAGE_ROLE === 'staff' ? 'admin' : PAGE_ROLE;
+Proto.shell({ role: SHELL_ROLE, identityRole: PAGE_ROLE, active: 'system' });
+
+(function () {
+  const esc = Proto.escHtml;
+  if (!Store.hasPermission('', 'organization.manage')) {
+    document.getElementById('noAccess').innerHTML =
+      '<div class="alert alert-warn"><span class="ico">!</span><div>当前身份没有机构设置权限。</div></div>';
+    return;
+  }
+  document.getElementById('body').style.display = '';
+
+  const org = Store.organizationSettings();
+  document.getElementById('fName').value = org.name;
+  document.getElementById('fCampus').value = org.campus;
+  document.getElementById('fPhone').value = org.contactPhone || '';
+  document.getElementById('fAddress').value = org.address || '';
+  document.getElementById('fEmail').value = org.contactEmail || '';
+  document.getElementById('fHours').value = org.workingHours || '';
+  document.getElementById('fTimezone').value = org.defaultTimezone || '';
+  document.getElementById('fThreshold').value = org.lessonAlertThreshold;
+  document.getElementById('fExpire').value = org.expireAlertDays;
+  document.getElementById('fAgentPay').value = org.allowAgentRegisterPayment ? '1' : '0';
+  document.getElementById('updatedHint').textContent = '最后更新 ' + (org.updatedAt || '—') +
+    (org.updatedBy ? ' · ' + org.updatedBy : '');
+
+  document.getElementById('btnSave').onclick = function () {
+    try {
+      Store.updateOrganizationSettings({
+        name: document.getElementById('fName').value.trim(),
+        campus: document.getElementById('fCampus').value.trim(),
+        contactPhone: document.getElementById('fPhone').value.trim(),
+        address: document.getElementById('fAddress').value.trim(),
+        contactEmail: document.getElementById('fEmail').value.trim(),
+        workingHours: document.getElementById('fHours').value.trim(),
+        defaultTimezone: document.getElementById('fTimezone').value.trim(),
+        lessonAlertThreshold: document.getElementById('fThreshold').value,
+        expireAlertDays: document.getElementById('fExpire').value,
+        allowAgentRegisterPayment: document.getElementById('fAgentPay').value === '1',
+        reason: document.getElementById('fReason').value.trim() || '维护机构基础参数'
+      });
+      Proto.toast('机构设置已保存');
+      setTimeout(() => location.reload(), 400);
+    } catch (e) { Proto.toast(e.message, 'warn'); }
+  };
+
+  const logs = Store.auditRows({ resourceType: 'organization' });
+  document.getElementById('logHint').textContent = '共 ' + logs.length + ' 条';
+  document.getElementById('logRows').innerHTML = logs.length ? logs.map(a => {
+    const before = a.beforeData || {}, after = a.afterData || {};
+    const keys = Object.keys(after).filter(k => String(before[k]) !== String(after[k]) && k !== 'updatedAt' && k !== 'updatedBy');
+    return '<tr><td class="small mono">' + esc(a.createdAt) + '</td>' +
+      '<td class="small">' + esc(a.operatorName) + '<div class="muted">' + esc(a.operatorRoleLabel) + '</div></td>' +
+      '<td class="strong small">' + esc(a.action) + '</td>' +
+      '<td class="small">' + (keys.length ? keys.map(k => esc(k) + ': <span class="muted">' + esc(before[k]) +
+        '</span> → <b>' + esc(after[k]) + '</b>').join('<br>') : '<span class="muted">无字段变化</span>') + '</td>' +
+      '<td class="small muted">' + esc(a.reason || '—') + '</td></tr>';
+  }).join('') : '<tr><td colspan="5" class="muted" style="text-align:center;padding:24px">暂无变更记录</td></tr>';
+})();
+</script>
+</body>
+</html>

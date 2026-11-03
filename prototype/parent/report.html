@@ -5,14 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>家长端 · 学习报告</title>
 <link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .bar { height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: linear-gradient(90deg,#2563eb,#3b82f6); }
+  .bar > i.warn { background: linear-gradient(90deg,#d97706,#f59e0b); }
+</style>
 </head>
 <body class="mobile-bg">
 <div class="m-frame">
   <div class="m-status"><span>9:41</span><span>5G ▮▮▮</span></div>
 
   <div class="m-head">
-    <a class="back" href="course-records.html">‹</a>
-    <div class="m-title">学习报告</div>
+    <a class="back" id="backBtn" href="course-records.html">‹</a>
+    <div class="m-title" id="headTitle">学习报告</div>
     <div class="grow"></div>
     <span class="tag tag-green nodot" style="font-size:11px" id="headTag">已发布</span>
   </div>
@@ -29,110 +34,173 @@
     <a class="m-tab" href="hours.html"><span class="ic">◷</span>课时</a>
   </div>
 </div>
+
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
 <script src="../assets/js/store.js"></script>
 <script>
-/* 家长端可见性规则：只有「已发布」的报告才展示内容；
-   「编辑中 / 已提交」一律显示为「老师正在整理」，不暴露半成品。 */
+/* 家长端学习报告：列表与详情分离、五区详情、近7次学习趋势、家庭配合建议。
+   只展示「已发布且允许家长可见」的报告；越权 report 参数由 Store 拒绝。 */
 const q = new URLSearchParams(location.search);
 const PID = Proto.parentId();
 Store.setSession({ role: 'parent', parentId: PID, operatorName: Proto.parentName() });
 const KIDS = Store.parentChildren(PID);
-const STUDENT = KIDS.filter(k => k.id === q.get('student'))[0]
-  ? q.get('student') : (KIDS[0] ? KIDS[0].id : '');
+let curKid = '';
+let fromDate = '';
+let toDate = '';
 
-function boot() {
-  if (!STUDENT) {
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function nl(s) { return (s || '').split('\n').filter(Boolean).map(x => `<div>${esc(x)}</div>`).join('') || '—'; }
+
+function initKid() {
+  const fromURL = q.get('student');
+  const shared = Store.parentCurrentChild(PID);
+  curKid = (fromURL && KIDS.some(k => k.id === fromURL)) ? fromURL
+    : (shared && KIDS.some(k => k.id === shared)) ? shared : (KIDS[0] ? KIDS[0].id : '');
+  if (curKid !== shared && curKid !== fromURL) { try { Store.setParentCurrentChild(PID, curKid); } catch (e) {} }
+}
+
+function kidSegHTML() {
+  if (KIDS.length <= 1) return '';
+  return `<div class="m-seg" id="kidSeg">
+    ${KIDS.map(k => `<div class="${k.id === curKid ? 'on' : ''}" data-k="${k.id}">${esc(k.name)}</div>`).join('')}
+  </div>`;
+}
+function bindKidSeg() {
+  const seg = document.getElementById('kidSeg');
+  if (!seg) return;
+  seg.addEventListener('click', e => {
+    const k = e.target.closest('[data-k]');
+    if (!k) return;
+    Store.setParentCurrentChild(PID, k.dataset.k);
+    curKid = k.dataset.k;
+    Array.from(seg.children).forEach(x => x.classList.toggle('on', x.dataset.k === curKid));
+    location.href = 'report.html?student=' + curKid;
+  });
+}
+
+/* ---------------- 列表 ---------------- */
+function renderList() {
+  document.getElementById('headTitle').textContent = '学习报告';
+  document.getElementById('headTag').textContent = '已发布';
+  document.getElementById('headTag').className = 'tag tag-green nodot';
+  document.getElementById('backBtn').href = 'course-records.html';
+
+  const stu = Store.student(curKid);
+  let list = [];
+  try {
+    list = Store.parentReports(PID, curKid, {});
+    if (fromDate) list = list.filter(r => r.courseDate >= fromDate);
+    if (toDate) list = list.filter(r => r.courseDate <= toDate);
+  } catch (e) {
     document.getElementById('body').innerHTML =
-      '<div class="m-card"><div class="small muted">当前家长账号下暂无孩子档案。</div></div>';
+      `<div class="m-card"><div class="small" style="color:var(--danger)">加载失败：${esc(e.message)}</div></div>`;
     return;
   }
-  const stu = Store.student(STUDENT);
-  const published = Store.publishedReportsOf(STUDENT);
-  const all = Store.reportsOf(STUDENT);
 
-  /* 只允许打开属于自己孩子的报告；越权 report 参数直接忽略 */
-  let rp = q.get('report')
-    ? all.filter(x => x.id === q.get('report'))[0] || null
-    : published[0] || null;
-
-  if (!rp) {
-    document.getElementById('headTag').textContent = '暂无';
+  if (!list.length) {
     document.getElementById('body').innerHTML = `
+      ${kidSegHTML()}
       <div class="m-card">
         <div class="m-card-title">还没有可查看的报告</div>
         <div class="small muted" style="line-height:1.8">
           老师完成授课后会整理本节课报告，提交并发布后你就能在这里看到。
-          ${all.length ? '当前有 ' + all.length + ' 份报告正在整理中。' : ''}
         </div>
       </div>
       <div class="m-card">
-        <a class="btn btn-block btn-primary" href="review-words.html">查看待复习单词表</a>
+        <a class="btn btn-block btn-primary" href="review-words.html?student=${curKid}">查看待复习单词表</a>
       </div>`;
+    bindKidSeg();
     return;
   }
 
-  /* 非已发布：只显示占位，不显示内容 */
-  if (rp.status !== '已发布') {
-    document.getElementById('headTag').textContent = '整理中';
-    document.getElementById('headTag').className = 'tag tag-amber nodot';
-    document.getElementById('body').innerHTML = `
-      <div class="m-card">
-        <div class="m-card-title">老师正在整理本节课报告</div>
-        <div class="small muted" style="line-height:1.8">
-          课程 ${rp.courseDate} 已完成，老师还在补充评价、确认内容，发布后这里会显示完整报告。
-        </div>
-      </div>
-      <div class="m-card">
-        <div class="m-card-title">可以先看这些</div>
-        <a class="m-row" href="review-words.html"><span>待复习单词表</span><span class="muted">查看 ›</span></a>
-        <a class="m-row" href="course-records.html" style="border-bottom:none"><span>历史课程记录</span><span class="muted">查看 ›</span></a>
-      </div>`;
-    return;
-  }
-
-  const rec = rp.recordId ? Store.courseRecord(rp.recordId) : Store.recordOfCourse(rp.courseId);
-  const snap = rec ? Store.recordView(rec) : null;
-  const c = Store.course(rp.courseId);
-  const t = Store.teacher(rp.teacherId) || {};
-
-  const art = Store.db.articleTasks.filter(a => a.courseId === rp.courseId)[0];
-  const artStat = art ? Store.articleTaskStat(art.id) : null;
-
-  document.getElementById('headTag').textContent = '已发布';
   document.getElementById('body').innerHTML = `
+    ${kidSegHTML()}
+    <div class="m-card">
+      <div class="m-card-title">筛选
+        <span class="small muted">共 ${list.length} 份已发布报告</span></div>
+      <div class="flex gap8">
+        <div class="field" style="flex:1"><label>从</label>
+          <input class="input" type="date" id="fFrom" value="${fromDate || ''}" onchange="fromDate=this.value;renderList()"></div>
+        <div class="field" style="flex:1"><label>到</label>
+          <input class="input" type="date" id="fTo" value="${toDate || ''}" onchange="toDate=this.value;renderList()"></div>
+      </div>
+    </div>
+    <div class="m-card" style="padding:0">
+      ${list.map((r, i) => `
+        <a class="m-row" href="report.html?student=${curKid}&report=${r.id}" style="align-items:flex-start;padding:12px 14px${i === list.length - 1 ? ';border-bottom:none' : ''}">
+          <div style="flex:1">
+            <div style="font-size:13.5px;font-weight:600">${esc(r.courseDate)} · ${esc(r.title)}</div>
+            <div class="small muted" style="margin-top:2px">${esc(r.teacherName)}</div>
+            <div class="small" style="margin-top:4px;color:var(--text-2);line-height:1.6">${esc(r.summary || '')}</div>
+            <div class="small muted" style="margin-top:4px">发布于 ${esc(r.publishedAt || '—')}</div>
+          </div>
+          <span class="muted">›</span>
+        </a>`).join('')}
+    </div>`;
+  bindKidSeg();
+}
+
+/* ---------------- 详情（五区 + 趋势） ---------------- */
+function renderDetail(reportId) {
+  document.getElementById('headTitle').textContent = '报告详情';
+  document.getElementById('headTag').textContent = '已发布';
+  document.getElementById('headTag').className = 'tag tag-green nodot';
+  document.getElementById('backBtn').href = 'report.html?student=' + curKid;
+
+  let rp;
+  try { rp = Store.parentReportDetail(PID, curKid, reportId); }
+  catch (e) {
+    document.getElementById('body').innerHTML =
+      `<div class="m-card"><div class="small" style="color:var(--danger)">无法打开报告：${esc(e.message)}</div></div>`;
+    return;
+  }
+  const stu = Store.student(curKid);
+  const st = rp.stats || {};
+  const art = rp.articleStat;
+  const trend = trendRows();
+
+  document.getElementById('body').innerHTML = `
+    ${kidSegHTML()}
+
     <div class="m-card">
       <div class="flex jcb aic mb12">
         <div>
-          <div style="font-size:16px;font-weight:600">${stu ? stu.name : ''}</div>
-          <div class="small muted">${stu ? stu.grade : ''} · ${stu ? stu.book : ''}</div>
+          <div style="font-size:16px;font-weight:600">${stu ? esc(stu.name) : ''}</div>
+          <div class="small muted">${stu ? esc(stu.grade) : ''} · ${stu ? esc(stu.book) : ''}</div>
         </div>
         <div class="text-r">
           <div class="small muted">课程日期</div>
-          <div style="font-size:13px;font-weight:600">${rp.courseDate}</div>
+          <div style="font-size:13px;font-weight:600">${esc(rp.courseDate)}</div>
         </div>
       </div>
-      <div class="m-row"><span class="k">授课教师</span><span>${t.name || ''}</span></div>
-      <div class="m-row"><span class="k">本节课主题</span><span style="max-width:180px;text-align:right">${rp.title || '本节课程'}</span></div>
-      <div class="m-row"><span class="k">课程时长</span><span>${c && c.start ? (c.start + '—' + c.end) : '—'}</span></div>
-      <div class="m-row"><span class="k">发布时间</span><span>${rp.publishedAt || '—'}</span></div>
+      <div class="m-row"><span class="k">授课教师</span><span>${esc(rp.teacherName)}</span></div>
+      <div class="m-row"><span class="k">本节课主题</span><span style="max-width:180px;text-align:right">${esc(rp.title || '本节课程')}</span></div>
+      <div class="m-row"><span class="k">计划时间</span><span>${esc(rp.planStart || '—')} — ${esc(rp.planEnd || '—')}</span></div>
+      ${rp.actualStart ? `<div class="m-row"><span class="k">实际上课</span><span>${esc(rp.actualStart)} — ${esc(rp.actualEnd || '—')}</span></div>` : ''}
+      <div class="m-row"><span class="k">课程状态</span><span>${esc(rp.courseStatus || '—')}</span></div>
+      <div class="m-row"><span class="k">发布时间</span><span>${esc(rp.publishedAt || '—')}</span></div>
     </div>
 
     <div class="m-card">
-      <div class="m-card-title">学习内容</div>
+      <div class="m-card-title">单词学习</div>
       <div class="m-stat" style="margin:10px 0">
-        <div><div class="v">${snap ? snap.trainWords : 0}</div><div class="k">训练单词</div></div>
-        <div><div class="v" style="color:var(--success)">${snap ? snap.mastered : 0}</div><div class="k">确认掌握</div></div>
-        <div><div class="v" style="color:var(--warning)">${snap ? snap.weak : 0}</div><div class="k">待加强</div></div>
+        <div><div class="v">${st.trainWords || 0}</div><div class="k">训练单词</div></div>
+        <div><div class="v" style="color:var(--success)">${st.mastered || 0}</div><div class="k">确认掌握</div></div>
+        <div><div class="v" style="color:var(--warning)">${st.weak || 0}</div><div class="k">待加强</div></div>
       </div>
-      ${snap && snap.leitnerWords ? `<div class="m-row"><span class="k">莱特纳复习</span><span>${snap.leitnerWords} 个单词</span></div>` : ''}
-      ${snap && snap.plan21Words ? `<div class="m-row"><span class="k">21 天复习</span><span>${snap.plan21Words} 个单词</span></div>` : ''}
-      ${artStat ? `<div class="m-row"><span class="k">文章训练</span><span>《${art.articleName}》</span></div>
-        <div class="m-row"><span class="k">句子情况</span><span style="color:var(--success)">掌握 ${artStat.mastered} · 待加强 ${artStat.weak}</span></div>` : ''}
+      ${st.leitnerWords ? `<div class="m-row"><span class="k">莱特纳复习</span><span>${st.leitnerWords} 个单词</span></div>` : ''}
+      ${st.plan21Words ? `<div class="m-row"><span class="k">21 天复习</span><span>${st.plan21Words} 个单词</span></div>` : ''}
       <div class="small muted mt8">「确认掌握」是教师本节课的判断，不等于永久掌握，仍会进入复习体系继续巩固。</div>
     </div>
+
+    ${rp.article ? `<div class="m-card">
+      <div class="m-card-title">文章训练</div>
+      <div class="m-row"><span class="k">文章</span><span>《${esc(rp.article.name)}》</span></div>
+      ${art ? `<div class="m-row"><span class="k">完成情况</span><span style="color:var(--success)">掌握 ${art.mastered} · 待加强 ${art.weak}</span></div>` : ''}
+      <div class="m-row"><span class="k">重点句子</span><span style="text-align:right;max-width:180px">${art && art.readDone ? '已跟读完成' : '—'}</span></div>
+    </div>` : ''}
 
     <div class="m-card">
       <div class="m-card-title">教师反馈</div>
@@ -141,38 +209,94 @@ function boot() {
         <div style="font-size:13px;color:var(--text-2);line-height:1.75">${nl(rp.content.performance)}</div>
       </div>
       <div class="mb12">
-        <div class="small" style="font-weight:600;margin-bottom:4px">待加强内容</div>
+        <div class="small" style="font-weight:600;margin-bottom:4px">当前薄弱点</div>
         <div style="font-size:13px;color:var(--text-2);line-height:1.75">${nl(rp.content.weak)}</div>
       </div>
       <div>
-        <div class="small" style="font-weight:600;margin-bottom:4px">下节课建议</div>
+        <div class="small" style="font-weight:600;margin-bottom:4px">下一步教学安排</div>
         <div style="font-size:13px;color:var(--text-2);line-height:1.75">${nl(rp.content.next)}</div>
       </div>
     </div>
 
     <div class="m-card">
-      <div class="m-card-title">本节课资料</div>
-      <a class="m-row" href="review-words.html?student=${STUDENT}">
+      <div class="m-card-title">家庭配合建议</div>
+      ${rp.content.homeworkAdvice
+        ? `<div style="font-size:13px;color:var(--text-2);line-height:1.75">${nl(rp.content.homeworkAdvice)}</div>`
+        : `<div class="small muted">教师本次未填写家庭配合建议，可参照「单词学习」与「教师反馈」里的待加强内容在家中辅助复习。</div>`}
+    </div>
+
+    ${trend ? trendHTML(trend) : ''}
+
+    <div class="m-card">
+      <div class="m-card-title">本节资料</div>
+      <a class="m-row" href="review-words.html?student=${curKid}">
         <span>待复习单词表</span><span class="muted">查看 / 打印 ›</span></a>
-      ${art ? `<div class="m-row" style="border-bottom:none">
-        <span>文章音频 · ${art.articleName}</span>
-        <button class="btn btn-sm" onclick="Proto.speak('${art.articleName}','en-US')">播放</button>
+      ${rp.article ? `<div class="m-row" style="border-bottom:none">
+        <span>文章音频 · 《${esc(rp.article.name)}》</span>
+        <button class="btn btn-sm" onclick="Proto.speak('${esc(rp.article.name).replace(/'/g, '')}','en-US')">英文朗读</button>
       </div>` : ''}
     </div>
 
     <div class="m-card">
       <div class="small muted" style="line-height:1.75;margin-bottom:10px">
-        报告由教师提交并发布后可见，家长不可编辑。如需沟通请通过机构教务联系教师。
+        报告由教师提交并发布后可见，家长不可编辑。如需沟通请通过机构教务联系教师。<br>
+        「英文朗读」为系统语音合成演示，<b>不是</b>课程原始录音。
       </div>
-      <a class="btn btn-block" href="course-records.html?student=${STUDENT}">查看历史课程报告</a>
-      <a class="btn btn-block btn-primary mt8" href="review-words.html?student=${STUDENT}">打印待复习单词表</a>
+      <a class="btn btn-block" href="report.html?student=${curKid}">返回报告列表</a>
+      <a class="btn btn-block btn-primary mt8" href="review-words.html?student=${curKid}">打印待复习单词表</a>
     </div>`;
+  bindKidSeg();
 }
 
-function nl(s) {
-  return (s || '').split('\n').filter(Boolean).map(x => `<div>${x}</div>`).join('') || '—';
+/* 近 7 次已完成课程学习趋势（只统计真实完成课程） */
+function trendRows() {
+  let rows = [];
+  try {
+    rows = Store.parentCourses(PID, curKid, { status: '已完成' });
+  } catch (e) { return null; }
+  const data = rows.slice(0, 7).reverse().map(c => {
+    const rec = Store.recordOfCourse(c.id);
+    const snap = rec ? Store.recordView(rec) : null;
+    return {
+      date: c.date.slice(5), train: snap ? snap.trainWords : 0,
+      mastered: snap ? snap.mastered : 0, weak: snap ? snap.weak : 0
+    };
+  });
+  if (!data.length) return null;
+  return data;
+}
+function trendHTML(data) {
+  const max = Math.max(1, ...data.map(d => d.train));
+  return `<div class="m-card">
+    <div class="m-card-title">学习趋势 · 近 ${data.length} 次已完成课程</div>
+    ${data.map(d => `
+      <div class="mb12">
+        <div class="flex jcb" style="font-size:12px">
+          <span>${esc(d.date)}</span>
+          <span class="muted">训练 ${d.train} · 掌握 <b style="color:var(--success)">${d.mastered}</b> · 待加强 <b style="color:var(--warning)">${d.weak}</b></span>
+        </div>
+        <div class="bar mt4"><i style="width:${Math.round(d.train / max * 100)}%"></i></div>
+      </div>`).join('')}
+    <div class="small muted" style="line-height:1.7">
+      统计口径：仅统计已<b>完成</b>的课程；编辑中的草稿、未上课、已取消课程不计入。
+      掌握数量是教师单次课的判断，短期波动属正常，不等同于长期能力提升。
+    </div>
+  </div>`;
 }
 
+/* ---------------- 入口 ---------------- */
+function boot() {
+  if (!curKid) {
+    document.getElementById('body').innerHTML =
+      '<div class="m-card"><div class="small muted">当前家长账号下暂无孩子档案。</div></div>';
+    return;
+  }
+  const reportId = q.get('report') ? KIDS.filter(k => k.id === q.get('student'))[0] && q.get('report') : '';
+  if (reportId) renderDetail(reportId);
+  else renderList();
+}
+
+initKid();
 boot();
 </script>
 </body>

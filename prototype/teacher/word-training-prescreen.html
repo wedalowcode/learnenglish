@@ -3,142 +3,198 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>单词预筛选</title>
+<title>单词初筛 · 列表式</title>
 <link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .focus-wrap.wide { max-width: 1180px; }
+  .sc-table thead th { position: sticky; top: 0; background: #fff; z-index: 2; box-shadow: inset 0 -1px 0 var(--border); }
+  .sc-table td { vertical-align: middle; }
+  .sc-en { font-size: 15px; font-weight: 600; color: #0f172a; letter-spacing: -.2px; white-space: nowrap; }
+  .sc-ph { font-family: "Times New Roman", serif; color: var(--text-3); font-size: 12.5px; white-space: nowrap; }
+  .sc-cn { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+  .sc-cn .pos { color: var(--info); font-size: 12px; margin-right: 4px; }
+  .sc-audio { background: none; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+    width: 26px; height: 26px; line-height: 1; color: var(--text-2); font-size: 12px; }
+  .sc-audio:hover { border-color: var(--primary); color: var(--primary); }
+  .judge-cell { display: flex; gap: 6px; justify-content: flex-end; white-space: nowrap; }
+  tr.is-known { background: #f6fdf9; }
+  tr.is-unknown { background: #fffafa; }
+  tr.is-known .sc-en { color: #15803d; }
+  tr.is-unknown .sc-en { color: #b91c1c; }
+  .sc-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .seg-btn { border: 1px solid var(--border); background: #fff; border-radius: 8px; padding: 5px 12px;
+    font-size: 12.5px; cursor: pointer; color: var(--text-2); }
+  .seg-btn.on { background: var(--primary-soft); border-color: #bfdbfe; color: var(--primary-dark); font-weight: 600; }
+  .seg-btn:hover { border-color: var(--primary); }
+  .chip-src { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    background: #fff; color: var(--text-2); border: 1px solid var(--border);
+    border-radius: 20px; padding: 3px 10px; cursor: pointer; }
+  .chip-src.on { background: var(--primary-soft); color: var(--primary-dark); border-color: #bfdbfe; font-weight: 600; }
+  .num-big { font-size: 24px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .stat-row { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 12px; }
+</style>
 </head>
 <body class="focus-page">
 
 <div class="focus-top">
-  <a class="btn btn-sm" href="word-training-setup.html" id="backLink">← 返回选择</a>
+  <a class="btn btn-sm" href="word-training-setup.html" id="backLink">← 返回选词</a>
   <div>
-    <div class="ft-title" id="ftTitle">单词预筛选</div>
+    <div class="ft-title" id="ftTitle">单词初筛</div>
     <div class="ft-sub" id="ftSub">—</div>
   </div>
   <div class="grow"></div>
   <div class="text-r" style="margin-right:12px">
-    <div class="small muted">预筛进度</div>
+    <div class="small muted">初筛进度</div>
     <div style="font-size:15px;font-weight:600" id="prog">0 / 0</div>
   </div>
-  <button class="btn btn-sm" onclick="finishEarly()">结束预筛选</button>
+  <button class="btn btn-sm" onclick="generate()">结束初筛并生成队列</button>
 </div>
 
 <div class="focus-main">
-  <div class="focus-wrap">
+  <div class="focus-wrap wide">
 
-    <div class="bar mb16"><i id="barFill" style="width:0%"></i></div>
-
-    <!-- 任务不存在 -->
     <div id="noTask" class="card hidden">
       <div class="card-body">
         <div class="empty"><div class="e-ico">▤</div>
           <p id="noTaskMsg">没有可用的训练任务</p>
-          <a class="btn btn-primary" href="word-training-setup.html">回到词库选择</a>
+          <a class="btn btn-primary" href="word-training-setup.html">回到选词页</a>
         </div>
       </div>
     </div>
 
-    <!-- 预筛卡片 -->
-    <div id="cardArea">
-      <div class="word-card">
-        <div class="wc-en" id="wEn">—</div>
-        <div class="wc-ph" id="wPh">—</div>
-        <div class="wc-cn" id="wCn">—</div>
-        <div class="mt16">
-          <button class="audio-btn" data-label="▶ 播放发音" onclick="playCur(this)">▶ 播放发音</button>
+    <div id="mainArea">
+
+      <div class="stat-row mb12" id="stats"></div>
+      <div class="bar-row mb16">
+        <div class="bar"><i id="barFill" style="width:0%"></i></div>
+        <div class="val" id="barText">0 / 0</div>
+      </div>
+
+      <div class="card mb12">
+        <div class="card-body" style="padding:12px 16px">
+          <div class="sc-toolbar mb12" id="bookTabs"></div>
+          <div class="sc-toolbar">
+            <button class="seg-btn on" data-f="unscreened" onclick="setFilter('unscreened')">未筛选</button>
+            <button class="seg-btn" data-f="known" onclick="setFilter('known')">已认识</button>
+            <button class="seg-btn" data-f="unknown" onclick="setFilter('unknown')">不认识</button>
+            <button class="seg-btn" data-f="all" onclick="setFilter('all')">全部</button>
+            <div class="grow"></div>
+            <input class="input" id="kw" style="width:220px" placeholder="搜索英文或中文释义" oninput="renderList()">
+          </div>
         </div>
       </div>
 
-      <div class="alert alert-info mt16"><span class="ico">i</span>
-        <div>预筛选只是初筛：<b>认识 ≠ 正式掌握</b>。认识的单词不进入本次强化队列，但仍会记录初筛结果；
-          未作答的单词不会被当作认识或不认识。</div></div>
-
-      <div class="judge-row">
-        <button class="judge no" onclick="answer(false)">不认识 <kbd>1</kbd></button>
-        <button class="judge yes" onclick="answer(true)">认识 <kbd>2</kbd></button>
-      </div>
-
-      <div class="flex jcb aic mt12">
-        <button class="btn btn-ghost btn-sm" onclick="prev()">← 上一个</button>
-        <div class="flex gap8 aic">
-          <span class="small muted" id="tallyKnown">认识 0</span>
-          <span class="small muted">·</span>
-          <span class="small muted" id="tallyUnknown">不认识 0</span>
-          <span class="small muted">·</span>
-          <span class="small muted" id="tallyLeft">未作答 0</span>
+      <div class="card mb12">
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table compact sc-table">
+              <thead>
+                <tr>
+                  <th style="width:200px">英文单词</th>
+                  <th style="width:150px">音标</th>
+                  <th>中文释义</th>
+                  <th style="width:190px" class="right">判断</th>
+                  <th style="width:96px">状态</th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="next()">下一个 →</button>
+        <div class="card-foot" style="justify-content:space-between">
+          <span class="small muted" id="listNote">—</span>
+          <span class="small muted">点击「认识 / 不认识」立即保存，不需要逐词翻页</span>
+        </div>
       </div>
 
-      <div class="text-c mt12">
-        <button class="btn btn-ghost btn-sm" onclick="demoFill()" title="仅用于快速验证队列规则">
-          演示用：按示例结果作答（前 9 认识 / 其余不认识）
-        </button>
+      <div class="card mb12">
+        <div class="card-head">
+          <div class="card-title">词库来源与训练队列</div>
+          <span class="small muted" id="poolNote">—</span>
+        </div>
+        <div class="card-body">
+          <div class="mb12" id="taskBooks"></div>
+          <div class="flex aic gap8 mb16" style="flex-wrap:wrap">
+            <span class="small muted">继续添加词库补足数量：</span>
+            <select class="select" id="addBookSel" style="width:300px"></select>
+            <button class="btn btn-sm" onclick="addBook()">加入本次任务</button>
+            <div class="grow"></div>
+            <a class="btn-link small" href="demand-center.html?tab=wbreq">需要新词库？提交申请</a>
+          </div>
+          <div id="genTip"></div>
+          <div class="flex gap8 mt12" style="justify-content:flex-end">
+            <button class="btn" onclick="pauseTask()">暂停训练</button>
+            <button class="btn btn-primary btn-lg" onclick="generate()">生成训练队列 →</button>
+          </div>
+        </div>
       </div>
+
+      <div class="alert alert-info mt12"><span class="ico">i</span>
+        <div><b>三种状态互不替代：</b>初筛只记录孩子「原本是否认识」。认识的单词立即进入绿盒并打上初筛印记；
+          不认识的进入本次候选队列。<b>这里不判断掌握程度</b>，掌握在强化训练之后的最后复习才产生。</div></div>
+
     </div>
 
-    <!-- 预筛结果 -->
     <div id="resultArea" class="hidden">
       <div class="card">
-        <div class="card-head"><div class="card-title">预筛选完成 · 队列已生成</div>
-          <span class="small muted mono" id="resTaskNo"></span></div>
+        <div class="card-head">
+          <div class="card-title">训练队列已生成</div>
+          <span class="small muted mono" id="resTaskNo"></span>
+        </div>
         <div class="card-body">
-
           <div class="grid g4 mb16">
-            <div class="card stat"><div class="stat-label">本词库单词</div>
-              <div class="stat-value" id="rBook">0</div>
-              <div class="stat-foot">词库全部词条</div></div>
+            <div class="card stat"><div class="stat-label">候选池单词</div>
+              <div class="stat-value" id="rPool">0</div><div class="stat-foot">本次任务全部词库去重后</div></div>
             <div class="card stat"><div class="stat-label">初筛认识</div>
-              <div class="stat-value" style="color:var(--info)" id="rKnown">0</div>
-              <div class="stat-foot">不进入本次强化训练</div></div>
+              <div class="stat-value" style="color:var(--success)" id="rKnown">0</div>
+              <div class="stat-foot">已进绿盒，本次不训练</div></div>
             <div class="card stat"><div class="stat-label">本次训练队列</div>
               <div class="stat-value" style="color:var(--primary)" id="rQueue">0</div>
-              <div class="stat-foot" id="rQueueFoot">不认识且未超上限</div></div>
-            <div class="card stat"><div class="stat-label">剩余待训练</div>
+              <div class="stat-foot" id="rQueueFoot">—</div></div>
+            <div class="card stat"><div class="stat-label">保留待训练</div>
               <div class="stat-value" style="color:var(--warning)" id="rRemain">0</div>
-              <div class="stat-foot" id="rRemainFoot">超 45 上限，保留到后续训练</div></div>
+              <div class="stat-foot">超出目标的候选，不丢弃</div></div>
           </div>
-
           <div id="resAlert"></div>
 
           <div class="section-title">训练队列（按词库顺序）</div>
           <div class="mini-words mb12" id="queueWords" style="justify-content:flex-start"></div>
-          <div class="small muted mb16">
-            <span class="mini-word no" style="padding:1px 8px">深色</span> = 进入本次强化训练队列
-            <span class="mini-word" style="padding:1px 8px;margin-left:10px">浅色</span> = 初筛认识，本次不训练
-          </div>
 
-          <div class="section-title">分组规划（每组最多 5 个，末组按实际数量）</div>
+          <div class="section-title">分组规划（五词一组，末组按实际数量）</div>
           <div class="grid g6 mb12" id="groupPlan"></div>
           <div class="small muted mb16" id="groupFoot"></div>
 
-          <div class="table-wrap mb16">
-            <table class="table compact">
-              <thead><tr><th>词语</th><th class="right">初筛认识</th><th class="right">不认识</th><th class="right">未作答</th>
-                <th class="right">进入队列</th><th class="right">保留待训练</th></tr></thead>
-              <tbody>
-                <tr><td class="strong">本次预筛合计</td>
-                  <td class="right mono" id="sumKnown">0</td>
-                  <td class="right mono" id="sumUnknown">0</td>
-                  <td class="right mono" id="sumUnscreen">0</td>
-                  <td class="right mono" id="sumQueue">0</td>
-                  <td class="right mono" id="sumRemain">0</td></tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="alert alert-info mb16"><span class="ico">i</span>
-            <div>队列已写入训练任务 <b class="mono" id="resTaskNo2">—</b>（状态：强化训练中）。
-              本次队列与每个单词的初筛结果都会持久化，刷新页面或换页后不会丢失。</div></div>
-
           <div class="flex gap8" style="justify-content:flex-end">
-            <button class="btn" onclick="restart()">重新预筛</button>
-            <a class="btn" href="student-profile.html">稍后再做</a>
-            <button class="btn btn-primary btn-lg" onclick="goTraining()">开始分组训练 →</button>
+            <a class="btn" href="word-training-setup.html" id="backSetup">稍后再做</a>
+            <button class="btn btn-primary btn-lg" onclick="goTraining()">开始五词一组强化训练 →</button>
           </div>
         </div>
       </div>
     </div>
 
+  </div>
+</div>
+
+<div class="mask" id="fixModal">
+  <div class="modal" style="width:520px">
+    <div class="modal-head">
+      <div class="modal-title">修正初筛结果</div>
+      <button class="modal-close" onclick="Proto.closeModal('fixModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="mb12" id="fixSum"></div>
+      <div class="field">
+        <label>修正原因 <span class="req">*</span></label>
+        <input class="input" id="fixReason" placeholder="例如：刚才点错 / 孩子其实认识该词">
+      </div>
+      <div id="fixErr" class="small" style="color:var(--danger)"></div>
+      <div class="alert alert-warn mt12"><span class="ico">!</span>
+        <div>修正会保留原判断记录（谁、何时、从什么改成什么、为什么），历史不可抹除。</div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('fixModal')">取消</button>
+      <button class="btn btn-primary" onclick="submitFix()">确认修正</button>
+    </div>
   </div>
 </div>
 
@@ -148,8 +204,20 @@
 <script src="../assets/js/store.js"></script>
 <script>
 const params = new URLSearchParams(location.search);
-const courseId = params.get('course') || '';   // 课程上下文
-let task = null, words = [], idx = 0, resultData = null;
+const courseId = params.get('course') || '';
+let task = null;
+let cands = [];
+let bookFilter = '';
+let statusFilter = 'unscreened';
+let fixTarget = null;
+let resultData = null;
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+const TEACHER = Proto.teacherId();
+if (TEACHER) {
+  const t = Store.teacher(TEACHER);
+  Store.setSession({ role: 'teacher', teacherId: TEACHER, operatorName: t ? t.name : '' });
+}
 
 function boot() {
   const tid = params.get('task');
@@ -157,173 +225,365 @@ function boot() {
   task = tid ? Store.trainTask(tid) : Store.activeTask(guessStudent);
 
   if (!task) {
-    if (!tid) { location.replace('word-training-setup.html'); return; }
+    if (!tid) { location.replace('word-training-setup.html?student=' + guessStudent); return; }
     document.getElementById('noTask').classList.remove('hidden');
-    document.getElementById('cardArea').classList.add('hidden');
+    document.getElementById('mainArea').classList.add('hidden');
     document.getElementById('noTaskMsg').textContent =
       '任务 ' + tid + ' 不存在或已被重置，请重新选择词库开始新的训练。';
     return;
   }
-  if (task.phase !== '预筛选' || !Store.isOpen(task.status)) {
-    // 已经完成预筛：直接去看结果 / 继续训练
+  if (task.phase !== Store.PHASE.PRESCREEN || Store.isDone(task.status)) {
     location.replace('word-training.html?task=' + task.id + (courseId ? '&course=' + courseId : ''));
     return;
   }
+  const bk = params.get('book');
+  if (bk && (task.wordbookIds || []).indexOf(bk) >= 0) bookFilter = bk;
+  else bookFilter = task.currentWordbookId || (task.wordbookIds || [])[0] || '';
 
-  words = task.wordIds.map(id => Store.word(id)).filter(Boolean);
   const stu = Store.student(task.studentId);
-  document.getElementById('ftTitle').textContent = '单词预筛选 · ' + stu.name;
-  document.getElementById('ftSub').textContent = task.wordbookName + ' · 任务 ' + task.id;
-  document.getElementById('backLink').href = 'word-training-setup.html?student=' + task.studentId;
+  document.getElementById('ftTitle').textContent = '单词初筛 · ' + stu.name;
+  document.getElementById('backLink').href = 'word-training-setup.html?student=' + task.studentId
+    + (courseId ? '&course=' + courseId : '');
+  document.getElementById('backSetup').href = 'word-training-setup.html?student=' + task.studentId
+    + (courseId ? '&course=' + courseId : '');
 
-  // 恢复已作答的位置（刷新后从第一个未作答开始）
-  const firstUnanswered = words.findIndex(w => !task.prescreen[w.id]);
-  idx = firstUnanswered < 0 ? words.length - 1 : firstUnanswered;
-  render();
+  refresh();
 }
 
-function render() {
-  const w = words[idx];
-  if (!w) return;
-  document.getElementById('wEn').textContent = w.en;
-  document.getElementById('wPh').textContent = w.ph;
-  document.getElementById('wCn').innerHTML = w.mean.map(m => `<div><span class="pos">${m.pos}</span> ${m.cn}</div>`).join('');
-  document.getElementById('prog').textContent = `${idx + 1} / ${words.length}`;
-  document.getElementById('barFill').style.width = ((idx + 1) / words.length * 100) + '%';
-
-  const known = words.filter(x => task.prescreen[x.id] && task.prescreen[x.id].known).length;
-  const unknown = words.filter(x => task.prescreen[x.id] && !task.prescreen[x.id].known).length;
-  document.getElementById('tallyKnown').textContent = '认识 ' + known;
-  document.getElementById('tallyUnknown').textContent = '不认识 ' + unknown;
-  document.getElementById('tallyLeft').textContent = '未作答 ' + (words.length - known - unknown);
-  Proto.speak('');
-}
-
-function playCur(btn) { Proto.playAudio(btn, words[idx].en); }
-
-/* 逐词落库：每次判断立即写入数据层，刷新不丢 */
-function answer(known) {
-  const w = words[idx];
-  Store.prescreenAnswer(task.id, w.id, known);
+function refresh() {
   task = Store.trainTask(task.id);
-  if (idx < words.length - 1) { idx++; render(); }
-  else showResult();
+  cands = Store.prescreenCandidates(task.id, { all: true });
+  const stu = Store.student(task.studentId);
+  const t = Store.teacher(task.teacherId);
+  document.getElementById('ftSub').textContent =
+    [stu.name, t ? t.name : '', '任务 ' + task.id, '目标 ' + task.targetCount + ' 个']
+      .filter(Boolean).join(' · ');
+  renderStats();
+  renderBookTabs();
+  renderList();
+  renderBooks();
+  renderGenTip();
 }
 
-function next() { if (idx < words.length - 1) { idx++; render(); } }
-function prev() { if (idx > 0) { idx--; render(); } }
+/* ---------------- 顶部统计 ---------------- */
 
-/* 演示填充：走同一套真实写入逻辑，仅用于快速验证队列规则 */
-function demoFill() {
-  Proto.confirmBox('按示例结果作答',
-    `将对全部 ${words.length} 个单词按「前 9 个认识、其余不认识」写入预筛结果。<br><br>
-     这只是省去点击，写入的记录与手动点击<b>完全相同</b>；正式版本会移除此入口。`,
-    '按示例写入', () => {
-      words.forEach((w, i) => {
-        if (task.prescreen[w.id]) Store.prescreenAnswer(task.id, w.id, task.prescreen[w.id].known);
-        else Store.prescreenAnswer(task.id, w.id, i < 9);
-      });
-      task = Store.trainTask(task.id);
-      showResult();
+function renderStats() {
+  const st = Store.prescreenTaskStat(task.id);
+  const cards = [
+    { l: '已认识', n: st.known, tone: 'success', s: '已进绿盒' },
+    { l: '不认识', n: st.unknown, tone: 'danger', s: '进入训练候选' },
+    { l: '未筛选', n: st.unscreened, tone: 'text-2', s: '尚未判断' },
+    { l: '本次目标', n: st.target, tone: 'text', s: '可调 5 – 200' },
+    { l: '还差', n: st.needMore, tone: 'primary', s: st.needMore ? '需继续筛或加词库' : '已达目标' }
+  ];
+  document.getElementById('stats').innerHTML = cards.map(c => `
+    <div class="card stat">
+      <div class="stat-label">${c.l}</div>
+      <div class="num-big" style="color:var(--${c.tone})">${c.n}</div>
+      <div class="stat-foot">${c.s}</div>
+    </div>`).join('');
+
+  const pct = st.pool ? Math.round(st.screened / st.pool * 100) : 0;
+  document.getElementById('barFill').style.width = pct + '%';
+  document.getElementById('barText').textContent = st.screened + ' / ' + st.pool;
+  document.getElementById('prog').textContent = st.screened + ' / ' + st.pool;
+  document.getElementById('poolNote').textContent =
+    `${st.pool} 个去重单词 · 已筛 ${st.screened} · 历史已认识排除 ${st.excluded}`;
+}
+
+/* ---------------- 词库切换 ---------------- */
+
+function renderBookTabs() {
+  const books = Store.wordbooksOfTask(task);
+  const st = Store.prescreenTaskStat(task.id);
+  const totalUn = cands.filter(c => !c.screened && !c.excluded).length;
+  const html = [`<span class="chip-src ${bookFilter === '' ? 'on' : ''}" onclick="pickBook('')">
+      全部词库 <span class="tag tag-slate" style="padding:0 5px;font-size:10px">${totalUn} 待筛</span></span>`];
+  books.forEach(b => {
+    const row = st.byBook[b.id] || { unscreened: 0, unknown: 0 };
+    html.push(`<span class="chip-src ${bookFilter === b.id ? 'on' : ''}" onclick="pickBook('${b.id}')">
+      ${esc(b.name)}
+      <span class="tag tag-slate" style="padding:0 5px;font-size:10px">${row.unscreened} 待筛</span>
+      <span class="tag tag-red" style="padding:0 5px;font-size:10px">${row.unknown} 不识</span></span>`);
+  });
+  document.getElementById('bookTabs').innerHTML = html.join('');
+}
+
+function pickBook(id) { bookFilter = id; renderBookTabs(); renderList(); }
+
+function setFilter(f) {
+  statusFilter = f;
+  document.querySelectorAll('.seg-btn').forEach(b =>
+    b.classList.toggle('on', b.getAttribute('data-f') === f));
+  renderList();
+}
+
+/* ---------------- 单词列表 ---------------- */
+
+function renderList() {
+  const kw = (document.getElementById('kw').value || '').trim().toLowerCase();
+  let list = cands.slice();
+  if (bookFilter) list = list.filter(c => c.wordbookId === bookFilter);
+
+  if (statusFilter === 'unscreened') list = list.filter(c => !c.screened && !c.excluded);
+  else if (statusFilter === 'known') list = list.filter(c => c.screened && c.screened.known);
+  else if (statusFilter === 'unknown') list = list.filter(c => c.screened && !c.screened.known);
+
+  if (kw) {
+    list = list.filter(c => {
+      if (String(c.en || '').toLowerCase().indexOf(kw) >= 0) return true;
+      return (c.mean || []).some(m => String(m.cn || '').indexOf(kw) >= 0);
     });
+  }
+
+  const total = list.length;
+  const show = list.slice(0, 300);
+
+  Proto.renderRows('rows', show, c => {
+    const p = c.screened;
+    const known = p && p.known;
+    const unknown = p && !p.known;
+    const cls = known ? 'is-known' : (unknown ? 'is-unknown' : '');
+    const cn = (c.mean || []).map(m => `<div><span class="pos">${esc(m.pos || '')}</span>${esc(m.cn || '')}</div>`).join('')
+      || '<span class="muted">—</span>';
+    const tag = known ? '<span class="tag tag-green">已认识</span>'
+      : unknown ? '<span class="tag tag-red">不认识</span>'
+      : '<span class="tag tag-slate">未筛选</span>';
+
+    return `<tr class="${cls}">
+      <td>
+        <div class="flex aic gap8">
+          <span class="sc-en">${esc(c.en)}</span>
+          <button class="sc-audio" title="播放发音" onclick="playAudio(this,'${esc(c.en)}')">🔊</button>
+        </div>
+        ${bookFilter ? '' : `<div class="small muted">${esc(c.wordbookName || '')}</div>`}
+      </td>
+      <td class="sc-ph">${esc(c.ph || '—')}</td>
+      <td class="sc-cn">${cn}</td>
+      <td>
+        <div class="judge-cell">
+          <button class="btn btn-sm ${known ? 'btn-primary' : ''}" onclick="answer('${c.id}', true)">
+            ${known ? '✓ 认识' : '认识'}</button>
+          <button class="btn btn-sm ${unknown ? 'btn-danger' : ''}" onclick="answer('${c.id}', false)">
+            ${unknown ? '✓ 不认识' : '不认识'}</button>
+        </div>
+      </td>
+      <td>${tag}</td>
+    </tr>`;
+  }, 5, kw ? '没有匹配「' + esc(kw) + '」的单词'
+      : (statusFilter === 'unscreened'
+        ? '当前词库已经没有待筛选的单词了，可以切换词库或添加新词库继续补足数量'
+        : '没有该状态的单词'));
+
+  document.getElementById('listNote').textContent =
+    total > show.length
+      ? `共 ${total} 个，当前显示前 ${show.length} 个（用搜索或切换筛选缩小范围）`
+      : `共 ${total} 个单词`;
 }
 
-/* 结束预筛选 → 生成队列（认识的单词不入队 / 45 上限 / 末组按实际） */
-function showResult() {
-  const r = Store.finishPrescreen(task.id);
-  task = Store.trainTask(task.id);
+function playAudio(btn, en) {
+  Proto.playAudio(btn, en);
+}
+
+/* ---------------- 逐词判断 ---------------- */
+
+function answer(wordId, known) {
+  const c = cands.filter(x => x.id === wordId)[0];
+  if (!c) return;
+  /* 已判断过同一个结果：不重复提交 */
+  if (c.screened && c.screened.known === known) {
+    Proto.toast('该单词已记录为「' + (known ? '认识' : '不认识') + '」，无需重复提交', 'warn');
+    return;
+  }
+  if (c.screened) { openFix(wordId, known); return; }
+
+  try {
+    const r = Store.prescreenAnswer(task.id, wordId, known);
+    if (r.unchanged) { Proto.toast('结果未变化', 'warn'); return; }
+    refresh();
+  } catch (e) {
+    Proto.toast(e.message, 'err');
+  }
+}
+
+function openFix(wordId, known) {
+  const c = cands.filter(x => x.id === wordId)[0];
+  fixTarget = { wordId: wordId, known: known };
+  document.getElementById('fixSum').innerHTML = `<div class="small" style="line-height:1.8">
+    单词 <b style="font-size:15px">${esc(c.en)}</b> ${esc(c.ph || '')}<br>
+    当前记录：<span class="tag ${c.screened.known ? 'tag-green' : 'tag-red'}">${c.screened.known ? '认识' : '不认识'}</span>
+    →
+    改为：<span class="tag ${known ? 'tag-green' : 'tag-red'}">${known ? '认识' : '不认识'}</span>
+    <span class="small muted">（${esc(c.screened.at || '')}）</span></div>`;
+  document.getElementById('fixReason').value = '';
+  document.getElementById('fixErr').textContent = '';
+  Proto.openModal('fixModal');
+}
+
+function submitFix() {
+  const reason = (document.getElementById('fixReason').value || '').trim();
+  if (!reason) {
+    document.getElementById('fixErr').textContent = '修正必须填写原因';
+    return;
+  }
+  try {
+    Store.prescreenAnswer(task.id, fixTarget.wordId, fixTarget.known, { reason: reason });
+    Proto.closeModal('fixModal');
+    Proto.toast('初筛结果已修正，原记录已保留', 'ok');
+    refresh();
+  } catch (e) {
+    document.getElementById('fixErr').textContent = e.message;
+  }
+}
+
+/* ---------------- 词库来源 ---------------- */
+
+function renderBooks() {
+  const books = Store.wordbooksOfTask(task);
+  document.getElementById('taskBooks').innerHTML = books.length
+    ? books.map(b => `<span class="chip-src ${bookFilter === b.id ? 'on' : ''}" onclick="pickBook('${b.id}')">
+        ${esc(b.name)}</span>`).join(' ')
+    : '<span class="small muted">还没有加入任何词库</span>';
+
+  const joined = books.map(b => b.id);
+  const rest = Store.teachingWordbooks(task.studentId).filter(b => joined.indexOf(b.id) < 0);
+  const sel = document.getElementById('addBookSel');
+  sel.innerHTML = rest.length
+    ? rest.map(b => `<option value="${b.id}">${esc(b.name)} · ${Store.wordsOfBook(b.id).length} 词</option>`).join('')
+    : '<option value="">（没有其他已授权词库了）</option>';
+  document.querySelector('#addBookSel').disabled = !rest.length;
+}
+
+function addBook() {
+  const sel = document.getElementById('addBookSel');
+  const bid = sel.value;
+  if (!bid) return;
+  try {
+    const r = Store.addWordbooksToTask(task.id, [bid]);
+    if (!r.added.length) {
+      Proto.toast(r.skipped.length ? r.skipped[0].reason : '无法加入该词库', 'err');
+      return;
+    }
+    Proto.toast('已加入「' + r.added[0].name + '」，新增 ' + r.added[0].words + ' 个单词', 'ok');
+    bookFilter = bid;
+    refresh();
+  } catch (e) {
+    Proto.toast(e.message, 'err');
+  }
+}
+
+/* ---------------- 生成队列 ---------------- */
+
+function renderGenTip() {
+  const st = Store.prescreenTaskStat(task.id);
+  const rest = Store.teachingWordbooks(task.studentId)
+    .filter(b => (task.wordbookIds || []).indexOf(b.id) < 0).length;
+  let tip;
+  if (!st.unknown) {
+    tip = `<div class="alert alert-warn"><span class="ico">!</span>
+      <div>还没有筛出任何「不认识」的单词，至少需要 1 个才能生成训练队列。</div></div>`;
+  } else if (st.unknown >= st.target) {
+    tip = `<div class="alert alert-success"><span class="ico">✓</span>
+      <div>已筛出 <b>${st.unknown}</b> 个不认识的单词，达到目标 <b>${st.target}</b> 个，可以生成训练队列
+        （超出目标的 ${st.unknown - st.target} 个会保留为待训练，不会丢弃）。</div></div>`;
+  } else {
+    tip = `<div class="alert alert-warn"><span class="ico">!</span>
+      <div>当前只筛出 <b>${st.unknown}</b> 个不认识的单词，距离目标还差 <b>${st.needMore}</b> 个。
+        ${rest ? `还有 <b>${rest}</b> 个已授权词库可以加入继续补足；` : '所有已授权词库都已加入，'}
+        也可以按实际数量开始训练（不会用认识的单词凑数）。</div></div>`;
+  }
+  document.getElementById('genTip').innerHTML = tip;
+}
+
+function generate() {
+  let r;
+  try {
+    r = Store.finishPrescreen(task.id);
+  } catch (e) {
+    Proto.toast(e.message, 'err');
+    return;
+  }
+  if (!r.ok && r.reason === 'SHORT_OF_TARGET') {
+    Proto.confirmBox('按实际数量开始训练',
+      `当前筛出 <b>${r.candidate}</b> 个不认识的单词，目标 <b>${r.target}</b> 个，还差 ${r.short} 个。<br><br>
+       可以返回继续添加词库补足，也可以按实际 <b>${r.candidate}</b> 个开始强化训练。`,
+      '按 ' + r.candidate + ' 个开始', () => {
+        try {
+          const r2 = Store.finishPrescreen(task.id, { confirmShort: true });
+          if (!r2.ok) { Proto.toast(r2.message || '无法生成训练队列', 'err'); return; }
+          showResult(r2);
+        } catch (e) { Proto.toast(e.message, 'err'); }
+      });
+    return;
+  }
+  if (!r.ok) { Proto.toast(r.message || '无法生成训练队列', 'err'); return; }
+  showResult(r);
+}
+
+function showResult(r) {
   resultData = r;
-
-  document.getElementById('cardArea').classList.add('hidden');
+  task = Store.trainTask(task.id);
+  document.getElementById('mainArea').classList.add('hidden');
   document.getElementById('resultArea').classList.remove('hidden');
-  document.getElementById('prog').textContent = `${words.length} / ${words.length}`;
-  document.getElementById('barFill').style.width = '100%';
   document.getElementById('resTaskNo').textContent = task.id;
-  document.getElementById('resTaskNo2').textContent = task.id;
 
-  document.getElementById('rBook').textContent = r.bookTotal;
+  document.getElementById('rPool').textContent = r.pool;
   document.getElementById('rKnown').textContent = r.known;
   document.getElementById('rQueue').textContent = r.queue.length;
   document.getElementById('rRemain').textContent = r.remain.length;
-  document.getElementById('rRemainFoot').textContent = r.remain.length
-    ? '超过 45 上限，保留到后续训练'
-    : '未超出上限，无单词被截断';
   document.getElementById('rQueueFoot').textContent = r.remain.length
-    ? `不认识 ${r.unknown} 个，前 ${r.queue.length} 个入队`
+    ? `不认识 ${r.unknown} 个，超目标部分保留`
     : `不认识 ${r.unknown} 个，全部入队`;
 
-  document.getElementById('sumKnown').textContent = r.known;
-  document.getElementById('sumUnknown').textContent = r.unknown;
-  document.getElementById('sumUnscreen').textContent = r.unscreened;
-  document.getElementById('sumQueue').textContent = r.queue.length;
-  document.getElementById('sumRemain').textContent = r.remain.length;
-
-  // 提示语按真实结果生成，不再写死
   let alertHtml = '';
-  if (r.unscreened > 0) {
+  if (r.short > 0) {
     alertHtml += `<div class="alert alert-warn mb16"><span class="ico">!</span>
-      <div>有 <b>${r.unscreened}</b> 个单词未作答，既不视为认识也不视为不认识，<b>不会进入</b>本次队列；
-        如需训练请返回补齐预筛。</div></div>`;
+      <div>本次按实际数量开始：目标 <b>${r.target}</b> 个，实际 <b>${r.queue.length}</b> 个，差 ${r.short} 个。
+        认识的单词<b>没有</b>被塞进队列凑数。</div></div>`;
   }
-  if (r.remain.length > 0) {
-    alertHtml += `<div class="alert alert-warn mb16"><span class="ico">!</span>
-      <div>不认识 <b>${r.unknown}</b> 个，超过单次上限 <b>45</b> 个。按词库顺序取前 <b>${r.queue.length}</b> 个入队，
-        其余 <b>${r.remain.length}</b> 个保留为「待强化训练」，可在后续训练中继续。</div></div>`;
-  } else {
+  if (r.remain.length) {
     alertHtml += `<div class="alert alert-info mb16"><span class="ico">i</span>
-      <div>不认识 <b>${r.unknown}</b> 个，未超过单次上限 45 个，全部进入本次训练；
-        初筛认识的 <b>${r.known}</b> 个本次不训练。</div></div>`;
+      <div>不认识 <b>${r.unknown}</b> 个，其中前 <b>${r.queue.length}</b> 个进入本次队列，
+        其余 <b>${r.remain.length}</b> 个保留为「待强化训练」，可在后续任务中继续，不会丢失。</div></div>`;
+  }
+  if (r.unscreened) {
+    alertHtml += `<div class="alert alert-warn mb16"><span class="ico">!</span>
+      <div>还有 <b>${r.unscreened}</b> 个单词未筛选，既不视为认识也不视为不认识，未进入本次队列。</div></div>`;
   }
   document.getElementById('resAlert').innerHTML = alertHtml;
 
-  // 队列可视化：按词库顺序，认识的和入队的都列出来
-  const queueSet = {};
-  r.queue.forEach(id => queueSet[id] = 1);
-  document.getElementById('queueWords').innerHTML = words.map(w => {
-    const p = task.prescreen[w.id];
-    const inQ = queueSet[w.id];
-    const cls = inQ ? 'no' : (p && p.known ? '' : '');
-    const tip = inQ ? '进入训练队列' : (p && p.known ? '初筛认识，本次不训练' : '未作答');
-    return `<span class="mini-word ${cls}" title="${tip}">${w.en}</span>`;
-  }).join('');
+  const map = {};
+  cands.forEach(c => map[c.id] = c);
+  const qSet = {};
+  r.queue.forEach(id => qSet[id] = 1);
+  document.getElementById('queueWords').innerHTML = r.queue
+    .map(id => `<span class="mini-word no">${esc((map[id] || {}).en || id)}</span>`).join('')
+    || '<span class="small muted">—</span>';
 
-  // 分组：按真实队列长度计算
   document.getElementById('groupPlan').innerHTML =
     r.groups.map((g, i) => `<div class="kv-pill">第 ${i + 1} 组 · ${g.length} 个</div>`).join('') +
     `<div class="kv-pill muted">共 ${r.groups.length} 组 / ${r.queue.length} 个</div>`;
   document.getElementById('groupFoot').textContent =
-    `分组规则：每组最多 5 个，末组不足 5 个按实际数量展示 → ` +
+    '分组规则：每组固定 5 个，末组不足 5 个按实际数量 → ' +
     r.groups.map(g => g.length).join(' + ') + ' = ' + r.queue.length + ' 个';
 
-  Proto.toast('预筛完成：队列 ' + r.queue.length + ' 个 / ' + r.groups.length + ' 组', 'ok');
+  Proto.toast('队列已生成：' + r.queue.length + ' 个 / ' + r.groups.length + ' 组', 'ok');
 }
 
-function restart() {
-  Proto.confirmBox('重新预筛',
-    '将清空本次预筛结果并重新开始。已生成的队列会被新的预筛结果覆盖（训练明细不受影响）。',
-    '重新开始', () => location.reload());
-}
-
-function finishEarly() {
-  const done = words.filter(w => task.prescreen[w.id]).length;
-  Proto.confirmBox('结束预筛选',
-    `当前已作答 ${done} / ${words.length} 个单词。<br><br>
-     提前结束会把<b>未作答的单词保留为「未训练」状态</b>，不进入队列，也不影响后续重新预筛。`,
-    '结束并退出', () => location.href = 'word-training-setup.html?student=' + task.studentId + (courseId ? '&course=' + courseId : ''));
+function pauseTask() {
+  Proto.confirmBox('暂停本次训练',
+    '暂停后任务保留在「已中断」，初筛结果全部保留；下次可以从选词页或学习档案继续。',
+    '暂停', () => {
+      try { Store.pauseTask(task.id, '教师主动暂停（初筛阶段）'); }
+      catch (e) { Proto.toast(e.message, 'err'); return; }
+      location.href = 'word-training-setup.html?student=' + task.studentId
+        + (courseId ? '&course=' + courseId : '');
+    });
 }
 
 function goTraining() {
   location.href = 'word-training.html?task=' + task.id + (courseId ? '&course=' + courseId : '');
 }
-
-document.addEventListener('keydown', e => {
-  if (!document.getElementById('resultArea').classList.contains('hidden')) return;
-  if (!task) return;
-  if (e.key === '1') answer(false);
-  if (e.key === '2') answer(true);
-  if (e.key === 'ArrowLeft') prev();
-  if (e.key === 'ArrowRight') next();
-});
 
 boot();
 </script>

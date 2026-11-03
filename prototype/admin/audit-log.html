@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>操作日志</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .diff-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+  .json-box { background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:12px;
+    font-family:ui-monospace,Menlo,Consolas,monospace; white-space:pre-wrap; word-break:break-all; max-height:260px; overflow:auto; }
+  .filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">系统设置<span class="sep">/</span>操作日志</div>
+          <h1 class="page-title">操作日志</h1>
+          <div class="page-sub">关键业务操作全量留痕：操作人、身份、时间、对象、动作、前后值与结果，可回溯到业务单据</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="system.html">返回系统设置</a>
+        </div>
+      </div>
+
+      <div id="noAccess" class="mb16"></div>
+      <div id="body" style="display:none">
+        <div class="grid g4 mb16" id="stats"></div>
+
+        <div class="card mb16">
+          <div class="card-body">
+            <div class="filters">
+              <select class="select" id="qModule" style="width:150px"><option value="">全部模块</option></select>
+              <select class="select" id="qRole" style="width:150px"><option value="">全部身份</option></select>
+              <select class="select" id="qType" style="width:150px"><option value="">全部对象类型</option></select>
+              <input class="input" id="qAction" placeholder="动作关键词，如 收款 / 分配" style="width:180px">
+              <input class="input" id="qKw" placeholder="操作人 / 对象 / 单据编号 / 原因" style="width:220px">
+              <button class="btn btn-primary" id="btnQuery">查询</button>
+              <button class="btn" id="btnReset">重置</button>
+              <span class="small muted" id="count"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr>
+                <th style="width:150px">时间</th><th style="width:140px">操作人 / 身份</th><th style="width:110px">模块</th>
+                <th style="width:130px">动作</th><th>对象</th><th style="width:110px">单据</th><th style="width:70px">结果</th><th style="width:70px">详情</th>
+              </tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="drawer-mask" id="log-mask" onclick="Proto.closeDrawer('log')"></div>
+<div class="drawer" id="log" style="width:600px">
+  <div class="modal-head">
+    <div class="modal-title">操作详情 · <span id="log_id">—</span></div>
+    <button class="modal-close" onclick="Proto.closeDrawer('log')">×</button>
+  </div>
+  <div class="modal-body" id="log_body"></div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const PAGE_ROLE = Proto.pageRole('admin');
+const SHELL_ROLE = PAGE_ROLE === 'staff' ? 'admin' : PAGE_ROLE;
+Proto.shell({ role: SHELL_ROLE, identityRole: PAGE_ROLE, active: 'system' });
+
+(function () {
+  const esc = Proto.escHtml;
+  if (!Store.hasPermission('', 'audit.view')) {
+    document.getElementById('noAccess').innerHTML =
+      '<div class="alert alert-warn"><span class="ico">!</span><div>当前身份没有查看操作日志的权限。</div></div>';
+    return;
+  }
+  document.getElementById('body').style.display = '';
+
+  const TYPE_LABEL = {
+    account: '账号', role: '角色', lead: '客户线索', order: '报名订单', refund: '退款申请',
+    payment: '收款', lessonAccount: '课时账户', demand: '学员需求', wordbookRequest: '词库申请',
+    teacher: '教师', student: '学员', report: '学习报告', course: '课程', dictionary: '数据字典',
+    notificationRule: '通知规则', organization: '机构'
+  };
+  const QUICK = {
+    account: 'account-detail.html?id=',
+    role: 'role-detail.html?id=',
+    lead: 'lead-detail.html?id=',
+    order: 'order-detail.html?id=',
+    demand: 'demand-detail.html?id=',
+    teacher: 'teacher-detail.html?id=',
+    student: 'student-detail.html?id=',
+    lessonAccount: 'hour-account.html',
+    wordbookRequest: 'wordbook-request.html',
+    dictionary: 'dictionary-list.html',
+    notificationRule: 'notification-settings.html',
+    organization: 'organization-settings.html',
+    course: 'course-detail.html?id='
+  };
+
+  const stat = Store.auditStat();
+  document.getElementById('stats').innerHTML = [
+    ['日志总数', stat.total, '覆盖全部关键业务动作'],
+    ['今日新增', stat.today, '按发生时间统计'],
+    ['失败操作', stat.failed, '被阻断的操作结果'],
+    ['涉及模块', Object.keys(stat.modules).length, '账号/角色/订单/课时等']
+  ].map(x => '<div class="card stat"><div class="stat-label">' + x[0] + '</div><div class="stat-value">' +
+    x[1] + '</div><div class="stat-foot">' + x[2] + '</div></div>').join('');
+
+  document.getElementById('qModule').innerHTML = '<option value="">全部模块</option>' +
+    Object.keys(stat.modules).map(m => '<option>' + esc(m) + '</option>').join('');
+  document.getElementById('qRole').innerHTML = '<option value="">全部身份</option>' +
+    [['admin', '老板'], ['staff', '教务'], ['ops', '管理员'], ['teacher', '教师'], ['agent', '代理'], ['parent', '家长']]
+      .map(r => '<option value="' + r[0] + '">' + r[1] + '</option>').join('');
+  const usedTypes = Store.auditRows().map(a => a.resourceType).filter(Boolean);
+  const uniqTypes = usedTypes.filter((t, i) => usedTypes.indexOf(t) === i);
+  document.getElementById('qType').innerHTML = '<option value="">全部对象类型</option>' +
+    uniqTypes.map(t => '<option value="' + esc(t) + '">' + esc(TYPE_LABEL[t] || t) + '</option>').join('');
+
+  const qs = new URLSearchParams(location.search);
+  if (qs.get('resourceType')) document.getElementById('qType').value = qs.get('resourceType');
+  if (qs.get('resourceId')) document.getElementById('qKw').value = qs.get('resourceId');
+
+  function linkFor(a) {
+    const base = QUICK[a.resourceType];
+    if (!base) return '';
+    const url = a.resourceType === 'organization' || a.resourceType === 'dictionary' ||
+      a.resourceType === 'notificationRule' ? base : base + encodeURIComponent(a.resourceId);
+    if (a.resourceType === 'lessonAccount' || a.resourceType === 'wordbookRequest') return base;
+    return url;
+  }
+
+  function render() {
+    const filters = {
+      module: document.getElementById('qModule').value,
+      operatorRole: document.getElementById('qRole').value,
+      resourceType: document.getElementById('qType').value,
+      action: document.getElementById('qAction').value.trim(),
+      keyword: document.getElementById('qKw').value.trim()
+    };
+    const rows = Store.auditRows(filters);
+    document.getElementById('count').textContent = '共 ' + rows.length + ' 条';
+    document.getElementById('rows').innerHTML = rows.length ? rows.map(a => {
+      const link = linkFor(a);
+      return '<tr><td class="small mono">' + esc(a.createdAt) + '</td>' +
+        '<td class="small"><b>' + esc(a.operatorName) + '</b><div class="muted">' + esc(a.operatorRoleLabel) +
+        (a.accountId ? ' · ' + esc(a.accountId) : '') + '</div></td>' +
+        '<td class="small">' + esc(a.module) + '</td>' +
+        '<td class="strong small">' + esc(a.action) + '</td>' +
+        '<td class="small">' + esc(a.resourceName || a.resourceId || '—') +
+        '<div class="muted mono">' + esc(TYPE_LABEL[a.resourceType] || a.resourceType || '') +
+        (a.resourceId ? ' · ' + esc(a.resourceId) : '') + '</div></td>' +
+        '<td>' + (link ? '<a class="btn-link" href="' + link + '">查看单据</a>' : '<span class="muted small">—</span>') + '</td>' +
+        '<td><span class="tag ' + (a.result === '成功' ? 'tag-green' : 'tag-red') + ' nodot">' + esc(a.result) + '</span></td>' +
+        '<td><button class="btn-link" data-audit="' + esc(a.id) + '">详情</button></td></tr>';
+    }).join('') : '<tr><td colspan="8" class="muted" style="text-align:center;padding:28px">没有符合条件的日志</td></tr>';
+  }
+
+  document.getElementById('rows').addEventListener('click', function (ev) {
+    const btn = ev.target.closest('button[data-audit]');
+    if (!btn) return;
+    const a = Store.auditOf(btn.dataset.audit);
+    if (!a) return;
+    document.getElementById('log_id').textContent = a.id;
+    const link = linkFor(a);
+    document.getElementById('log_body').innerHTML =
+      '<div class="desc-grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 20px">' +
+      kv('操作人', a.operatorName + '（' + a.operatorRoleLabel + '）') +
+      kv('账号 / 档案', (a.accountId || '—') + (a.identityId ? ' / ' + a.identityId : '')) +
+      kv('时间', a.createdAt) + kv('模块', a.module) +
+      kv('动作', a.action) + kv('结果', a.result + (a.errorMessage ? ' · ' + a.errorMessage : '')) +
+      kv('对象类型', TYPE_LABEL[a.resourceType] || a.resourceType || '—') +
+      kv('对象编号', a.resourceId || '—') +
+      kv('对象名称', a.resourceName || '—') +
+      kv('原因', a.reason || '—') + '</div>' +
+      '<div class="mt16 small muted">前值（before）</div><div class="json-box">' + esc(JSON.stringify(a.beforeData, null, 2) || 'null') + '</div>' +
+      '<div class="mt16 small muted">后值（after）</div><div class="json-box">' + esc(JSON.stringify(a.afterData, null, 2) || 'null') + '</div>' +
+      (link ? '<div class="mt16"><a class="btn btn-primary" href="' + link + '">打开关联单据</a></div>' : '');
+    Proto.openDrawer('log');
+  });
+  function kv(k, v) {
+    return '<div class="desc-item"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>';
+  }
+
+  document.getElementById('btnQuery').onclick = render;
+  document.getElementById('btnReset').onclick = function () {
+    ['qModule', 'qRole', 'qType', 'qAction', 'qKw'].forEach(id => document.getElementById(id).value = '');
+    render();
+  };
+  render();
+})();
+</script>
+</body>
+</html>

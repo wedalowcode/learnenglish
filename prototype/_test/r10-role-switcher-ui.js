@@ -46,7 +46,7 @@ async function waitUrl(p, kw) {
     section('1. 管理端：点击「切换角色」展开全部角色');
     await p.goto(ROOT + 'admin/dashboard.html');
     ok('管理端顶栏出现切换入口', await waitFor(async () => await p.eval(`return !!document.querySelector('.role-switch-btn');`)));
-    ok('顶栏身份显示 老板/机构管理 · 张敏 / U-ADMIN', (await currentLabel(p)) === '老板/机构管理 · 张敏 / U-ADMIN', await currentLabel(p));
+    ok('顶栏身份显示 老板/机构管理 · 张敏 / STF001', (await currentLabel(p)) === '老板/机构管理 · 张敏 / STF001', await currentLabel(p));
     ok('面板初始收起', await p.eval(`return document.querySelector('.role-switch-panel').hidden === true;`));
 
     await click(p, '.role-switch-btn');

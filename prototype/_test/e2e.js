@@ -229,10 +229,11 @@ S.wordsOfBook('WB001').forEach(w => S.prescreenAnswer(t45.id, w.id, false));
 const r45 = S.finishPrescreen(t45.id);
 assert('全部不认识时队列=23(<45) 不截断', r45.queue.length === 23, r45.queue.length);
 
-/* 上限逻辑单元校验：直接构造 46 个候选 */
+/* 上限逻辑单元校验：直接构造 46 个候选（取自两个词库，保证 ID 唯一，避免队列去重影响） */
 const fake = S.startTrainTask({ studentId: 'S2026003', teacherId: 'T003', wordbookId: 'WB001' });
 fake.wordIds = [];
-for (let i = 0; i < 46; i++) fake.wordIds.push(S.wordsOfBook('WB001')[i % 23].id);
+S.wordsOfBook('WB001').concat(S.wordsOfBook('WB003')).slice(0, 46)
+  .forEach(w => fake.wordIds.push(w.id));
 fake.wordIds.forEach(id => { fake.prescreen[id] = { known: false, at: 'x' }; });
 const r46 = S.finishPrescreen(fake.id);
 assert('46 个候选 → 队列 45', r46.queue.length === 45, r46.queue.length);

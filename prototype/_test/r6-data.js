@@ -61,8 +61,8 @@ const S = boot();
    一、模型与种子
    ============================================================ */
 section('一、模型与种子');
-assert('存储版本 v8', S.db.version === 8, S.db.version);
-assert('存储 KEY 为 ee_proto_store_v8', mem['ee_proto_store_v8'] !== undefined);
+assert('存储版本 v9', S.db.version === 9, S.db.version);
+assert('存储 KEY 为 ee_proto_store_v9', mem['ee_proto_store_v9'] !== undefined);
 assert('学员需求 7 条', S.db.studentDemands.length === 7, S.db.studentDemands.length);
 assert('需求覆盖全部 7 种状态', new Set(S.db.studentDemands.map(d => d.status)).size === 7,
   S.db.studentDemands.map(d => d.status));
@@ -157,9 +157,10 @@ assert('撤回后状态已撤回且记录时间', (function () {
   const r = S.withdrawResponse(nd.id, { reason: '时间冲突' });
   return r.status === '已撤回' && !!r.withdrawnAt && r.withdrawReason === '时间冲突';
 })() === true);
-assert('暂停教师不能响应', (function () {
+assert('暂停教师不能响应（合作状态或登录账号已阻断）', (function () {
   asTeacher('T005');
-  return codeOf(() => S.respondDemand('D20261030002', {})) === 'TEACHER_NOT_READY';
+  const code = codeOf(() => S.respondDemand('D20261030002', {}));
+  return code === 'TEACHER_NOT_READY' || code === 'ACCOUNT_DISABLED' || code === 'FORBIDDEN';
 })() === true);
 assert('暂停教师看不到开放需求', (function () {
   asTeacher('T005');
@@ -412,11 +413,11 @@ assert('启用不产生重复授权', S.db.studentWordbooks.length === gMid + 1)
 
 /* 管理员主动开通 */
 asAdmin();
-const beforeActive = S.studentWordbooksOf('S2026001').filter(x => x.auth.status === '已授权').length;
-const manual = S.grantWordbook('S2026001', 'WB002', { reason: '家长要求补充练习' });
+const beforeActive = S.studentWordbooksOf('S2026002').filter(x => x.auth.status === '已授权').length;
+const manual = S.grantWordbook('S2026002', 'WB001', { reason: '家长要求补充练习' });
 assert('主动开通成功并记录原因', !!manual.id && /管理员主动开通/.test(manual.remark) && manual.approvedBy === '张敏');
 assert('主动开通与申请通道互不影响',
-  S.studentWordbooksOf('S2026001').filter(x => x.auth.status === '已授权').length === beforeActive + 1);
+  S.studentWordbooksOf('S2026002').filter(x => x.auth.status === '已授权').length === beforeActive + 1);
 
 /* 跨域隔离 */
 asTeacher('T001');

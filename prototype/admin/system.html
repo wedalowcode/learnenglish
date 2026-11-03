@@ -3,12 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>用户与权限</title>
+<title>系统设置</title>
 <link rel="stylesheet" href="../assets/css/common.css">
 <style>
-  .perm-table td, .perm-table th { text-align:center; }
-  .perm-table td:first-child, .perm-table th:first-child { text-align:left; }
-  .perm-table .grp td { background:#f8fafc; font-weight:600; color:var(--text); font-size:12px; }
+  .sys-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+  .sys-card { display:flex; flex-direction:column; gap:10px; padding:18px; border:1px solid var(--border); border-radius:12px; background:var(--surface); text-decoration:none; color:inherit; transition:.15s; }
+  .sys-card:hover { border-color:var(--primary); box-shadow:0 8px 24px rgba(37,99,235,.08); transform:translateY(-1px); }
+  .sys-card .glyph { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; background:var(--primary-soft); color:#1d4ed8; font-weight:700; }
+  .sys-card h3 { margin:0; font-size:15px; }
+  .sys-card p { margin:0; font-size:12px; color:var(--text-3); line-height:1.6; }
+  .sys-card .metric { margin-top:auto; font-size:12px; color:var(--text-2); }
+  .sys-card .metric b { color:var(--primary); }
 </style>
 </head>
 <body>
@@ -20,190 +25,23 @@
 
       <div class="page-head">
         <div>
-          <div class="crumb">系统设置<span class="sep">/</span>用户与权限</div>
-          <h1 class="page-title">用户与权限</h1>
-          <div class="page-sub">账号 · 角色 · 菜单权限 · 操作日志 · 数据字典</div>
+          <div class="crumb">系统设置</div>
+          <h1 class="page-title">系统设置</h1>
+          <div class="page-sub">账号 · 角色权限 · 数据范围 · 操作审计 · 数据字典 · 消息通知 · 机构设置</div>
         </div>
         <div class="page-actions">
-          <button class="btn" onclick="Proto.toast('打开机构设置（示意）')">机构设置</button>
-          <button class="btn btn-primary" onclick="Proto.toast('打开新增账号（示意）')">+ 新增账号</button>
+          <a class="btn" href="organization-settings.html">机构设置</a>
+          <a class="btn btn-primary" href="account-list.html">+ 新增账号</a>
         </div>
       </div>
+
+      <div id="migration" class="mb16"></div>
+      <div id="noAccess" class="mb16"></div>
 
       <div class="alert alert-info mb16"><span class="ico">i</span>
-        <div>角色是业务身份，<b>不等于固定权限</b>。实际权限由角色权限配置决定，机构可按需要为员工配置不同菜单与操作权限；关键操作（赠送课时、退款、冲正、关闭档案）默认需单独授权。</div></div>
+        <div>角色是业务身份，<b>不等于固定权限</b>。账号、菜单、可执行操作与数据范围全部由同一份角色权限配置决定；禁用账号无法再切换为当前身份。</div></div>
 
-      <div class="card">
-        <div class="tabs" id="stabs">
-          <button class="tab active" data-pane="sp1">账号管理<span class="count">9</span></button>
-          <button class="tab" data-pane="sp2">角色与权限</button>
-          <button class="tab" data-pane="sp3">操作日志</button>
-          <button class="tab" data-pane="sp4">数据字典</button>
-          <button class="tab" data-pane="sp5">消息通知</button>
-        </div>
-
-        <!-- 账号 -->
-        <div class="tab-pane active" id="sp1">
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>账号</th><th>姓名</th><th>手机号</th><th>角色</th><th>所属机构</th><th>数据范围</th><th>状态</th><th>最近登录</th><th style="width:150px">操作</th></tr></thead>
-              <tbody>
-                <tr><td class="mono small">zhangmin</td><td class="strong">张敏</td><td class="mono">13901110000</td>
-                  <td><span class="tag tag-blue nodot">机构管理员</span></td><td>启航英语 · 城东校区</td><td>全机构</td>
-                  <td><span class="tag tag-green">正常</span></td><td class="small muted">2026-11-02 09:12</td>
-                  <td class="ops"><button class="btn-link" onclick="Proto.toast('编辑账号（示意）')">编辑</button>
-                    <button class="btn-link" onclick="Proto.toast('重置密码（示意）')">重置密码</button></td></tr>
-                <tr><td class="mono small">chen_xc</td><td class="strong">小陈</td><td class="mono">13902220000</td>
-                  <td><span class="tag tag-cyan nodot">教务</span></td><td>启航英语 · 城东校区</td><td>本机构教学数据</td>
-                  <td><span class="tag tag-green">正常</span></td><td class="small muted">2026-11-02 08:40</td>
-                  <td class="ops"><button class="btn-link" onclick="Proto.toast('编辑账号（示意）')">编辑</button>
-                    <button class="btn-link danger" onclick="Proto.toast('停用账号需二次确认（示意）')">停用</button></td></tr>
-                <tr><td class="mono small">liwan</td><td class="strong">李婉</td><td class="mono">13801234567</td>
-                  <td><span class="tag tag-green nodot">教师</span></td><td>启航英语 · 城东校区</td><td>仅本人学员</td>
-                  <td><span class="tag tag-green">正常</span></td><td class="small muted">2026-11-02 09:05</td>
-                  <td class="ops"><button class="btn-link" onclick="Proto.toast('编辑账号（示意）')">编辑</button>
-                    <button class="btn-link danger" onclick="Proto.toast('停用账号需二次确认（示意）')">停用</button></td></tr>
-                <tr><td class="mono small">zhouya</td><td class="strong">周雅</td><td class="mono">13802234567</td>
-                  <td><span class="tag tag-green nodot">教师</span></td><td>启航英语 · 城东校区</td><td>仅本人学员</td>
-                  <td><span class="tag tag-green">正常</span></td><td class="small muted">2026-11-01 19:22</td>
-                  <td class="ops"><button class="btn-link" onclick="Proto.toast('编辑账号（示意）')">编辑</button>
-                    <button class="btn-link danger" onclick="Proto.toast('停用账号需二次确认（示意）')">停用</button></td></tr>
-                <tr><td class="mono small">wanglei</td><td class="strong">王磊</td><td class="mono">13701110001</td>
-                  <td><span class="tag tag-amber nodot">招生代理</span></td><td>启航英语 · 城东校区</td><td>仅本人客户</td>
-                  <td><span class="tag tag-green">正常</span></td><td class="small muted">2026-11-01 21:10</td>
-                  <td class="ops"><button class="btn-link" onclick="Proto.toast('编辑账号（示意）')">编辑</button>
-                    <button class="btn-link danger" onclick="Proto.toast('停用账号需二次确认（示意）')">停用</button></td></tr>
-                <tr><td class="mono small">chenzq</td><td class="strong">陈志强</td><td class="mono">13901112222</td>
-                  <td><span class="tag tag-purple nodot">家长</span></td><td>—</td><td>仅关联孩子</td>
-                  <td><span class="tag tag-green">正常</span></td><td class="small muted">2026-11-01 20:32</td>
-                  <td class="ops"><button class="btn-link" onclick="Proto.toast('编辑账号（示意）')">编辑</button>
-                    <button class="btn-link danger" onclick="Proto.toast('停用账号需二次确认（示意）')">停用</button></td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="pager"><span>共 9 条</span>
-            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
-          </div>
-        </div>
-
-        <!-- 角色权限 -->
-        <div class="tab-pane" id="sp2">
-          <div class="flex jcb aic mb12">
-            <div class="pill-tabs">
-              <button class="pill-tab on">机构管理员</button>
-              <button class="pill-tab">教务</button>
-              <button class="pill-tab">教师</button>
-              <button class="pill-tab">招生代理</button>
-              <button class="pill-tab">家长</button>
-            </div>
-            <button class="btn btn-sm btn-primary" onclick="Proto.toast('权限已保存','ok')">保存权限</button>
-          </div>
-          <div class="table-wrap">
-            <table class="table perm-table">
-              <thead><tr><th style="width:38%">权限项</th><th>查看</th><th>新增</th><th>编辑</th><th>删除</th><th>导出</th></tr></thead>
-              <tbody>
-                <tr class="grp"><td colspan="6">学员与家长</td></tr>
-                <tr><td>学员档案</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox" checked></td></tr>
-                <tr><td>家长与关联关系</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
-                <tr class="grp"><td colspan="6">课程与教学</td></tr>
-                <tr><td>课程排课</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox" checked></td></tr>
-                <tr><td>教学记录与报告</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox" checked></td></tr>
-                <tr><td>训练与复习记录</td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
-                <tr class="grp"><td colspan="6">财务与课时</td></tr>
-                <tr><td>课时账户调整</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox" checked></td></tr>
-                <tr><td>课时流水冲正</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
-                <tr><td>订单赠送课时</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
-                <tr><td>退款申请与登记</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
-                <tr class="grp"><td colspan="6">招生与代理</td></tr>
-                <tr><td>客户线索</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox" checked></td></tr>
-                <tr><td>代理佣金结算</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>
-                <tr class="grp"><td colspan="6">系统</td></tr>
-                <tr><td>账号与角色</td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox" checked></td><td><input type="checkbox"></td></tr>
-                <tr><td>操作日志</td><td><input type="checkbox" checked></td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox" checked></td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="alert alert-warn mt16"><span class="ico">!</span>
-            <div>教师角色默认<b>不可删除历史训练记录</b>，也不可修改学员正式掌握状态之外的教学数据；家长角色为只读。</div></div>
-        </div>
-
-        <!-- 操作日志 -->
-        <div class="tab-pane" id="sp3">
-          <div class="card filter" style="box-shadow:none;border:none;padding:0 0 14px">
-            <div class="field"><label>操作人</label><input class="input" placeholder="姓名或账号"></div>
-            <div class="field"><label>业务模块</label>
-              <select class="select"><option>全部</option><option>学员</option><option>课时</option><option>订单</option><option>课程</option><option>权限</option></select></div>
-            <div class="field"><label>时间范围</label>
-              <div class="flex gap8"><input class="input" type="date" value="2026-10-01" style="max-width:150px">
-                <input class="input" type="date" value="2026-11-02" style="max-width:150px"></div></div>
-            <div class="filter-actions"><button class="btn btn-primary">查询</button></div>
-          </div>
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>时间</th><th>操作人</th><th>模块</th><th>操作</th><th>对象</th><th>变更内容</th><th>IP</th></tr></thead>
-              <tbody>
-                <tr><td class="small">2026-11-02 10:35</td><td>系统</td><td>课时</td><td>生成扣课流水</td>
-                  <td class="mono small">FL20261102001</td><td class="small">陈可欣 43 → 42</td><td class="small muted">—</td></tr>
-                <tr><td class="small">2026-11-02 09:05</td><td>李婉</td><td>课程</td><td>开始授课</td>
-                  <td class="mono small">C20261102001</td><td class="small">课程状态 待上课 → 已开始</td><td class="small muted">10.20.3.18</td></tr>
-                <tr><td class="small">2026-11-01 17:20</td><td>张敏</td><td>学员</td><td>调整教师归属</td>
-                  <td class="mono small">S2026001</td><td class="small">周雅 → 李婉，原因：教学方向调整</td><td class="small muted">10.20.3.5</td></tr>
-                <tr><td class="small">2026-10-30 17:20</td><td>张敏</td><td>课时</td><td>扣课冲正</td>
-                  <td class="mono small">FL20261030005</td><td class="small">林子轩 +1 课时，原因：课程取消</td><td class="small muted">10.20.3.5</td></tr>
-                <tr><td class="small">2026-10-29 20:12</td><td>系统</td><td>课程</td><td>扣课失败</td>
-                  <td class="mono small">C20261029003</td><td class="small">赵一诺 余额不足，课程置为待处理</td><td class="small muted">—</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="pager"><span>共 5 条 · 日志只读，不可删除</span>
-            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
-          </div>
-        </div>
-
-        <!-- 数据字典 -->
-        <div class="tab-pane" id="sp4">
-          <div class="grid g2">
-            <div class="table-wrap">
-              <table class="table compact">
-                <thead><tr><th>字典类型</th><th>内容</th><th>操作</th></tr></thead>
-                <tbody>
-                  <tr><td>学员状态</td><td class="small">在读 / 暂停 / 已关闭</td><td><button class="btn-link">编辑</button></td></tr>
-                  <tr><td>线索状态</td><td class="small">新线索 / 待联系 / 跟进中 / 意向明确 / 已成交 / 无效 / 已关闭</td><td><button class="btn-link">编辑</button></td></tr>
-                  <tr><td>课程状态</td><td class="small">待上课 / 已开始 / 已完成 / 已取消 / 未上课 / 待处理</td><td><button class="btn-link">编辑</button></td></tr>
-                  <tr><td>课时业务类型</td><td class="small">购买入账 / 赠送入账 / 正常扣课 / 课时补入 / 课时调整 / 扣课冲正 / 退款冲减</td><td><button class="btn-link">编辑</button></td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="table-wrap">
-              <table class="table compact">
-                <thead><tr><th>字典类型</th><th>内容</th><th>操作</th></tr></thead>
-                <tbody>
-                  <tr><td>学员单词档案状态</td><td class="small">未训练 / 初筛认识 / 待强化训练 / 强化训练中 / 待最后复习 / 本次通过 / 待复习 / 暂不确定</td><td><button class="btn-link">编辑</button></td></tr>
-                  <tr><td>报告状态</td><td class="small">未生成 / 草稿 / 已提交 / 已撤回</td><td><button class="btn-link">编辑</button></td></tr>
-                  <tr><td>佣金状态</td><td class="small">待确认 / 待结算 / 已结算 / 已冲回</td><td><button class="btn-link">编辑</button></td></tr>
-                  <tr><td>教材版本</td><td class="small">人教版 / 外研版 / 其他（可扩展）</td><td><button class="btn-link">编辑</button></td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <!-- 消息通知 -->
-        <div class="tab-pane" id="sp5">
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>通知场景</th><th>接收角色</th><th>渠道</th><th>状态</th><th>操作</th></tr></thead>
-              <tbody>
-                <tr><td>课前提醒（开课前 30 分钟）</td><td>教师 / 家长</td><td>微信服务通知</td><td><span class="tag tag-green">已启用</span></td><td><button class="btn-link">编辑</button></td></tr>
-                <tr><td>学习报告已提交</td><td>家长</td><td>微信服务通知</td><td><span class="tag tag-green">已启用</span></td><td><button class="btn-link">编辑</button></td></tr>
-                <tr><td>课时余额低于 10 课时</td><td>教务 / 老板</td><td>站内消息</td><td><span class="tag tag-green">已启用</span></td><td><button class="btn-link">编辑</button></td></tr>
-                <tr><td>课程扣课异常</td><td>教务 / 老板</td><td>站内消息 + 短信</td><td><span class="tag tag-green">已启用</span></td><td><button class="btn-link">编辑</button></td></tr>
-                <tr><td>线索待跟进提醒</td><td>跟进人 / 代理</td><td>站内消息</td><td><span class="tag tag-slate">未启用</span></td><td><button class="btn-link">编辑</button></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      <div class="sys-grid" id="sysGrid"></div>
     </main>
   </div>
 </div>
@@ -211,6 +49,58 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
-<script>Proto.shell({ role: 'admin', active: 'system' });</script>
+<script src="../assets/js/store.js"></script>
+<script>
+const PAGE_ROLE = Proto.pageRole('admin');
+const SHELL_ROLE = PAGE_ROLE === 'staff' ? 'admin' : PAGE_ROLE;
+Proto.shell({ role: SHELL_ROLE, identityRole: PAGE_ROLE, active: 'system' });
+
+(function () {
+  const mi = Store.migrationInfo ? Store.migrationInfo() : null;
+  if (mi) {
+    document.getElementById('migration').innerHTML =
+      '<div class="alert ' + (mi.ok ? 'alert-info' : 'alert-warn') + '"><span class="ico">' + (mi.ok ? 'i' : '!') + '</span><div>' +
+      '<b>' + (mi.ok ? '本地数据已迁移到 v9' : 'v8 → v9 迁移未完成') + '</b>：' +
+      Proto.escHtml(mi.strategy || '') + (mi.reason ? '（' + Proto.escHtml(mi.reason) + '）' : '') +
+      '<div class="small muted" style="margin-top:4px">旧数据保留在 ' + Proto.escHtml(mi.backupKey || '') + '，不会删除。</div></div></div>';
+  }
+
+  const canAny = ['account.view', 'role.view', 'audit.view', 'dictionary.manage', 'notification.manage', 'organization.manage']
+    .some(c => Store.hasPermission('', c));
+  if (!canAny) {
+    document.getElementById('noAccess').innerHTML =
+      '<div class="alert alert-warn"><span class="ico">!</span><div>当前身份没有系统设置权限，请联系机构管理员授权。</div></div>';
+    document.getElementById('sysGrid').style.display = 'none';
+    return;
+  }
+
+  const acc = Store.accountSummary();
+  const cards = [
+    { glyph: '账', title: '账号管理', href: 'account-list.html',
+      desc: '为已有员工、教师、代理、家长档案开通/启停登录账号，角色与数据范围随账号生效。',
+      metric: '<b>' + acc.total + '</b> 个账号 · 启用 <b>' + acc.enabled + '</b> · 禁用 <b>' + acc.disabled + '</b>' },
+    { glyph: '角', title: '角色与权限', href: 'role-list.html',
+      desc: '按角色配置菜单与操作权限、数据范围；修改后对应身份的菜单和可执行操作立即收紧或放开。',
+      metric: '<b>' + Store.roleRows().length + '</b> 个角色 · <b>' + Store.permissionCatalog().length + '</b> 项权限' },
+    { glyph: '审', title: '操作日志', href: 'audit-log.html',
+      desc: '报名、收款、退款、课时调整、教师分配、词库审核、角色变更、账号启停等关键操作全量留痕。',
+      metric: '共 <b>' + Store.auditStat().total + '</b> 条 · 今日 <b>' + Store.auditStat().today + '</b> 条' },
+    { glyph: '典', title: '数据字典', href: 'dictionary-list.html',
+      desc: '获客渠道、支付方式、年级、教材等业务下拉的唯一来源；新增后业务表单立即可选。',
+      metric: '<b>' + Store.dictionaryTypes().length + '</b> 类 · <b>' + Store.dictionaryTypes().reduce((n, t) => n + t.enabledCount, 0) + '</b> 个启用选项' },
+    { glyph: '通', title: '消息通知', href: 'notification-settings.html',
+      desc: '业务事件（订单待确认、课时不足、报告发布等）按模板生成站内通知，已读/未读可追踪。',
+      metric: '<b>' + Store.notificationRules().filter(r => r.enabled).length + '</b> 条启用规则 · ' +
+        '<b>' + Store.notificationRules().length + '</b> 条模板' },
+    { glyph: '机', title: '机构设置', href: 'organization-settings.html',
+      desc: '机构名称、校区、联系方式、课时预警阈值与套餐临期提醒天数。',
+      metric: Proto.escHtml(Store.organizationSettings().name + ' · ' + Store.organizationSettings().campus) }
+  ];
+  document.getElementById('sysGrid').innerHTML = cards.map(c =>
+    '<a class="sys-card" href="' + c.href + '"><div class="glyph">' + c.glyph + '</div>' +
+    '<h3>' + c.title + '</h3><p>' + c.desc + '</p><div class="metric">' + c.metric + '</div></a>'
+  ).join('');
+})();
+</script>
 </body>
 </html>

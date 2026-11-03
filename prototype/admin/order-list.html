@@ -98,7 +98,7 @@ document.getElementById('tp').innerHTML = '<option value="">全部</option>' +
   Object.keys(S.ORDER_TYPE).map(k => `<option>${S.ORDER_TYPE[k]}</option>`).join('');
 document.getElementById('ag').innerHTML = '<option value="">全部</option><option value="__none">机构直营</option>' +
   S.agents().map(a => `<option value="${a.id}">${a.name}（${a.id}）</option>`).join('');
-document.getElementById('p_method').innerHTML = S.PAY_METHODS.map(m => `<option>${m}</option>`).join('');
+document.getElementById('p_method').innerHTML = S.dictionaryOptions('pay_method').map(m => `<option>${m}</option>`).join('');
 
 let payId = '';
 

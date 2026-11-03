@@ -98,7 +98,7 @@ Proto.shell({ role: 'admin', active: 'agent-list' });
 
 document.getElementById('st').innerHTML = '<option value="">全部</option>' +
   S.AGENT_STATUS.map(s => `<option>${s}</option>`).join('');
-document.getElementById('i_type').innerHTML = S.AGENT_TYPES.map(t => `<option>${t}</option>`).join('');
+document.getElementById('i_type').innerHTML = S.dictionaryOptions('agent_type').map(t => `<option>${t}</option>`).join('');
 
 function render() {
   const kw = document.getElementById('kw').value.trim();

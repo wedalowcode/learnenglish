@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>角色权限配置</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .perm-module { border:1px solid var(--border); border-radius:10px; margin-bottom:12px; overflow:hidden; }
+  .perm-head { display:flex; align-items:center; gap:10px; padding:10px 14px; background:#f8fafc; border-bottom:1px solid var(--border); }
+  .perm-head b { font-size:13px; }
+  .perm-head .hint { font-size:12px; color:var(--text-3); }
+  .perm-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; }
+  .perm-item { display:flex; gap:10px; padding:10px 14px; border-bottom:1px solid var(--border); }
+  .perm-item:nth-child(odd) { border-right:1px solid var(--border); }
+  .perm-item input { margin-top:2px; }
+  .perm-item .meta { min-width:0; }
+  .perm-item .n { font-size:13px; font-weight:500; }
+  .perm-item .d { font-size:11px; color:var(--text-3); margin-top:2px; }
+  .perm-item .code { font-size:11px; color:var(--text-3); font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .sticky-bar { position:sticky; bottom:0; background:var(--surface); border-top:1px solid var(--border); padding:12px 0; display:flex; gap:10px; justify-content:flex-end; z-index:5; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">系统设置<span class="sep">/</span><a href="role-list.html">角色与权限</a><span class="sep">/</span>权限配置</div>
+          <h1 class="page-title" id="title">角色权限配置</h1>
+          <div class="page-sub" id="subtitle">—</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="role-list.html">返回角色列表</a>
+          <button class="btn" id="btnReset" style="display:none">恢复默认</button>
+        </div>
+      </div>
+
+      <div id="noAccess" class="mb16"></div>
+      <div id="body" style="display:none">
+        <div id="readonlyTip" class="mb16"></div>
+
+        <div class="card mb16">
+          <div class="card-head"><div class="card-title">角色信息</div>
+            <span id="scopeTag"></span></div>
+          <div class="card-body">
+            <div class="form-grid g3">
+              <div class="field"><label>角色名称</label><input class="input" id="fName" disabled></div>
+              <div class="field"><label>角色编码</label><input class="input mono" id="fCode" disabled></div>
+              <div class="field"><label>数据范围（能看哪些数据）</label>
+                <select class="select" id="fScope"></select>
+                <div class="tip">数据范围作用于读取接口；超出范围的单据直接拒绝访问。</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mb16">
+          <div class="card-head"><div class="card-title">功能权限 <span class="hint" id="permHint"></span></div>
+            <div class="page-actions">
+              <button class="btn btn-sm" id="btnCheckAll">全选</button>
+              <button class="btn btn-sm" id="btnClearAll">全不选</button>
+            </div>
+          </div>
+          <div class="card-body" id="matrix"></div>
+          <div class="sticky-bar" id="saveBar" style="padding:12px 16px;border-radius:0 0 12px 12px">
+            <input class="input" id="fReason" placeholder="变更原因（写入操作日志）" style="max-width:320px">
+            <button class="btn btn-primary" id="btnSave">保存权限</button>
+          </div>
+        </div>
+
+        <div class="card mb16">
+          <div class="card-head"><div class="card-title">该角色成员 <span class="hint" id="memberHint"></span></div></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>姓名</th><th>档案编号</th><th>账号状态</th><th>当前可用</th><th>操作</th></tr></thead>
+              <tbody id="members"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">权限变更日志</div></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th style="width:150px">时间</th><th>操作人</th><th>动作</th><th>原因</th><th>结果</th></tr></thead>
+              <tbody id="auditRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const PAGE_ROLE = Proto.pageRole('admin');
+const SHELL_ROLE = PAGE_ROLE === 'staff' ? 'admin' : PAGE_ROLE;
+Proto.shell({ role: SHELL_ROLE, identityRole: PAGE_ROLE, active: 'system' });
+
+(function () {
+  const esc = Proto.escHtml;
+  if (!Store.hasPermission('', 'role.view')) {
+    document.getElementById('noAccess').innerHTML =
+      '<div class="alert alert-warn"><span class="ico">!</span><div>当前身份没有查看角色的权限。</div></div>';
+    return;
+  }
+  const id = new URLSearchParams(location.search).get('id') || '';
+  let matrix;
+  try { matrix = Store.permissionMatrix(id); }
+  catch (e) { document.getElementById('noAccess').innerHTML =
+    '<div class="alert alert-warn"><span class="ico">!</span><div>' + esc(e.message) + '</div></div>'; return; }
+  document.getElementById('body').style.display = '';
+
+  const role = matrix.role;
+  const canEdit = Store.hasPermission('', 'permission.configure');
+  document.getElementById('title').textContent = role.name + ' · 权限配置';
+  document.getElementById('subtitle').textContent = '角色编码 ' + role.code + ' · 权限变更保存后立即影响菜单与可执行操作';
+  document.getElementById('scopeTag').innerHTML = '<span class="tag ' + (role.system ? 'tag-blue' : 'tag-slate') + ' nodot">' +
+    (role.system ? '系统角色' : '自定义角色') + '</span>';
+  document.getElementById('fName').value = role.name;
+  document.getElementById('fCode').value = role.code;
+  document.getElementById('fScope').innerHTML = matrix.dataScopeOptions.map(o =>
+    '<option value="' + o.code + '"' + (o.code === role.dataScope ? ' selected' : '') + '>' + esc(o.label) + '</option>').join('');
+  document.getElementById('fScope').disabled = !canEdit;
+  document.getElementById('saveBar').style.display = canEdit ? '' : 'none';
+  document.getElementById('btnReset').style.display = canEdit ? '' : 'none';
+  if (!canEdit) {
+    document.getElementById('readonlyTip').innerHTML =
+      '<div class="alert alert-warn"><span class="ico">!</span><div>当前身份只能查看角色权限，修改需要「配置角色权限」权限（机构管理员）。</div></div>';
+    document.getElementById('btnCheckAll').style.display = 'none';
+    document.getElementById('btnClearAll').style.display = 'none';
+  }
+
+  function renderMatrix() {
+    const total = matrix.modules.reduce((n, m) => n + m.items.length, 0);
+    const enabled = matrix.modules.reduce((n, m) => n + m.items.filter(i => i.enabled).length, 0);
+    document.getElementById('permHint').textContent = enabled + ' / ' + total + ' 项已启用';
+    document.getElementById('matrix').innerHTML = matrix.modules.map(m => {
+      const on = m.items.filter(i => i.enabled).length;
+      return '<div class="perm-module"><div class="perm-head"><b>' + esc(m.module) + '</b>' +
+        '<span class="hint">' + on + '/' + m.items.length + '</span>' +
+        '<button class="btn-link" data-module="' + esc(m.module) + '" style="margin-left:auto">切换本组</button></div>' +
+        '<div class="perm-list">' + m.items.map(i => {
+          const locked = role.code === 'admin' && i.code === 'permission.configure';
+          return '<label class="perm-item"><input type="checkbox" data-code="' + esc(i.code) + '"' +
+            (i.enabled ? ' checked' : '') + (locked || !canEdit ? ' disabled' : '') + '>' +
+            '<div class="meta"><div class="n">' + esc(i.name) + (locked ? ' <span class="tag tag-amber nodot" style="font-size:10px">必留</span>' : '') + '</div>' +
+            '<div class="d">' + esc(i.description) + '</div>' +
+            '<div class="code">' + esc(i.code) + '</div></div></label>';
+        }).join('') + '</div></div>';
+    }).join('');
+  }
+  renderMatrix();
+
+  function syncHint() {
+    const boxes = Array.from(document.querySelectorAll('#matrix input[type=checkbox]'));
+    document.getElementById('permHint').textContent = boxes.filter(b => b.checked).length + ' / ' + boxes.length + ' 项已启用';
+  }
+  document.getElementById('matrix').addEventListener('change', syncHint);
+  document.getElementById('matrix').addEventListener('click', function (ev) {
+    const btn = ev.target.closest('button[data-module]');
+    if (!btn || !canEdit) return;
+    const mod = btn.dataset.module;
+    const boxes = Array.from(btn.closest('.perm-module').querySelectorAll('input[type=checkbox]'));
+    const next = boxes.some(b => !b.checked);
+    boxes.forEach(b => { if (!b.disabled) b.checked = next; });
+    syncHint();
+  });
+  document.getElementById('btnCheckAll').onclick = function () {
+    document.querySelectorAll('#matrix input[type=checkbox]').forEach(b => { if (!b.disabled) b.checked = true; });
+    syncHint();
+  };
+  document.getElementById('btnClearAll').onclick = function () {
+    document.querySelectorAll('#matrix input[type=checkbox]').forEach(b => { if (!b.disabled) b.checked = false; });
+    syncHint();
+  };
+
+  document.getElementById('btnSave').onclick = function () {
+    if (!canEdit) return;
+    const list = Array.from(document.querySelectorAll('#matrix input[type=checkbox]')).map(b => ({
+      code: b.dataset.code, enabled: b.checked
+    }));
+    if (!list.some(x => x.enabled)) { Proto.toast('至少保留一项权限', 'warn'); return; }
+    try {
+      matrix = Store.updateRolePermissions(role.id, list, {
+        dataScope: document.getElementById('fScope').value,
+        reason: document.getElementById('fReason').value.trim() || '调整角色菜单与操作权限'
+      });
+      Proto.toast('权限已保存，对应身份的菜单与操作立即生效');
+      setTimeout(() => location.reload(), 500);
+    } catch (e) { Proto.toast(e.message, 'warn'); }
+  };
+  document.getElementById('btnReset').onclick = function () {
+    if (!canEdit) return;
+    if (!confirm('确认恢复该角色的预置权限？')) return;
+    try {
+      Store.resetRolePermissions(role.id, { reason: '恢复角色预置权限' });
+      Proto.toast('已恢复默认权限');
+      setTimeout(() => location.reload(), 500);
+    } catch (e) { Proto.toast(e.message, 'warn'); }
+  };
+
+  /* --- 成员 --- */
+  const members = Store.roleAccounts(role.code);
+  document.getElementById('memberHint').textContent = members.length + ' 人';
+  document.getElementById('members').innerHTML = members.length ? members.map(m =>
+    '<tr><td class="strong">' + esc(m.name) + '</td><td class="mono small">' + esc(m.code || '—') + '</td>' +
+    '<td><span class="tag ' + (m.status === '正常' ? 'tag-green' : m.status === '已禁用' ? 'tag-red' : 'tag-slate') + ' nodot">' +
+    esc(m.statusLabel) + '</span></td>' +
+    '<td>' + (m.available ? '<span class="tag tag-green nodot">可用</span>' : '<span class="tag tag-slate nodot">不可用</span>' +
+      '<div class="small muted">' + esc(m.reason || '') + '</div>') + '</td>' +
+    '<td><a class="btn-link" href="account-detail.html?id=' + encodeURIComponent(m.accountId) + '">账号详情</a></td></tr>'
+  ).join('') : '<tr><td colspan="5" class="muted" style="text-align:center;padding:24px">该角色暂无成员</td></tr>';
+
+  /* --- 日志 --- */
+  const logs = Store.auditRows({ resourceType: 'role', resourceId: role.id });
+  document.getElementById('auditRows').innerHTML = logs.length ? logs.map(a =>
+    '<tr><td class="small mono">' + esc(a.createdAt) + '</td>' +
+    '<td class="small">' + esc(a.operatorName) + '<div class="muted">' + esc(a.operatorRoleLabel) + '</div></td>' +
+    '<td class="strong">' + esc(a.action) + '</td><td class="small muted">' + esc(a.reason || '—') + '</td>' +
+    '<td><span class="tag tag-green nodot">' + esc(a.result) + '</span></td></tr>'
+  ).join('') : '<tr><td colspan="5" class="muted" style="text-align:center;padding:24px">暂无权限变更记录</td></tr>';
+})();
+</script>
+</body>
+</html>

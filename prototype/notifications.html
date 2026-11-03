@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>消息中心</title>
+<link rel="stylesheet" href="assets/css/common.css">
+<style>
+  .msg-list { display:flex; flex-direction:column; }
+  .msg-item { display:flex; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border); cursor:pointer; background:var(--surface); }
+  .msg-item:last-child { border-bottom:none; }
+  .msg-item:hover { background:#fafcff; }
+  .msg-item.unread { background:#f8fbff; }
+  .msg-dot { width:8px; height:8px; border-radius:50%; background:var(--primary); margin-top:6px; flex:0 0 auto; }
+  .msg-item.read .msg-dot { background:var(--border); }
+  .msg-main { flex:1; min-width:0; }
+  .msg-title { font-size:13px; font-weight:600; }
+  .msg-item.read .msg-title { font-weight:500; color:var(--text-2); }
+  .msg-body { font-size:12px; color:var(--text-3); margin-top:3px; line-height:1.6; }
+  .msg-meta { font-size:11px; color:var(--text-3); margin-top:6px; display:flex; gap:10px; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">消息中心</div>
+          <h1 class="page-title">消息中心</h1>
+          <div class="page-sub" id="subtitle">—</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn" id="btnReadAll">全部标为已读</button>
+        </div>
+      </div>
+
+      <div id="identityTip" class="mb16"></div>
+
+      <div class="tabs mb16" id="tabs">
+        <div class="tab active" data-pane="all">全部 <span class="count" id="cntAll"></span></div>
+        <div class="tab" data-pane="unread">未读 <span class="count" id="cntUnread"></span></div>
+      </div>
+
+      <div class="card">
+        <div class="msg-list" id="list"></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '';</script>
+<script src="assets/js/common.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/store.js"></script>
+<script>
+(function () {
+  const esc = Proto.escHtml;
+  const session = Store.currentSession();
+  const ROLE_LIST = ['admin', 'staff', 'ops', 'teacher', 'agent', 'parent'];
+  const role = ROLE_LIST.indexOf(session.role) >= 0 ? session.role : 'admin';
+  const shellRole = role === 'staff' ? 'admin' : role;
+  Proto.shell({ role: shellRole, identityRole: role, active: '' });
+
+  const ident = Store.currentIdentity();
+  document.getElementById('subtitle').textContent =
+    '当前身份：' + ident.name + (ident.code ? ' / ' + ident.code : '') + ' · ' + Store.roleOf(role).name;
+  if (!ident.available) {
+    document.getElementById('identityTip').innerHTML =
+      '<div class="alert alert-warn"><span class="ico">!</span><div>未识别当前登录身份（' + esc(ident.reason || '会话缺少身份 ID') +
+      '），只能看到与自身账号绑定的消息。请从右上角切换到具体账号。</div></div>';
+  }
+
+  let pane = 'all';
+
+  function render() {
+    const all = Store.notifications({});
+    const unread = Store.notifications({ unread: true });
+    document.getElementById('cntAll').textContent = all.length;
+    document.getElementById('cntUnread').textContent = unread.length;
+    document.getElementById('btnReadAll').style.display = unread.length ? '' : 'none';
+    const list = pane === 'unread' ? unread : all;
+    document.getElementById('list').innerHTML = list.length ? list.map(n =>
+      '<div class="msg-item ' + (n.readAt ? 'read' : 'unread') + '" data-id="' + esc(n.id) + '">' +
+      '<div class="msg-dot"></div><div class="msg-main">' +
+      '<div class="msg-title">' + esc(n.title) + '</div>' +
+      '<div class="msg-body">' + esc(n.content) + '</div>' +
+      '<div class="msg-meta"><span>' + esc(n.eventName) + '</span><span>' + esc(n.createdAt) + '</span>' +
+      (n.link ? '<span>点击查看关联单据</span>' : '') + '</div></div></div>'
+    ).join('') : '<div class="empty"><div class="e-ico">✉</div><p>' +
+      (pane === 'unread' ? '没有未读消息' : '当前身份暂无消息') + '</p></div>';
+  }
+
+  document.getElementById('tabs').addEventListener('click', function (ev) {
+    const t = ev.target.closest('.tab');
+    if (!t) return;
+    pane = t.dataset.pane;
+    document.querySelectorAll('#tabs .tab').forEach(x => x.classList.toggle('active', x === t));
+    render();
+  });
+
+  document.getElementById('list').addEventListener('click', function (ev) {
+    const item = ev.target.closest('.msg-item');
+    if (!item) return;
+    const n = Store.notifications({}).filter(x => x.id === item.dataset.id)[0];
+    if (!n) return;
+    try { Store.markNotificationRead(n.id); } catch (e) { Proto.toast(e.message, 'warn'); }
+    if (n.link) { location.href = n.link; return; }
+    render();
+  });
+
+  document.getElementById('btnReadAll').onclick = function () {
+    const n = Store.markAllNotificationsRead();
+    Proto.toast(n ? '已将 ' + n + ' 条消息标为已读' : '没有未读消息');
+    render();
+  };
+
+  render();
+})();
+</script>
+</body>
+</html>

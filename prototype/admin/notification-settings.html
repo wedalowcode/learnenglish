@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>消息通知</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .rule-form { display:none; }
+  .rule-form.show { display:block; }
+  .preview { background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:12px 14px; }
+  .preview .t { font-weight:600; font-size:13px; }
+  .preview .c { font-size:12px; color:var(--text-2); margin-top:4px; line-height:1.7; }
+  .tpl { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11.5px; color:var(--text-3); margin-top:3px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">系统设置<span class="sep">/</span>消息通知</div>
+          <h1 class="page-title">消息通知</h1>
+          <div class="page-sub">业务事件按模板生成站内通知；接收角色由规则决定，已读/未读可追踪</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="system.html">返回系统设置</a>
+          <a class="btn btn-primary" href="../notifications.html">打开消息中心</a>
+        </div>
+      </div>
+
+      <div id="noAccess" class="mb16"></div>
+      <div id="body" style="display:none">
+        <div class="alert alert-info mb16"><span class="ico">i</span>
+          <div>通知规则改变后只影响<b>之后产生的事件</b>，历史通知保留；模板中的 <code>{字段}</code> 由业务事件真实填充。</div></div>
+
+        <div class="card mb16">
+          <div class="card-head"><div class="card-title">通知规则 <span class="hint" id="ruleHint"></span></div></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>事件</th><th>接收角色</th><th>标题模板</th><th>内容模板</th><th class="num">已发送</th><th style="width:80px">启用</th><th style="width:80px">操作</th></tr></thead>
+              <tbody id="ruleRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card mb16 rule-form" id="formPanel">
+          <div class="card-head"><div class="card-title" id="formTitle">编辑通知规则</div>
+            <button class="btn-link" id="btnCancel">取消</button></div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field"><label>接收角色</label><select class="select" id="fRole"></select></div>
+              <div class="field"><label>启用</label>
+                <select class="select" id="fEnabled"><option value="1">启用</option><option value="0">停用</option></select></div>
+              <div class="field full"><label>标题模板</label><input class="input" id="fTitle"></div>
+              <div class="field full"><label>内容模板</label><textarea class="textarea" id="fContent" rows="3"></textarea>
+                <div class="tip">可用占位符由事件决定，例如 {studentName}、{orderNo}、{amount}。</div></div>
+              <div class="field full"><label>预览（示例数据渲染）</label><div class="preview" id="preview"></div></div>
+            </div>
+            <div class="card-foot" style="padding:14px 0 0;border:0">
+              <button class="btn btn-primary" id="btnSave">保存规则</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">发送记录 <span class="hint" id="sendHint"></span></div>
+            <a class="btn-link" href="../notifications.html">在消息中心查看 →</a></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th style="width:150px">时间</th><th>接收人</th><th>事件</th><th>标题</th><th>关联单据</th><th>状态</th></tr></thead>
+              <tbody id="sendRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const PAGE_ROLE = Proto.pageRole('admin');
+const SHELL_ROLE = PAGE_ROLE === 'staff' ? 'admin' : PAGE_ROLE;
+Proto.shell({ role: SHELL_ROLE, identityRole: PAGE_ROLE, active: 'system' });
+
+(function () {
+  const esc = Proto.escHtml;
+  if (!Store.hasPermission('', 'notification.manage')) {
+    document.getElementById('noAccess').innerHTML =
+      '<div class="alert alert-warn"><span class="ico">!</span><div>当前身份没有通知规则管理权限。</div></div>';
+    return;
+  }
+  document.getElementById('body').style.display = '';
+
+  const ROLE_NAME = { admin: '老板/机构管理', staff: '教务负责人', ops: '管理员', teacher: '教师', agent: '代理', parent: '家长' };
+  let editingId = '';
+
+  function rules() { return Store.notificationRules(); }
+
+  function renderRules() {
+    const list = rules();
+    document.getElementById('ruleHint').textContent = list.length + ' 条 · ' + list.filter(r => r.enabled).length + ' 条启用';
+    document.getElementById('ruleRows').innerHTML = list.map(r => {
+      const sent = Store.allNotifications({ eventCode: r.event }).filter(n => n.ruleId === r.id).length;
+      return '<tr><td><div class="strong">' + esc(r.name) + '</div><div class="mono small muted">' + esc(r.event) + '</div></td>' +
+        '<td><span class="tag tag-blue nodot">' + esc(ROLE_NAME[r.receiverRole] || r.receiverRole) + '</span></td>' +
+        '<td class="small">' + esc(r.titleTemplate) + '</td>' +
+        '<td class="small muted">' + esc(r.contentTemplate) + '</td>' +
+        '<td class="num">' + sent + '</td>' +
+        '<td><label class="switch"><input type="checkbox" data-toggle="' + esc(r.id) + '"' + (r.enabled ? ' checked' : '') + '><span></span></label></td>' +
+        '<td><button class="btn-link" data-edit="' + esc(r.id) + '">编辑</button></td></tr>';
+    }).join('');
+  }
+
+  function renderSends() {
+    const list = Store.allNotifications({});
+    document.getElementById('sendHint').textContent = '共 ' + list.length + ' 条';
+    document.getElementById('sendRows').innerHTML = list.length ? list.slice(0, 30).map(n =>
+      '<tr><td class="small mono">' + esc(n.createdAt) + '</td>' +
+      '<td class="small">' + esc(n.receiverName) + '<div class="muted">' + esc(ROLE_NAME[n.receiverRole] || n.receiverRole) + '</div></td>' +
+      '<td class="small">' + esc(n.eventName) + '<div class="mono muted">' + esc(n.eventCode) + '</div></td>' +
+      '<td class="small strong">' + esc(n.title) + '</td>' +
+      '<td>' + (n.link ? '<a class="btn-link" href="../' + esc(n.link) + '">查看</a>' : '<span class="muted small">—</span>') + '</td>' +
+      '<td><span class="tag ' + (n.readAt ? 'tag-slate' : 'tag-amber') + ' nodot">' + (n.readAt ? '已读' : '未读') + '</span></td></tr>'
+    ).join('') : '<tr><td colspan="6" class="muted" style="text-align:center;padding:28px">暂无发送记录</td></tr>';
+  }
+
+  document.getElementById('ruleRows').addEventListener('click', function (ev) {
+    const t = ev.target.closest('button[data-edit]');
+    if (!t) return;
+    const r = rules().filter(x => x.id === t.dataset.edit)[0];
+    if (!r) return;
+    editingId = r.id;
+    document.getElementById('formTitle').textContent = '编辑通知规则 · ' + r.name;
+    document.getElementById('fRole').value = r.receiverRole;
+    document.getElementById('fEnabled').value = r.enabled ? '1' : '0';
+    document.getElementById('fTitle').value = r.titleTemplate;
+    document.getElementById('fContent').value = r.contentTemplate;
+    document.getElementById('formPanel').classList.add('show');
+    renderPreview();
+    document.getElementById('formPanel').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  document.getElementById('ruleRows').addEventListener('change', function (ev) {
+    const box = ev.target.closest('input[data-toggle]');
+    if (!box) return;
+    try {
+      Store.updateNotificationRule(box.dataset.toggle, { enabled: box.checked, reason: box.checked ? '启用通知规则' : '停用通知规则' });
+      Proto.toast('规则已' + (box.checked ? '启用' : '停用'));
+      renderRules();
+    } catch (e) { Proto.toast(e.message, 'warn'); }
+  });
+
+  document.getElementById('fRole').innerHTML = ['admin', 'staff', 'ops', 'teacher', 'agent', 'parent'].map(r =>
+    '<option value="' + r + '">' + ROLE_NAME[r] + '</option>').join('');
+  ['fTitle', 'fContent'].forEach(id => document.getElementById(id).addEventListener('input', renderPreview));
+
+  function samplePayload(tpl) {
+    const keys = [];
+    String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => { keys.push(k); return m; });
+    const map = {
+      studentName: '陈可欣', orderNo: 'ORD-2026-0012', amount: '3,600', teacherName: '李婉',
+      leadName: '王女士', agentName: '周代理', remain: '3', sourceType: '课时不足',
+      parentName: '王女士', type: '课时咨询', content: '孩子想加课'
+    };
+    const out = {};
+    keys.forEach(k => out[k] = map[k] || k);
+    return out;
+  }
+  function renderPreview() {
+    const tpl = { title: document.getElementById('fTitle').value, content: document.getElementById('fContent').value };
+    const p = samplePayload(tpl.title + ' ' + tpl.content);
+    const render = s => String(s || '').replace(/\{(\w+)\}/g, (m, k) => p[k] != null ? p[k] : '');
+    document.getElementById('preview').innerHTML =
+      '<div class="t">' + esc(render(tpl.title)) + '</div><div class="c">' + esc(render(tpl.content)) + '</div>' +
+      '<div class="tpl">原始模板：' + esc(tpl.title) + ' / ' + esc(tpl.content) + '</div>';
+  }
+
+  document.getElementById('btnCancel').onclick = function () {
+    editingId = '';
+    document.getElementById('formPanel').classList.remove('show');
+  };
+  document.getElementById('btnSave').onclick = function () {
+    if (!editingId) return;
+    try {
+      Store.updateNotificationRule(editingId, {
+        receiverRole: document.getElementById('fRole').value,
+        enabled: document.getElementById('fEnabled').value === '1',
+        titleTemplate: document.getElementById('fTitle').value.trim(),
+        contentTemplate: document.getElementById('fContent').value.trim(),
+        reason: '调整通知模板/开关'
+      });
+      Proto.toast('通知规则已保存');
+      editingId = '';
+      document.getElementById('formPanel').classList.remove('show');
+      renderRules(); renderSends();
+    } catch (e) { Proto.toast(e.message, 'warn'); }
+  };
+
+  renderRules(); renderSends();
+})();
+</script>
+</body>
+</html>

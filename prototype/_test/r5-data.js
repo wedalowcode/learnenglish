@@ -496,7 +496,7 @@ assert('越权错误带 FORBIDDEN 码与动作', (() => {
 })());
 S.setSession({ role: 'staff', operatorName: '教务处-小陈' });
 assert('教务可以新增教师', S.can('teacher.create') === true);
-assert('教务可以分配学员', S.can('teacher.assign') === true);
+assert('教务不能正式分配学员（与第六轮规则一致）', S.can('teacher.assign') === false);
 const staffT = S.createTeacher({ name: '教务录入', phone: '13899990001' });
 assert('教务创建记录操作人', S.cooperationsOf(staffT.id)[0].operatorName === '教务处-小陈');
 S.setSession({ role: 'admin', operatorName: '张敏' });

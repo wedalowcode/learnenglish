@@ -3,8 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>单词训练 · 选择词库</title>
+<title>单词训练 · 选词与目标</title>
 <link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .goal-input { width: 92px; font-size: 17px; font-weight: 600; text-align: center; }
+  .chip-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip-src { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    background: var(--primary-soft); color: var(--primary-dark); border: 1px solid #dbeafe;
+    border-radius: 20px; padding: 3px 10px; }
+  .num-big { font-size: 26px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .goal-box { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; }
+  .goal-item { min-width: 96px; }
+  .wb-row-off { opacity: .55; }
+  .muted-dash { color: var(--text-3); }
+</style>
 </head>
 <body>
 <div class="layout">
@@ -16,67 +28,136 @@
       <div class="page-head">
         <div>
           <div class="crumb">教学管理<span class="sep">/</span><a href="student-profile.html" id="backLink">学员学习档案</a><span class="sep">/</span>单词训练</div>
-          <h1 class="page-title">词库选择</h1>
+          <h1 class="page-title">选词与训练目标</h1>
           <div class="page-sub" id="subLine">—</div>
         </div>
         <div class="page-actions">
-          <select class="select" style="width:180px" id="stuSel" onchange="switchStudent(this.value)"></select>
+          <select class="select" style="width:200px" id="stuSel" onchange="switchStudent(this.value)"></select>
           <a class="btn" href="student-profile.html" id="backBtn">返回档案</a>
         </div>
       </div>
 
       <div class="card mb16" style="padding:14px 20px">
         <div class="steps">
-          <div class="step on"><span class="dot">1</span>词库选择</div>
+          <div class="step on"><span class="dot">1</span>选词与目标</div>
           <div class="step-line"></div>
-          <div class="step"><span class="dot">2</span>单词预筛选</div>
+          <div class="step"><span class="dot">2</span>列表式初筛</div>
           <div class="step-line"></div>
-          <div class="step"><span class="dot">3</span>分组训练（每组 5 个）</div>
+          <div class="step"><span class="dot">3</span>五词一组强化</div>
           <div class="step-line"></div>
-          <div class="step"><span class="dot">4</span>最后一轮复习</div>
+          <div class="step"><span class="dot">4</span>列表式最后复习</div>
         </div>
       </div>
 
       <!-- 未完成任务提示（刷新/退出后可从这里恢复） -->
       <div id="resumeBox"></div>
 
+      <!-- 学员与课程 -->
+      <div class="card mb16">
+        <div class="card-head">
+          <div class="card-title">学员与课程</div>
+          <span class="small muted" id="taskNoTip">尚未创建训练任务</span>
+        </div>
+        <div class="card-body">
+          <div class="desc" id="stuInfo" style="grid-template-columns:repeat(4,minmax(0,1fr))"></div>
+        </div>
+      </div>
+
+      <!-- 训练目标 -->
+      <div class="card mb16">
+        <div class="card-head">
+          <div class="card-title">训练目标</div>
+          <span class="small muted">默认 45 个，可按实际课堂时间调整（5 – 200）</span>
+        </div>
+        <div class="card-body">
+          <div class="goal-box">
+            <div class="goal-item">
+              <div class="small muted mb4">目标数量</div>
+              <div class="flex aic gap8">
+                <input class="input goal-input" id="goalInput" type="number" min="5" max="200" value="45"
+                  onchange="changeTarget(this.value)">
+                <span class="small muted">个</span>
+              </div>
+            </div>
+            <div class="chip-group" id="goalQuick"></div>
+            <div class="grow"></div>
+            <div class="goal-item">
+              <div class="small muted mb4">当前累计不认识</div>
+              <div class="num-big" style="color:var(--danger)" id="numUnknown">0</div>
+            </div>
+            <div class="goal-item">
+              <div class="small muted mb4">距离目标还差</div>
+              <div class="num-big" style="color:var(--primary)" id="numNeed">45</div>
+            </div>
+            <div class="goal-item">
+              <div class="small muted mb4">本次已筛选</div>
+              <div class="num-big" id="numScreened">0</div>
+            </div>
+          </div>
+          <div class="bar-row mt16">
+            <div class="bar"><i id="goalBar" style="width:0%"></i></div>
+            <div class="val" id="goalBarText">0 / 45</div>
+          </div>
+          <div id="goalTip" class="mt12"></div>
+        </div>
+      </div>
+
+      <!-- 词库列表 -->
       <div class="card">
-        <div class="card-head"><div class="card-title">选择本次训练词库</div>
-          <span class="small muted">学员历史数据仅作参考，不代表本次必须训练全部单词</span></div>
+        <div class="card-head">
+          <div class="card-title">词库来源<span class="hint">一个任务可以连续添加多个词库，逐词补足目标数量</span></div>
+          <span class="small muted" id="wbNote">—</span>
+        </div>
         <div class="card-body tight">
           <div class="table-wrap">
             <table class="table">
               <thead>
-                <tr><th style="width:40px"></th><th>词库名称</th><th>教材 / 年级</th><th class="right">单词数量</th>
-                  <th class="right">学员已训练</th><th class="right">已掌握</th><th class="right">待复习</th><th>状态</th></tr>
+                <tr>
+                  <th>词库名称</th>
+                  <th>教材 / 年级</th>
+                  <th class="right">单词数量</th>
+                  <th class="right">已初筛认识</th>
+                  <th class="right">剩余可筛</th>
+                  <th class="right">本次已筛</th>
+                  <th>状态</th>
+                  <th style="width:130px">操作</th>
+                </tr>
               </thead>
               <tbody id="rows"></tbody>
             </table>
           </div>
         </div>
         <div class="card-foot" style="justify-content:space-between">
-          <span class="small muted" id="selInfo">未选择词库</span>
-          <button class="btn btn-primary" id="startBtn" onclick="start()" disabled>开始预筛选</button>
+          <div class="small muted" id="selInfo">尚未把词库加入本次任务</div>
+          <div class="flex gap8">
+            <a class="btn" href="demand-center.html?tab=wbreq" id="reqBtn">申请词库</a>
+            <button class="btn btn-primary" id="startBtn" onclick="goPrescreen()" disabled>进入列表式初筛</button>
+          </div>
         </div>
       </div>
 
       <div class="grid g2 mt16">
         <div class="alert alert-info"><span class="ico">i</span>
-          <div><b>训练容量上限：</b>每次训练最多处理 <b>45 个</b>待训练单词。预筛后不认识的单词超过 45 个时，
-            系统按词库顺序取前 45 个，其余保留为待训练状态，<b>不会丢失</b>，可在后续训练中继续选择。</div></div>
+          <div><b>词库只是单词来源，不是任务边界：</b>Unit 1 筛出 10 个不认识、Unit 2 再筛出 15 个、Unit 3 再筛出 20 个，
+            累计到目标数量即可开始强化训练；不同词库的重复单词按基础 Word ID 只训练一次。</div></div>
         <div class="alert alert-warn"><span class="ico">!</span>
-          <div><b>教学自主：</b>使用哪个词库、训练哪些单词由教师决定，教务不强制改变教学进度与教材顺序。</div></div>
+          <div><b>认识的单词不会入队：</b>初筛认识会立即进入绿盒并留下初筛印记，后续再筛选其他词库时自动排除；
+            系统不会把认识的单词塞进队列凑数。</div></div>
       </div>
 
       <!-- 任务记录 -->
       <div class="card mt16">
-        <div class="card-head"><div class="card-title">训练任务记录<span class="hint">同一任务刷新或退出后可从上方继续</span></div>
-          <span class="small muted">状态：未开始 / 预筛选中 / 强化训练中 / 最后一轮复习中 / 已完成 / 已中断 / 已取消</span></div>
+        <div class="card-head">
+          <div class="card-title">训练任务记录<span class="hint">同一任务刷新或退出后可从上方继续</span></div>
+          <span class="small muted">状态：未开始 / 进行中 / 已完成 / 已中断 / 已取消</span>
+        </div>
         <div class="card-body tight">
           <div class="table-wrap">
             <table class="table compact">
-              <thead><tr><th>任务编号</th><th>学员</th><th>词库</th><th>创建时间</th><th>当前阶段</th>
-                <th class="right">队列</th><th class="right">已判断</th><th>状态</th><th style="width:150px">操作</th></tr></thead>
+              <thead><tr>
+                <th>任务编号</th><th>词库来源</th><th>创建时间</th><th>当前阶段</th>
+                <th class="right">目标</th><th class="right">队列</th><th>状态</th><th style="width:140px">操作</th>
+              </tr></thead>
               <tbody id="taskRows"></tbody>
             </table>
           </div>
@@ -84,7 +165,7 @@
       </div>
 
       <div class="alert alert-warn mt16"><span class="ico">!</span>
-        <div><b>本页数据来自统一数据层：</b>训练任务、预筛选记录、单词明细均写入同一份本地数据（当前后端：
+        <div><b>本页数据来自统一数据层：</b>训练任务、初筛记录、展示进度均写入同一份本地数据（当前后端：
           <b id="backend">—</b>），换页、刷新后仍在；执行「重置演示数据」可回到初始状态。</div></div>
 
     </main>
@@ -102,7 +183,9 @@ document.getElementById('backend').textContent = Store.backend;
 const Q = new URLSearchParams(location.search);
 let studentId = Q.get('student') || 'S2026001';
 let courseId = Q.get('course') || '';        // 课程上下文：从课程工作台进入时携带
-let selected = null;
+let task = null;                              // 当前未完成的任务（可能为 null）
+let pendingTarget = Store.TARGET_RANGE.def;    // 还没建任务时先记住目标
+const QUICK = [30, 45, 60, 90];
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
@@ -120,12 +203,10 @@ if (TEACHER) {
   if (mine.length) studentId = mine[0].id;
 })();
 
-const STATUS_TAG = {
-  '未开始': 'tag-slate', '进行中': 'tag-blue', '已完成': 'tag-green', '已中断': 'tag-amber', '已取消': 'tag-slate'
-};
 const qs = (extra) => '?' + [extra, courseId ? 'course=' + courseId : ''].filter(Boolean).join('&');
-
 function switchStudent(id) { location.href = 'word-training-setup.html' + qs('student=' + id); }
+
+/* ---------------- 头部与学员信息 ---------------- */
 
 function initStudentSelect() {
   const mine = Store.currentStudentsOf(TEACHER).map(x => x.student).filter(Boolean);
@@ -138,84 +219,187 @@ function initStudentSelect() {
   document.getElementById('backLink').href = 'student-profile.html?student=' + studentId;
 }
 
-/* 学员在某词库上的学习情况（全部从统一数据层算） */
-function bookStat(bookId) {
-  const words = Store.wordsOfBook(bookId);
-  if (!words.length) return { total: 0, trained: 0, mastered: 0, review: 0 };
-  let trained = 0, mastered = 0, review = 0, known = 0;
-  words.forEach(w => {
-    const st = Store.wordState(studentId, w.id);
-    if (!st) return;
-    if (st.state !== '未训练') trained++;
-    if (st.state === '本次通过') mastered++;
-    if (st.state === '待复习' || st.state === '暂不确定') review++;
-    if (st.state === '初筛认识') known++;
-  });
-  return { total: words.length, trained, mastered, review, known };
+function renderStuInfo() {
+  const stu = Store.student(studentId);
+  const t = task ? Store.teacher(task.teacherId) : Store.teacher(TEACHER);
+  const courses = Store.coursesOf(studentId);
+  const up = courses.filter(c => c.status === '待上课' || c.status === '授课中')
+    .sort((a, b) => (a.date + a.start) < (b.date + b.start) ? -1 : 1)[0];
+  const linked = courseId ? courses.filter(c => c.id === courseId)[0] : null;
+  const c = linked || up;
+
+  document.getElementById('stuInfo').innerHTML = `
+    <div class="desc-item"><div class="k">学员</div><div class="v strong">${esc(stu.name)} <span class="small muted mono">${esc(stu.id)}</span></div></div>
+    <div class="desc-item"><div class="k">年级 / 教材</div><div class="v">${esc(stu.grade || '—')} · ${esc(stu.book || '—')}</div></div>
+    <div class="desc-item"><div class="k">授课教师</div><div class="v">${t ? esc(t.name) : '<span class="muted-dash">—</span>'}</div></div>
+    <div class="desc-item"><div class="k">关联课程</div><div class="v">${c
+      ? `${esc(c.date)} ${esc(c.start)} · ${esc(c.topic || '常规课')}`
+      : '<span class="muted-dash">未关联课程（可独立训练）</span>'}</div></div>`;
+  document.getElementById('taskNoTip').textContent = task
+    ? `任务 ${task.id} · 阶段「${task.phase}」`
+    : '尚未创建训练任务';
 }
 
-function render() {
-  /* 词库来源 = 该学员已授权的词库（授权由管理员开通或审核申请产生） */
+/* ---------------- 目标数量 ---------------- */
+
+function currentTarget() { return task ? (task.targetCount || Store.TARGET_RANGE.def) : pendingTarget; }
+
+function renderTarget(stat) {
+  const target = currentTarget();
+  const known = task ? (stat ? stat.unknown : 0) : 0;
+  const screened = stat ? stat.screened : 0;
+  const need = Math.max(0, target - known);
+
+  document.getElementById('goalInput').value = target;
+  document.getElementById('goalQuick').innerHTML = QUICK.map(n =>
+    `<button class="btn btn-sm ${n === target ? 'btn-primary' : ''}" onclick="changeTarget(${n})">${n} 个</button>`).join('');
+  document.getElementById('numUnknown').textContent = known;
+  document.getElementById('numNeed').textContent = need;
+  document.getElementById('numScreened').textContent = screened;
+
+  const pct = target ? Math.min(100, Math.round(known / target * 100)) : 0;
+  document.getElementById('goalBar').style.width = pct + '%';
+  document.getElementById('goalBar').className = '';
+  document.getElementById('goalBarText').textContent = known + ' / ' + target;
+
+  let tip = '';
+  if (!task) {
+    tip = `<div class="small muted">还没有创建训练任务：选择一个词库加入本次任务后开始逐词初筛。</div>`;
+  } else if (task.phase !== Store.PHASE.PRESCREEN) {
+    tip = `<div class="alert alert-info"><span class="ico">i</span>
+      <div>任务已进入「<b>${esc(task.phase)}</b>」，训练目标与词库来源已锁定，不能再修改。</div></div>`;
+  } else if (known >= target) {
+    tip = `<div class="alert alert-success"><span class="ico">✓</span>
+      <div>已累计 <b>${known}</b> 个不认识的单词，达到目标 <b>${target}</b> 个，可以进入列表式初筛并生成训练队列。</div></div>`;
+  } else {
+    const canAdd = Store.teachingWordbooks(studentId).filter(b =>
+      (task.wordbookIds || []).indexOf(b.id) < 0).length;
+    tip = `<div class="alert alert-info"><span class="ico">i</span>
+      <div>还差 <b>${need}</b> 个。${canAdd
+        ? `可以继续给本次任务添加其他词库补足（还有 ${canAdd} 个已授权词库未加入）。`
+        : '所有已授权词库都已加入本次任务，筛完后如仍不足目标数量，可按实际数量开始训练。'}</div></div>`;
+  }
+  document.getElementById('goalTip').innerHTML = tip;
+}
+
+function changeTarget(v) {
+  const n = Number(v);
+  if (!n || n < Store.TARGET_RANGE.min || n > Store.TARGET_RANGE.max) {
+    Proto.toast(`目标数量需在 ${Store.TARGET_RANGE.min} – ${Store.TARGET_RANGE.max} 之间`, 'err');
+    render();
+    return;
+  }
+  if (task) {
+    try {
+      Store.setTrainTarget(task.id, n);
+      task = Store.trainTask(task.id);
+      Proto.toast('训练目标已设为 ' + n + ' 个', 'ok');
+    } catch (e) {
+      Proto.toast(e.message, 'err');
+    }
+  } else {
+    pendingTarget = Math.round(n);
+  }
+  render();
+}
+
+/* ---------------- 词库列表 ---------------- */
+
+/* 学员在某词库上「已被其他任务/历史初筛标记认识」的数量 */
+function knownCountOfBook(bookId) {
+  return Store.wordsOfBook(bookId).filter(w => Store.isScreenedKnown(studentId, w.id)).length;
+}
+
+function renderBooks(stat) {
   const all = Store.teachingWordbooks(studentId)
     .filter(b => b.status === '启用')
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   const totalEnabled = Store.wordbooks().filter(b => b.status === '启用').length;
+  const inTask = task ? (task.wordbookIds || []) : [];
+
+  document.getElementById('wbNote').textContent = all.length
+    ? `已授权 ${all.length} 个词库（全机构启用 ${totalEnabled} 个）；需要新词库请提交词库申请`
+    : `全机构共有 ${totalEnabled} 个启用词库，该学员暂无授权`;
 
   if (!all.length) {
-    document.getElementById('rows').innerHTML = `<tr><td colspan="8">
-      <div class="empty"><div class="e-ico">▤</div>
-        <p>学员「<b>${esc(Store.student(studentId).name)}</b>」还没有任何词库授权，无法开始训练。<br>
-          <span class="small muted">全机构共有 ${totalEnabled} 个启用词库；请到
-          <a class="btn-link" href="demand-center.html?tab=wbreq">接单中心 · 词库申请</a> 提交申请，
-          管理员审核通过后词库会出现在这里。</span></p></div></td></tr>`;
+    Proto.renderRows('rows', [], null, 8,
+      `学员「${esc(Store.student(studentId).name)}」还没有任何词库授权，无法开始训练。
+       请先到 <a class="btn-link" href="demand-center.html?tab=wbreq">接单中心 · 词库申请</a> 提交申请。`);
+    document.getElementById('selInfo').textContent = '尚未把词库加入本次任务';
     document.getElementById('startBtn').disabled = true;
-    document.getElementById('selInfo').textContent = '未选择词库';
+    return;
+  }
+
+  document.getElementById('rows').innerHTML = all.map(b => {
+    const words = Store.wordsOfBook(b.id);
+    const known = knownCountOfBook(b.id);
+    const joined = inTask.indexOf(b.id) >= 0;
+    const bs = joined && stat && stat.byBook[b.id] ? stat.byBook[b.id] : null;
+    const doneInTask = bs ? bs.screened : 0;
+    const unknownInTask = bs ? bs.unknown : 0;
+    const left = Math.max(0, words.length - known - doneInTask);
+    const locked = task && task.phase !== Store.PHASE.PRESCREEN;
+
+    let statusTag;
+    if (joined) {
+      statusTag = locked
+        ? '<span class="tag tag-blue">本次任务</span>'
+        : (left === 0
+          ? '<span class="tag tag-green">已筛完</span>'
+          : '<span class="tag tag-blue">本次任务 · 筛选中</span>');
+    } else {
+      statusTag = known >= words.length
+        ? '<span class="tag tag-slate">全部已初筛认识</span>'
+        : '<span class="tag tag-slate">可加入</span>';
+    }
+
+    let action;
+    if (joined) {
+      action = locked
+        ? `<a class="btn-link" href="word-training.html?task=${task.id}${courseId ? '&course=' + courseId : ''}">查看训练</a>`
+        : `<a class="btn-link" href="word-training-prescreen.html?task=${task.id}&book=${b.id}${courseId ? '&course=' + courseId : ''}">继续筛选</a>`;
+    } else if (locked) {
+      action = '<span class="small muted">目标已锁定</span>';
+    } else {
+      action = `<button class="btn btn-sm" onclick="addAndScreen('${b.id}')">加入并筛选</button>`;
+    }
+
+    return `<tr class="${joined ? '' : ''}">
+      <td class="strong">${esc(b.name)}${b.sourceFile ? `<div class="small muted">${esc(b.sourceFile)}</div>` : ''}</td>
+      <td class="small">${[b.bookVersion, b.grade, b.term].filter(Boolean).join(' / ') || '<span class="muted">未指定</span>'}</td>
+      <td class="right mono">${words.length}</td>
+      <td class="right mono" style="color:var(--info)">${known}</td>
+      <td class="right mono">${left}</td>
+      <td class="right mono" style="color:var(--danger)">${joined ? unknownInTask : '<span class="muted-dash">—</span>'}</td>
+      <td>${statusTag}</td>
+      <td class="ops">${action}</td>
+    </tr>`;
+  }).join('');
+
+  const joined = all.filter(b => inTask.indexOf(b.id) >= 0);
+  const startBtn = document.getElementById('startBtn');
+  if (!joined.length) {
+    document.getElementById('selInfo').textContent = '尚未把词库加入本次任务';
+    startBtn.disabled = true;
   } else {
-    Proto.renderRows('rows', all, b => {
-      const s = bookStat(b.id);
-      return `<tr onclick="pick('${b.id}')" style="cursor:pointer">
-        <td><input type="radio" name="book" ${selected === b.id ? 'checked' : ''}
-          onclick="event.stopPropagation();pick('${b.id}')"></td>
-        <td class="strong">${b.name}${b.sourceFile ? `<div class="small muted">${b.sourceFile}</div>` : ''}</td>
-        <td class="small">${[b.bookVersion, b.grade, b.term].filter(Boolean).join(' / ') || '<span class="muted">未指定</span>'}</td>
-        <td class="right mono">${b.wordCount}</td>
-        <td class="right mono">${s.trained}</td>
-        <td class="right mono" style="color:var(--success)">${s.mastered}</td>
-        <td class="right mono" style="color:var(--warning)">${s.review}</td>
-        <td><span class="tag tag-green">已授权</span></td>
-      </tr>`;
-    }, 8);
-    document.getElementById('wbNote') && (document.getElementById('wbNote').textContent =
-      `该学员已获授权 ${all.length} 个词库（全机构启用 ${totalEnabled} 个）；需要新词库请到接单中心提交申请。`);
-  }
-
-  renderResume();
-  renderTasks();
-
-  if (selected) {
-    const b = Store.wordbook(selected);
-    const s = bookStat(selected);
     document.getElementById('selInfo').innerHTML =
-      `已选择 <b style="color:var(--text)">${b.name}</b> · 共 ${b.wordCount} 词 · 已训练 ${s.trained} · 已掌握 ${s.mastered} · 待复习 ${s.review}`;
-    document.getElementById('startBtn').disabled = false;
+      `本次任务已加入 <b style="color:var(--text)">${joined.length}</b> 个词库：` +
+      joined.map(b => `<span class="chip-src">${esc(b.name)}</span>`).join(' ');
+    startBtn.disabled = !!(task && task.phase !== Store.PHASE.PRESCREEN);
+    startBtn.textContent = (task && task.phase !== Store.PHASE.PRESCREEN) ? '目标已锁定' : '进入列表式初筛';
   }
 }
 
-function pick(id) {
-  selected = id;
-  render();
-}
+/* ---------------- 未完成任务 / 任务记录 ---------------- */
 
-/* 未完成任务：可从这里继续 */
 function renderResume() {
-  const t = Store.activeTask(studentId);
   const box = document.getElementById('resumeBox');
-  if (!t) { box.innerHTML = ''; return; }
-  const grp = Store.groupsOfTask(t);
-  const done = Object.keys(t.results || {}).length;
-  const target = t.status === '预筛选中'
-    ? `word-training-prescreen.html?task=${t.id}`
-    : `word-training.html?task=${t.id}`;
+  if (!task) { box.innerHTML = ''; return; }
+  const grp = Store.groupsOfTask(task);
+  const stat = Store.prescreenTaskStat(task.id);
+  const target = task.phase === Store.PHASE.PRESCREEN
+    ? `word-training-prescreen.html?task=${task.id}${courseId ? '&course=' + courseId : ''}`
+    : `word-training.html?task=${task.id}${courseId ? '&course=' + courseId : ''}`;
   box.innerHTML = `
     <div class="card mb16" style="border-color:#bfdbfe;background:#f8fbff">
       <div class="card-body">
@@ -223,19 +407,20 @@ function renderResume() {
           <div>
             <div class="flex aic gap8 mb8">
               <span class="tag tag-blue">有未完成的训练任务</span>
-              <span class="mono small muted">${t.id}</span>
+              <span class="mono small muted">${task.id}</span>
+              <span class="tag tag-slate">${esc(task.phase)}</span>
             </div>
             <div style="font-size:13px;line-height:1.8">
-              词库 <b>${t.wordbookName}</b> · 当前阶段
-              <b style="color:var(--primary)">${t.status}</b>
-              · 队列 ${t.queueWordIds.length} 词 / ${grp.length} 组
-              · 已判断 ${done} 词
-              ${t.pausedAt ? `· <span class="muted">上次暂停 ${t.pausedAt}</span>` : ''}
+              词库 <b>${esc(Store.bookLabel(task))}</b> ·
+              目标 <b>${task.targetCount}</b> 个 · 已筛出不认识
+              <b style="color:var(--danger)">${stat ? stat.unknown : 0}</b> 个 ·
+              队列 ${(task.queueWordIds || []).length} 词 / ${grp.length} 组
+              ${task.pausedAt ? `· <span class="muted">上次暂停 ${esc(task.pausedAt)}</span>` : ''}
             </div>
           </div>
           <div class="flex gap8">
             <a class="btn btn-primary" href="${target}">继续本次训练 →</a>
-            <button class="btn" onclick="cancelTask('${t.id}')">放弃任务</button>
+            <button class="btn" onclick="cancelTask('${task.id}')">放弃任务</button>
           </div>
         </div>
       </div>
@@ -244,15 +429,13 @@ function renderResume() {
 
 function cancelTask(id) {
   Proto.confirmBox('放弃本次训练任务',
-    `任务 <b>${id}</b> 会被标记为「已取消」，已产生的单词判断记录<b>保留</b>在明细中，未完成单词仍为待训练状态。`,
+    `任务 <b>${id}</b> 会被标记为「已取消」，已产生的初筛与展示记录<b>保留</b>在明细中；
+     已初筛认识的单词仍然保留初筛状态（不会因为放弃任务被抹掉）。`,
     '确认放弃', () => {
-      try {
-        Store.cancelTask(id);
-      } catch (e) {
-        Proto.toast(e.message, 'err');
-        return;
-      }
+      try { Store.cancelTask(id); }
+      catch (e) { Proto.toast(e.message, 'err'); return; }
       Proto.toast('任务已取消', 'warn');
+      task = null;
       render();
     });
 }
@@ -260,46 +443,77 @@ function cancelTask(id) {
 function renderTasks() {
   const list = Store.tasksOf(studentId).slice(0, 8);
   Proto.renderRows('taskRows', list, t => {
-    const done = Object.keys(t.results || {}).length;
-    const finalDone = Object.keys(t.finalResults || {}).length;
-    const canResume = ['预筛选中', '强化训练中', '最后一轮复习中', '已中断'].includes(t.status);
-    const href = t.status === '预筛选中'
-      ? `word-training-prescreen.html?task=${t.id}`
-      : `word-training.html?task=${t.id}`;
+    const open = Store.isOpen(t.status);
+    const href = t.phase === Store.PHASE.PRESCREEN
+      ? `word-training-prescreen.html?task=${t.id}` : `word-training.html?task=${t.id}`;
     return `<tr>
       <td class="mono small">${t.id}</td>
-      <td>${(Store.student(t.studentId) || {}).name || t.studentId}</td>
-      <td class="small">${t.wordbookName}</td>
-      <td class="small muted">${t.createdAt}</td>
-      <td><span class="tag ${STATUS_TAG[t.status] || 'tag-slate'}">${t.status}</span>
-        ${t.interruptReason ? `<div class="small muted">${t.interruptReason}</div>` : ''}</td>
-      <td class="right mono">${t.queueWordIds.length || '—'}</td>
-      <td class="right mono">${done}${finalDone ? ' / 终' + finalDone : ''}</td>
-      <td class="small">${t.status === '已完成' ? `通过 ${countPass(t)} · 待复习 ${countReview(t)}` : '—'}</td>
+      <td class="small">${esc(Store.bookLabel(t))}</td>
+      <td class="small muted">${esc(t.createdAt || '')}</td>
+      <td><span class="tag tag-slate">${esc(t.phase || '—')}</span></td>
+      <td class="right mono">${t.targetCount || '—'}</td>
+      <td class="right mono">${(t.queueWordIds || []).length || '—'}</td>
+      <td><span class="tag tag-${Store.statusTone(t.status)}">${esc(t.status)}</span>
+        ${t.interruptReason ? `<div class="small muted">${esc(t.interruptReason)}</div>` : ''}</td>
       <td class="ops">
-        ${canResume ? `<a class="btn-link" href="${href}">${t.status === '已中断' ? '恢复' : '继续'}</a>` : `<a class="btn-link" href="${href}">查看</a>`}
+        ${open ? `<a class="btn-link" href="${href}">${t.status === '已中断' ? '恢复' : '继续'}</a>`
+               : `<a class="btn-link" href="${href}">查看</a>`}
         <a class="btn-link" href="student-profile.html?student=${t.studentId}">档案</a>
       </td>
     </tr>`;
-  }, 9, '暂无训练任务，选择词库后开始第一次训练');
+  }, 8, '暂无训练任务，把词库加入本次任务后开始第一次训练');
 }
 
-function countPass(t) {
-  return Object.keys(t.finalResults || {}).filter(id => t.finalResults[id].result === 'yes').length;
-}
-function countReview(t) {
-  return Object.keys(t.finalResults || {}).filter(id => t.finalResults[id].result !== 'yes').length;
-}
+/* ---------------- 动作 ---------------- */
 
-function start() {
-  if (!selected) return;
+function addAndScreen(bookId) {
+  let linked = false;
   try {
-    const t = Store.startTrainTask({ studentId, teacherId: TEACHER, wordbookId: selected, courseId });
-    if (courseId) Store.linkTask(courseId, 'train', t.id);
-    location.href = 'word-training-prescreen.html' + qs('task=' + t.id);
+    if (!task) {
+      const r = Store.createTrainTask({ studentId, teacherId: TEACHER, courseId, targetCount: pendingTarget });
+      task = r.task;
+      if (r.reused) Proto.toast('该学员已有未完成任务，已直接接着用', 'warn');
+    }
+    const r = Store.addWordbooksToTask(task.id, [bookId]);
+    if (!r.added.length) {
+      Proto.toast(r.skipped.length ? r.skipped[0].reason : '该词库无法加入本次任务', 'err');
+      task = Store.trainTask(task.id);
+      render();
+      return;
+    }
+    linked = true;
+    if (courseId) { try { Store.linkTask(courseId, 'train', task.id); } catch (e) { /* 关联失败不影响训练 */ } }
+    location.href = 'word-training-prescreen.html?task=' + task.id + '&book=' + bookId
+      + (courseId ? '&course=' + courseId : '');
   } catch (e) {
     Proto.toast(e.message, 'err');
+    if (!linked) render();
   }
+}
+
+function goPrescreen() {
+  if (!task) return;
+  if (task.phase !== Store.PHASE.PRESCREEN) {
+    Proto.toast('该任务已进入「' + task.phase + '」，请从上方继续按钮进入', 'warn');
+    return;
+  }
+  location.href = 'word-training-prescreen.html?task=' + task.id + (courseId ? '&course=' + courseId : '');
+}
+
+/* ---------------- 渲染入口 ---------------- */
+
+function render() {
+  task = Store.activeTask(studentId) || null;
+  let stat = null;
+  if (task) {
+    try { stat = Store.prescreenTaskStat(task.id); } catch (e) { stat = null; }
+    if (task.phase === Store.PHASE.PRESCREEN) pendingTarget = task.targetCount || pendingTarget;
+  }
+  renderStuInfo();
+  renderTarget(stat);
+  renderBooks(stat);
+  renderResume();
+  renderTasks();
 }
 
 initStudentSelect();

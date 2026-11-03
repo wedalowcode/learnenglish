@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>账号管理</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .inline-form { display:none; }
+  .inline-form.show { display:block; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">系统设置<span class="sep">/</span>账号管理</div>
+          <h1 class="page-title">账号管理</h1>
+          <div class="page-sub">一个人员档案只能绑定一个账号；禁用账号不可切换为当前身份</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="system.html">返回系统设置</a>
+          <button class="btn btn-primary" id="btnNew">+ 新增账号</button>
+        </div>
+      </div>
+
+      <div id="noAccess" class="mb16"></div>
+
+      <div id="body">
+        <div class="grid g4 mb16" id="stats"></div>
+
+        <div class="card mb16 inline-form" id="createPanel">
+          <div class="card-head"><div class="card-title">新增账号</div>
+            <button class="btn-link" id="btnCancel">取消</button></div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="field"><label>人员档案类型</label>
+                <select class="select" id="fType">
+                  <option value="staff">内部员工</option>
+                  <option value="teacher">教师</option>
+                  <option value="agent">代理</option>
+                  <option value="parent">家长</option>
+                </select></div>
+              <div class="field"><label>人员档案</label>
+                <select class="select" id="fProfile"></select></div>
+              <div class="field" id="roleField"><label>角色</label>
+                <select class="select" id="fRole"></select></div>
+              <div class="field"><label>登录名</label><input class="input" id="fLogin" placeholder="手机号或自定义登录名"></div>
+              <div class="field"><label>手机号</label><input class="input" id="fPhone" placeholder="选填"></div>
+              <div class="field"><label>开通原因</label><input class="input" id="fReason" placeholder="如：新员工入职"></div>
+            </div>
+            <div class="card-foot" style="padding:14px 0 0;border:0">
+              <button class="btn btn-primary" id="btnCreate">确认开通</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">账号列表 <span class="hint" id="countHint"></span></div>
+            <div class="page-actions">
+              <select class="select" id="qRole" style="height:32px"></select>
+              <select class="select" id="qStatus" style="height:32px">
+                <option value="">全部状态</option><option>启用</option><option>禁用</option><option>待激活</option>
+              </select>
+              <input class="input" id="qKw" placeholder="账号/姓名/手机号" style="height:32px;width:190px">
+              <button class="btn" id="btnQuery">查询</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>账号</th><th>姓名</th><th>手机号</th><th>角色</th><th>数据范围</th><th>状态</th><th>最近登录</th><th style="width:180px">操作</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+const PAGE_ROLE = Proto.pageRole('admin');
+const SHELL_ROLE = PAGE_ROLE === 'staff' ? 'admin' : PAGE_ROLE;
+Proto.shell({ role: SHELL_ROLE, identityRole: PAGE_ROLE, active: 'system' });
+
+(function () {
+  if (!Store.hasPermission('', 'account.view')) {
+    document.getElementById('noAccess').innerHTML =
+      '<div class="alert alert-warn"><span class="ico">!</span><div>当前身份没有查看账号的权限。</div></div>';
+    document.getElementById('body').style.display = 'none';
+    return;
+  }
+  const canCreate = Store.hasPermission('', 'account.create');
+  const canDisable = Store.hasPermission('', 'account.disable');
+  const canReset = Store.hasPermission('', 'account.reset_credential');
+  document.getElementById('btnNew').style.display = canCreate ? '' : 'none';
+
+  function roleOptions(sel) {
+    return '<option value="">全部角色</option>' + Store.roles().map(r =>
+      '<option value="' + r.code + '"' + (sel === r.code ? ' selected' : '') + '>' + Proto.escHtml(r.name) + '</option>').join('');
+  }
+  document.getElementById('qRole').innerHTML = roleOptions();
+  document.getElementById('fRole').innerHTML = Store.roles()
+    .filter(r => ['admin', 'staff', 'ops'].indexOf(r.code) >= 0)
+    .map(r => '<option value="' + r.code + '"' + (r.code === 'staff' ? ' selected' : '') + '>' +
+      Proto.escHtml(r.name) + '</option>').join('');
+
+  function stats() {
+    const s = Store.accountSummary();
+    document.getElementById('stats').innerHTML = [
+      ['账号总数', s.total, '统一账号表'],
+      ['启用中', s.enabled, '可切换为当前身份'],
+      ['已禁用', s.disabled, '禁用后不能切换'],
+      ['待激活', s.pending, '未开通/待审核']
+    ].map(x => '<div class="card stat"><div class="stat-label">' + x[0] + '</div><div class="stat-value">' +
+      x[1] + '</div><div class="stat-foot">' + x[2] + '</div></div>').join('');
+  }
+
+  function profileOptions(type) {
+    let list = [];
+    if (type === 'staff') list = Store.staffProfiles().map(p => ({ id: p.id, name: p.name, meta: p.roleCode }));
+    else if (type === 'teacher') list = Store.teachers().map(t => ({ id: t.id, name: t.name, meta: t.cooperationStatus }));
+    else if (type === 'agent') list = Store.agents().map(a => ({ id: a.id, name: a.name, meta: a.status }));
+    else if (type === 'parent') list = Store.parents().map(p => ({ id: p.id, name: p.name, meta: p.phone || '' }));
+    return list.filter(x => !Store.accountOfProfile(type, x.id));
+  }
+  function refreshProfiles() {
+    const type = document.getElementById('fType').value;
+    const list = profileOptions(type);
+    document.getElementById('fProfile').innerHTML = list.length
+      ? list.map(x => '<option value="' + x.id + '">' + Proto.escHtml(x.name + ' / ' + x.id + (x.meta ? ' · ' + x.meta : '')) + '</option>').join('')
+      : '<option value="">（该类型下没有未绑定账号的人员档案）</option>';
+    const roleField = document.getElementById('roleField');
+    roleField.style.display = type === 'staff' ? '' : 'none';
+    const roleSelect = document.getElementById('fRole');
+    if (type === 'staff' && ['admin', 'staff', 'ops'].indexOf(roleSelect.value) < 0) {
+      roleSelect.value = 'staff';
+    }
+  }
+  document.getElementById('fType').onchange = refreshProfiles;
+  refreshProfiles();
+
+  function render() {
+    const filters = {
+      roleCode: document.getElementById('qRole').value,
+      status: document.getElementById('qStatus').value,
+      keyword: document.getElementById('qKw').value.trim()
+    };
+    const rows = Store.accountRows(filters);
+    document.getElementById('countHint').textContent = rows.length + ' 条';
+    /* 状态分布卡用真实状态值，不拼字符串 */
+    document.getElementById('rows').innerHTML = rows.length ? rows.map(a => {
+      const disabled = a.status === '已禁用';
+      return '<tr><td class="mono small">' + Proto.escHtml(a.loginName) + '</td>' +
+        '<td class="strong">' + Proto.escHtml(a.profileName) + '</td>' +
+        '<td class="mono">' + Proto.escHtml(a.phone || '—') + '</td>' +
+        '<td><span class="tag tag-blue nodot">' + Proto.escHtml(a.roleName) + '</span></td>' +
+        '<td class="small">' + Proto.escHtml(a.dataScopeLabel) + '</td>' +
+        '<td><span class="tag ' + (a.status === '正常' ? 'tag-green' : disabled ? 'tag-red' : 'tag-slate') + '">' +
+        Proto.escHtml(a.statusLabel) + '</span>' + (disabled && a.disabledReason
+          ? '<div class="small muted">' + Proto.escHtml(a.disabledReason) + '</div>' : '') + '</td>' +
+        '<td class="small muted">' + Proto.escHtml(a.lastLoginAt || '—') + '</td>' +
+        '<td class="ops"><a class="btn-link" href="account-detail.html?id=' + encodeURIComponent(a.id) + '">详情</a>' +
+        (canDisable ? '<button class="btn-link ' + (disabled ? '' : 'danger') + '" data-toggle="' + a.id + '" data-next="' +
+          (disabled ? '启用' : '禁用') + '">' + (disabled ? '启用' : '禁用') + '</button>' : '') +
+        (canReset ? '<button class="btn-link" data-reset="' + a.id + '">重置凭证</button>' : '') + '</td></tr>';
+    }).join('') : '<tr><td colspan="8" class="muted" style="text-align:center;padding:28px">没有符合条件的账号</td></tr>';
+  }
+
+  document.getElementById('rows').addEventListener('click', function (ev) {
+    const t = ev.target.closest('button');
+    if (!t) return;
+    try {
+      if (t.dataset.toggle) {
+        let reason = '';
+        if (t.dataset.next === '禁用') {
+          reason = prompt('请输入禁用原因（必填，会写入操作日志）') || '';
+          if (!reason.trim()) return;
+        }
+        Store.setUserAccountStatus(t.dataset.toggle, t.dataset.next === '禁用' ? '禁用' : '启用', { reason: reason });
+        Proto.toast('账号已' + t.dataset.next);
+        stats(); render();
+      } else if (t.dataset.reset) {
+        if (!confirm('确认重置该账号的登录凭证？')) return;
+        Store.resetAccountCredential(t.dataset.reset, { reason: '管理员重置凭证' });
+        Proto.toast('登录凭证已重置');
+      }
+    } catch (e) { Proto.toast(e.message, 'warn'); }
+  });
+
+  document.getElementById('btnNew').onclick = () => document.getElementById('createPanel').classList.add('show');
+  document.getElementById('btnCancel').onclick = () => document.getElementById('createPanel').classList.remove('show');
+  document.getElementById('btnCreate').onclick = function () {
+    try {
+      const type = document.getElementById('fType').value;
+      const pid = document.getElementById('fProfile').value;
+      if (!pid) throw new Error('请选择人员档案');
+      Store.createAccount({
+        profileType: type, profileId: pid,
+        roleCode: type === 'staff' ? document.getElementById('fRole').value : type,
+        loginName: document.getElementById('fLogin').value.trim(),
+        phone: document.getElementById('fPhone').value.trim(),
+        reason: document.getElementById('fReason').value.trim()
+      });
+      Proto.toast('账号已开通');
+      document.getElementById('createPanel').classList.remove('show');
+      document.getElementById('fLogin').value = '';
+      document.getElementById('fPhone').value = '';
+      refreshProfiles(); stats(); render();
+    } catch (e) { Proto.toast(e.message, 'warn'); }
+  };
+
+  document.getElementById('btnQuery').onclick = render;
+  stats(); render();
+})();
+</script>
+</body>
+</html>

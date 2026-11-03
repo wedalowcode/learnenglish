@@ -132,8 +132,9 @@
 <script src="../assets/js/data.js"></script>
 <script src="../assets/js/store.js"></script>
 <script>
-Proto.shell({ role: 'admin', active: 'student-list' });
-Store.setSession({ role: 'admin' });
+const PAGE_ROLE = Proto.pageRole('admin');
+const SHELL_ROLE = PAGE_ROLE === 'staff' ? 'admin' : PAGE_ROLE;
+Proto.shell({ role: SHELL_ROLE, identityRole: PAGE_ROLE, active: 'student-list' });
 const S = Store;
 
 /* 当前教师筛选项来自真实教师 + 未分配 */

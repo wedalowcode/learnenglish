@@ -68,8 +68,9 @@
   'use strict';
 
   var W = typeof window !== 'undefined' ? window : globalThis;
-  var KEY = 'ee_proto_store_v8';
-  var VERSION = 8;
+  var KEY = 'ee_proto_store_v9';
+  var VERSION = 9;
+  var LEGACY_KEY_V8 = 'ee_proto_store_v8';
   var LEGACY_KEY_V7 = 'ee_proto_store_v7';
   var TODAY = '2026-11-02';
 
@@ -103,6 +104,29 @@
   var REPORT_STATUS = {
     NONE: '未生成', DRAFT: '编辑中', SUBMITTED: '已提交', PUBLISHED: '已发布'
   };
+
+  /* ============================================================
+     单词训练域：三种教学状态必须分开（第九轮）
+     ------------------------------------------------------------
+     1. 初筛结果      SCREEN  记录孩子「原本是否认识」，认识即进绿盒并留初筛印记
+     2. 强化训练过程  DISPLAY 只记录教师带读了几轮展示，不判断掌握
+     3. 最后复习结果  FINAL   教师按孩子最后反应判断，结果进入复习体系
+     三者不允许互相替代：
+       · 初筛认识 ≠ 掌握（本次通过才叫掌握）
+       · 展示三轮完成 ≠ 掌握
+       · 最后复习不认识而被放进绿盒 ≠ 初筛认识（screeningStatus 不变）
+     ============================================================ */
+  var SCREEN = { KNOWN: '已认识', UNKNOWN: '不认识', NONE: '' };
+  var SCREEN_TONE = { '已认识': 'green', '不认识': 'red', '': 'slate' };
+  /** 绿盒来源：区分「初筛认识 / 教师手动 / 训练最后复习」，三者不合并 */
+  var SCREEN_SOURCE = { PRESCREEN: '初筛认识', MANUAL: '教师手动加入', TRAIN_FINAL: '训练最后复习' };
+  /** 展示循环：0 未开始 → 1 显示英文 → 2 显示中文 → 3 隐藏英文与中文并标记本轮完成 */
+  var DISPLAY_STEP = { NONE: 0, EN: 1, CN: 2, DONE: 3 };
+  var DISPLAY_LABEL = { 0: '未开始', 1: '显示英文', 2: '显示中文', 3: '本轮完成' };
+  var TRAIN_GROUP_SIZE = 5;
+  /** 单次训练目标数量：默认 45，教师可调，超出范围直接拒绝 */
+  var TARGET_RANGE = { min: 5, max: 200, def: 45 };
+  var PHASE = { PRESCREEN: '预筛选', DISPLAY: '强化训练', FINAL: '最后复习', DONE: '已提交' };
 
   /* ============================================================
      教师域：三套互不混用的状态词表
@@ -207,8 +231,254 @@
      避免跨页持久化后把上一个角色的操作人带到新角色（如管理员页显示代理姓名）。 */
   var ROLE_DEFAULT_OPERATOR = { admin: '张敏', staff: '陈静', ops: '王敏' };
   var session = {
-    role: 'admin', operatorName: '张敏', operatorId: '张敏',
+    role: 'admin', operatorName: '张敏', operatorId: '张敏', accountId: '',
     teacherId: '', agentId: '', parentId: ''
+  };
+
+  /* ============================================================
+     第八轮：系统管理域（角色 / 权限 / 数据范围 / 审计 / 字典 / 通知 / 机构）
+     ------------------------------------------------------------
+     权限编码是唯一事实来源：页面菜单、Store 写操作、数据读取都查同一份
+     rolePermissions；静态 PERMS 只用于没有迁移到新编码的历史动作兜底。
+     ============================================================ */
+  var ROLE_SEED = [
+    { code: 'admin', name: '机构管理员', description: '老板/机构负责人，拥有全部业务与系统权限', dataScope: 'ALL', system: true },
+    { code: 'staff', name: '教务负责人', description: '负责线索、学员、教师与教务确认，不参与正式分配与收款确认', dataScope: 'ALL', system: true },
+    { code: 'ops', name: '管理员', description: '负责正式分配、词库授权、订单收款与系统配置', dataScope: 'ALL', system: true },
+    { code: 'teacher', name: '教师', description: '只能查看自己负责的学员、课程与报告，并响应开放需求', dataScope: 'ASSIGNED', system: true },
+    { code: 'agent', name: '代理', description: '只能查看自己名下客户、订单、续费与反馈', dataScope: 'OWN', system: true },
+    { code: 'parent', name: '家长', description: '只能查看自己孩子的课程、课时与已发布报告', dataScope: 'RELATED', system: true }
+  ];
+  var DATA_SCOPE_LABEL = { ALL: '全部数据', ASSIGNED: '仅本人负责的学员', OWN: '仅本人客户/订单', RELATED: '仅本人孩子' };
+  var DATA_SCOPE_STATUS = ['ALL', 'ASSIGNED', 'OWN', 'RELATED', 'SELF'];
+
+  /* 权限目录：module 用于角色详情分组，type=view 的权限额外决定菜单可见性 */
+  var PERMISSION_SEED = [
+    /* 客户管理 */
+    ['lead.view.own', '客户管理', '查看本人客户', '仅本人负责或来源归属于自己的线索', 'view'],
+    ['lead.view.all', '客户管理', '查看全部客户', '查看机构全部线索与客户', 'view'],
+    ['lead.create', '客户管理', '新建客户线索', '录入新客户并记录来源', 'action'],
+    ['lead.follow', '客户管理', '客户跟进', '登记跟进记录、调整意向', 'action'],
+    ['lead.convert', '客户管理', '客户转报名', '把意向客户转为报名订单', 'action'],
+    ['lead.transfer', '客户管理', '客户归属移交', '变更线索负责人/成交代理', 'action'],
+    ['lead.resolve_dispute', '客户管理', '客户归属争议处理', '裁定重复报备的归属', 'action'],
+    /* 家长与学员 */
+    ['parent.view', '家长与学员', '查看家长档案', '查看家长与学员关联', 'view'],
+    ['parent.create', '家长与学员', '新建家长档案', '建立家长账号与孩子关系', 'action'],
+    ['parent.edit', '家长与学员', '编辑家长档案', '修改联系方式与关系', 'action'],
+    ['student.view', '家长与学员', '查看学员档案', '按数据范围查看学员', 'view'],
+    ['student.create', '家长与学员', '新建学员档案', '建档不产生课时', 'action'],
+    ['student.edit', '家长与学员', '编辑学员档案', '修改年级、教材等信息', 'action'],
+    /* 教师管理 */
+    ['teacher.view', '教师管理', '查看教师档案', '查看教师资源池与状态', 'view'],
+    ['teacher.create', '教师管理', '新建教师档案', '教师档案永不物理删除', 'action'],
+    ['teacher.edit', '教师管理', '编辑教师档案', '修改可授课程与联系方式', 'action'],
+    ['teacher.activate', '教师管理', '启用教师', '把待启用教师设为可授课', 'action'],
+    ['teacher.suspend', '教师管理', '暂停合作', '保留档案并暂停排课', 'action'],
+    ['teacher.restore', '教师管理', '恢复合作', '恢复可授课状态', 'action'],
+    ['teacher.exit', '教师管理', '教师退出', '结束合作但保留历史', 'action'],
+    ['teacher.assign_student', '教师管理', '正式分配教师', '建立师生负责关系（仅管理员）', 'action'],
+    /* 学员需求 */
+    ['demand.view', '学员需求', '查看学员需求', '按数据范围查看需求池', 'view'],
+    ['demand.create', '学员需求', '创建学员需求', '为已建档学员发起接单', 'action'],
+    ['demand.publish', '学员需求', '发布学员需求', '向教师开放接单', 'action'],
+    ['demand.respond', '学员需求', '教师响应需求', '接单意向的提交与撤回', 'action'],
+    ['demand.confirm', '学员需求', '教务确认人选', '确认最终教师但不等同分配', 'action'],
+    ['demand.revoke_confirm', '学员需求', '撤销教务确认', '撤销确认并保留流水', 'action'],
+    ['demand.assign', '学员需求', '正式分配学员', '把学员正式分配给教师', 'action'],
+    /* 教学资源 */
+    ['wordbook.view', '教学资源', '查看词库', '查看词库与授权记录', 'view'],
+    ['wordbook.create', '教学资源', '新建词库', '创建空词库并导入', 'action'],
+    ['wordbook.edit', '教学资源', '编辑词库', '维护单词与排序', 'action'],
+    ['wordbook.request', '教学资源', '申请词库授权', '教师为负责学员申请词库', 'action'],
+    ['wordbook.review', '教学资源', '审核词库申请', '通过或驳回教师申请', 'action'],
+    ['wordbook.grant', '教学资源', '开通词库授权', '为学员开通词库权限', 'action'],
+    ['wordbook.revoke', '教学资源', '撤销词库授权', '停用授权但不删历史', 'action'],
+    /* 订单与财务 */
+    ['order.view.own', '订单与财务', '查看本人订单', '代理/家长查看自己的订单', 'view'],
+    ['order.view.all', '订单与财务', '查看全部订单', '查看机构全部订单', 'view'],
+    ['order.create', '订单与财务', '创建报名订单', '代理或教务发起报名', 'action'],
+    ['order.review', '订单与财务', '审核订单', '审核报名订单信息', 'action'],
+    ['order.cancel', '订单与财务', '取消订单', '取消未生效订单并留痕', 'action'],
+    ['payment.record', '订单与财务', '登记收款', '登记线下收款待确认', 'action'],
+    ['payment.confirm', '订单与财务', '确认收款', '确认到账并触发课时入账', 'action'],
+    ['payment.reject', '订单与财务', '驳回收款', '驳回收款登记并保留原因', 'action'],
+    ['payment.refund', '订单与财务', '退款处理', '受理退款申请与审批', 'action'],
+    /* 课时账户 */
+    ['lesson_account.view', '课时账户', '查看课时账户', '按数据范围查看余额与流水', 'view'],
+    ['lesson_account.adjust', '课时账户', '调整课时', '增减课时必须写流水', 'action'],
+    ['lesson_account.deduct', '课时账户', '扣减课时', '课程完成时扣减课时', 'action'],
+    ['lesson_account.reverse', '课时账户', '课时冲正', '冲正错误流水', 'action'],
+    /* 教学与报告 */
+    ['lesson.view.own', '教学与报告', '查看本人课程', '教师查看自己的课程', 'view'],
+    ['lesson.view.all', '教学与报告', '查看全部课程', '教务/管理员查看全部课程', 'view'],
+    ['lesson.record', '教学与报告', '提交教学记录', '记录课堂表现', 'action'],
+    ['lesson.complete', '教学与报告', '完成课程', '课程完成并扣减课时', 'action'],
+    ['report.create', '教学与报告', '创建报告', '生成课后学习报告', 'action'],
+    ['report.submit', '教学与报告', '提交报告', '提交报告待发布', 'action'],
+    ['report.publish', '教学与报告', '发布报告', '发布后家长才可见', 'action'],
+    ['report.view.own', '教学与报告', '查看本人报告', '按数据范围查看报告', 'view'],
+    ['report.view.all', '教学与报告', '查看全部报告', '查看机构全部报告', 'view'],
+    /* 续费管理 */
+    ['renewal.view.own', '续费管理', '查看本人续费机会', '代理查看自己客户的续费机会', 'view'],
+    ['renewal.view.all', '续费管理', '查看全部续费机会', '查看机构全部续费机会', 'view'],
+    ['renewal.follow', '续费管理', '续费跟进', '跟进并记录结果', 'action'],
+    ['renewal.create_order', '续费管理', '续费转订单', '把续费机会转为订单', 'action'],
+    /* 系统管理 */
+    ['account.view', '系统管理', '查看账号', '查看统一账号列表', 'view'],
+    ['account.create', '系统管理', '开通账号', '为已有人员档案开通登录账号', 'action'],
+    ['account.edit', '系统管理', '编辑账号', '修改角色、登录名为账号', 'action'],
+    ['account.disable', '系统管理', '启用/禁用账号', '禁用后无法切换为该身份', 'action'],
+    ['account.reset_credential', '系统管理', '重置登录凭证', '重置密码并标记需修改', 'action'],
+    ['role.view', '系统管理', '查看角色', '查看角色与成员', 'view'],
+    ['role.edit', '系统管理', '编辑角色', '新建/维护角色', 'action'],
+    ['permission.configure', '系统管理', '配置角色权限', '修改菜单与操作权限', 'action'],
+    ['audit.view', '系统管理', '查看审计日志', '按对象/操作人追溯业务单据', 'view'],
+    ['dictionary.manage', '系统管理', '字典管理', '维护业务下拉选项', 'action'],
+    ['notification.manage', '系统管理', '通知规则管理', '维护通知模板与接收规则', 'action'],
+    ['organization.manage', '系统管理', '机构设置', '维护机构、课时预警与通知参数', 'action']
+  ];
+
+  var DEFAULT_PERM = {
+    admin: {
+      all: true, dataScope: 'ALL'
+    },
+    staff: {
+      codes: ['lead.view.own', 'lead.view.all', 'lead.create', 'lead.follow', 'lead.convert', 'lead.transfer',
+        'parent.view', 'parent.create', 'parent.edit', 'student.view', 'student.create', 'student.edit',
+        'teacher.view', 'teacher.create', 'teacher.edit', 'teacher.activate', 'teacher.suspend',
+        'teacher.restore', 'teacher.exit', 'demand.view', 'demand.create', 'demand.publish',
+        'demand.confirm', 'demand.revoke_confirm', 'wordbook.view', 'order.view.all', 'order.create',
+        'order.cancel', 'lesson_account.view', 'lesson.view.all', 'report.create', 'report.submit',
+        'report.publish', 'report.view.all', 'renewal.view.all', 'renewal.follow', 'renewal.create_order',
+        'account.view', 'account.create', 'account.edit', 'account.reset_credential', 'audit.view'],
+      dataScope: 'ALL'
+    },
+    ops: {
+      codes: ['lead.view.all', 'lead.resolve_dispute', 'parent.view', 'student.view', 'teacher.view',
+        'teacher.assign_student', 'demand.view', 'demand.assign', 'wordbook.view', 'wordbook.review',
+        'wordbook.grant', 'wordbook.revoke', 'order.view.all', 'order.review', 'order.cancel',
+        'payment.record', 'payment.confirm', 'payment.reject', 'payment.refund',
+        'lesson_account.view', 'lesson_account.adjust', 'lesson_account.deduct', 'lesson_account.reverse',
+        'lesson.view.all', 'report.view.all', 'report.publish', 'renewal.view.all',
+        'account.view', 'account.create', 'account.edit', 'account.disable', 'account.reset_credential',
+        'role.view', 'audit.view', 'dictionary.manage', 'notification.manage', 'organization.manage'],
+      dataScope: 'ALL'
+    },
+    teacher: {
+      codes: ['student.view', 'demand.view', 'demand.respond', 'wordbook.view',
+        'wordbook.request', 'lesson.view.own', 'lesson.record', 'lesson.complete', 'report.create',
+        'report.submit', 'report.view.own', 'lesson_account.view'],
+      dataScope: 'ASSIGNED'
+    },
+    agent: {
+      codes: ['lead.view.own', 'lead.create', 'lead.follow', 'lead.convert', 'student.view',
+        'order.view.own', 'order.create', 'renewal.view.own', 'renewal.follow', 'renewal.create_order',
+        'report.view.own'],
+      dataScope: 'OWN'
+    },
+    parent: {
+      codes: ['student.view', 'order.view.own', 'lesson.view.own', 'lesson_account.view', 'report.view.own'],
+      dataScope: 'RELATED'
+    }
+  };
+
+  /* 历史动作 → 新权限编码：rolePermissions 修改后立即影响这些写操作 */
+  var ACTION_PERM = {
+    'teacher.view': 'teacher.view', 'teacher.create': 'teacher.create', 'teacher.edit': 'teacher.edit',
+    'teacher.account': 'account.create', 'teacher.activate': 'teacher.activate',
+    'teacher.pause': 'teacher.suspend', 'teacher.resume': 'teacher.restore', 'teacher.exit': 'teacher.exit',
+    'teacher.assign': 'teacher.assign_student', 'teacher.stats': 'teacher.view',
+    'self.records': 'lesson.view.own',
+    'demand.view': 'demand.view', 'demand.create': 'demand.create', 'demand.edit': 'demand.create',
+    'demand.publish': 'demand.publish', 'demand.cancel': 'demand.publish',
+    'demand.confirm': 'demand.confirm', 'demand.open': 'demand.respond',
+    'response.submit': 'demand.respond', 'response.viewAll': 'demand.view',
+    'student.assignFinal': 'teacher.assign_student',
+    'wordbookRequest.create': 'wordbook.request', 'wordbookRequest.review': 'wordbook.review',
+    'studentWordbook.view': 'wordbook.view', 'studentWordbook.manage': 'wordbook.grant',
+    'lead.viewAll': 'lead.view.all', 'lead.viewSelf': 'lead.view.own', 'lead.create': 'lead.create',
+    'lead.follow': 'lead.follow', 'lead.convert': 'lead.convert', 'lead.assign': 'lead.transfer',
+    'order.viewAll': 'order.view.all', 'order.viewSelf': 'order.view.own', 'order.create': 'order.create',
+    'order.review': 'order.review', 'payment.confirm': 'payment.confirm',
+    'lesson.adjust': 'lesson_account.adjust',
+    'renewal.viewAll': 'renewal.view.all', 'renewal.viewSelf': 'renewal.view.own',
+    'renewal.handle': 'renewal.follow', 'feedback.create': 'report.create',
+    'feedback.viewSelf': 'report.view.own',
+    'parent.view': 'parent.view', 'parent.create': 'parent.create', 'parent.edit': 'parent.edit',
+    'inquiry.handle': 'parent.view'
+  };
+
+  /* 字典类型：业务表单的唯一选项来源 */
+  var DICT_TYPE_SEED = [
+    { code: 'lead_channel', name: '获客渠道', description: '客户线索的来源渠道' },
+    { code: 'lead_level', name: '客户意向等级', description: '线索意向分级' },
+    { code: 'follow_type', name: '跟进方式', description: '客户跟进记录的联系方式' },
+    { code: 'agent_type', name: '代理类型', description: '代理合作方式' },
+    { code: 'pay_method', name: '支付方式', description: '收款登记的支付渠道' },
+    { code: 'grade', name: '学员年级', description: '学员档案与需求使用的年级' },
+    { code: 'textbook', name: '教材版本', description: '学员与教师使用的教材' },
+    { code: 'relation', name: '家长关系', description: '家长与学员的关系' },
+    { code: 'decline_reason', name: '教师不接单原因', description: '教师拒绝需求的常见原因' }
+  ];
+  var DICT_ITEM_SEED = {
+    lead_channel: ['转介绍', '地推', '公众号', '电话咨询', '代理推荐', '其他'],
+    lead_level: ['高', '中', '低'],
+    follow_type: ['电话', '微信', '面谈', '短信'],
+    agent_type: ['个人代理', '合作机构', '内部转介绍'],
+    pay_method: ['微信', '支付宝', '银行转账', '现金', 'POS'],
+    grade: ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '七年级', '八年级', '九年级'],
+    textbook: ['人教版', '外研版', '译林版', '北师大版', '沪教牛津版', '其他'],
+    relation: ['父亲', '母亲', '祖父母', '其他监护人'],
+    decline_reason: ['时间不合适', '年级不匹配', '教材不熟悉', '当前学员数量较多', '其他原因']
+  };
+
+  /* 通知规则：事件 → 模板 → 接收人；业务代码只调用 notify(event, payload) */
+  var NOTIFY_RULE_SEED = [
+    { event: 'LEAD_ASSIGNED', name: '新客户分配', role: 'agent', title: '你有一个新客户：{leadName}',
+      content: '客户「{leadName}」已分配给你，请及时跟进。', business: 'lead' },
+    { event: 'LEAD_TRANSFER', name: '客户归属变更', role: 'agent', title: '客户归属已调整：{leadName}',
+      content: '客户「{leadName}」的负责人已调整为 {agentName}。', business: 'lead' },
+    { event: 'ORDER_REVIEW', name: '报名订单待审核', role: 'admin', title: '新报名订单待审核：{orderNo}',
+      content: '学员「{studentName}」提交报名订单，金额 {amount} 元，请审核。', business: 'order' },
+    { event: 'PAYMENT_REGISTERED', name: '收款待确认', role: 'admin', title: '收款待确认：{orderNo}',
+      content: '订单「{orderNo}」登记收款 {amount} 元，请确认到账后入账。', business: 'order' },
+    { event: 'PAYMENT_CONFIRMED', name: '收款确认成功（代理）', role: 'agent', title: '收款已确认：{orderNo}',
+      content: '订单「{orderNo}」的收款 {amount} 元已确认，课时已入账。', business: 'order' },
+    { event: 'PAYMENT_CONFIRMED', name: '收款确认成功（家长）', role: 'parent', title: '孩子的报名已生效',
+      content: '订单「{orderNo}」的收款已确认，{studentName} 的课时已入账。', business: 'order' },
+    { event: 'DEMAND_PUBLISHED', name: '新学员需求', role: 'teacher', title: '新的学员需求待响应',
+      content: '学员「{studentName}」的需求已发布，请前往接单中心查看。', business: 'demand' },
+    { event: 'DEMAND_CONFIRMED', name: '需求已确认人选', role: 'teacher', title: '你被教务确认为意向人选',
+      content: '学员「{studentName}」的需求已确认你为人选，等待管理员正式分配。', business: 'demand' },
+    { event: 'DEMAND_ASSIGNED', name: '学员正式分配', role: 'teacher', title: '你已正式负责学员：{studentName}',
+      content: '学员「{studentName}」已正式分配给你，请查看学员档案并准备课程。', business: 'demand' },
+    { event: 'DEMAND_WAIT_ASSIGN', name: '需求待正式分配', role: 'admin', title: '需求待正式分配：{studentName}',
+      content: '学员「{studentName}」的需求已由教务确认，请完成正式分配。', business: 'demand' },
+    { event: 'WORD_REQUEST', name: '词库申请待审核', role: 'ops', title: '新的词库开通申请',
+      content: '教师「{teacherName}」为学员「{studentName}」申请词库，请审核。', business: 'wordbookRequest' },
+    { event: 'WORD_GRANTED', name: '词库授权结果', role: 'teacher', title: '词库申请已通过',
+      content: '学员「{studentName}」的词库申请已通过，可以开始训练。', business: 'wordbookRequest' },
+    { event: 'WORD_REJECTED', name: '词库申请驳回', role: 'teacher', title: '词库申请未通过',
+      content: '学员「{studentName}」的词库申请未通过，请查看审核备注。', business: 'wordbookRequest' },
+    { event: 'REPORT_PUBLISHED', name: '学习报告已发布', role: 'parent', title: '新的学习报告：{studentName}',
+      content: '孩子「{studentName}」的课后学习报告已发布，点击查看。', business: 'report' },
+    { event: 'LESSON_LOW', name: '课时不足提醒', role: 'agent', title: '客户课时不足：{studentName}',
+      content: '学员「{studentName}」剩余课时 {remain} 节，请提醒续费。', business: 'renewal' },
+    { event: 'RENEWAL_CREATED', name: '续费机会生成', role: 'agent', title: '新的续费机会：{studentName}',
+      content: '学员「{studentName}」触发了续费机会（{sourceType}），请跟进。', business: 'renewal' },
+    { event: 'PARENT_INQUIRY', name: '家长咨询待处理', role: 'admin', title: '新的家长咨询待处理：{parentName}',
+      content: '家长「{parentName}」发起咨询（{type}）：{content}，请处理。', business: 'parentInquiry' },
+    { event: 'PARENT_INQUIRY_REPLIED', name: '咨询已回复', role: 'parent', title: '你的咨询已回复',
+      content: '你的咨询「{type}」已由教务回复，点击查看。', business: 'parentInquiry' }
+  ];
+
+  var ORG_SEED = {
+    name: '启航英语', campus: '城东校区', address: '杭州市上城区城东路 88 号 3 楼',
+    contactPhone: '0571-88886666', contactEmail: 'admin@qihang-english.cn',
+    workingHours: '周一至周日 09:00-21:00',
+    lessonAlertThreshold: 5, expireAlertDays: 14,
+    allowAgentRegisterPayment: false, defaultTimezone: 'Asia/Shanghai'
   };
 
   /* ============================================================
@@ -387,6 +657,7 @@
         role: session.role || '',
         operatorName: session.operatorName || '',
         operatorId: session.operatorId || '',
+        accountId: session.accountId || '',
         teacherId: session.teacherId || '',
         agentId: session.agentId || '',
         parentId: session.parentId || ''
@@ -403,6 +674,7 @@
       if (o.role) session.role = o.role;
       if (o.operatorName) session.operatorName = o.operatorName;
       if (o.operatorId) session.operatorId = o.operatorId;
+      if (o.accountId) session.accountId = o.accountId;
       if (o.teacherId) session.teacherId = o.teacherId;
       if (o.agentId) session.agentId = o.agentId;
       if (o.parentId) session.parentId = o.parentId;
@@ -1414,6 +1686,7 @@
           }, 0),
           UA: users.length, TS: teacherStudents.length, TCH: coopSeq, TCL: 0,
           SD: demandSeq, TRS: respSeq, DL: dlogSeq, WBR: wbrSeq, SWB: swbSeq,
+          TR: 0, TD: 0, PR: 0, TDP: 0,
           AG: agents.length, LD: leadSeq, LF: followSeq, LLOG: leadLogSeq,
           ORD: ordSeq, PY: paySeq, OLOG: ordLogSeq,
           RN: renewalSeq, FB: fbSeq, ALOG: agentLogSeq,
@@ -1453,6 +1726,7 @@
       prescreens: [],
       trainTasks: [],
       trainDetails: [],
+      trainDisplays: [],
       studentWordStates: studentWordStates,
       leitnerStates: leitnerStates,
       leitnerConfig: leitnerConfig,
@@ -1473,6 +1747,260 @@
       familyChecks: [],
       config: config
     };
+  }
+
+  /* ---------------- 系统管理域：幂等种子 ----------------
+     账号、角色、权限、字典、通知、机构设置都在 normalizeDb 里补齐：
+     旧数据只补缺失项，绝不覆盖用户已经调整过的配置。 */
+  function ensureSystemData(d) {
+    d.staffProfiles = d.staffProfiles || [];
+    d.users = d.users || [];
+    d.agents = d.agents || [];
+    d.parents = d.parents || [];
+    d.teachers = d.teachers || [];
+    d.roles = d.roles || [];
+    d.permissions = d.permissions || [];
+    d.rolePermissions = d.rolePermissions || [];
+    d.dictionaryTypes = d.dictionaryTypes || [];
+    d.dictionaryItems = d.dictionaryItems || [];
+    d.notificationRules = d.notificationRules || [];
+    d.notifications = d.notifications || [];
+    d.auditLogs = d.auditLogs || [];
+    d.organization = d.organization || {};
+    d.meta = d.meta || { seq: {} };
+    d.meta.seq = d.meta.seq || {};
+
+    function maxNum(list, re) {
+      return list.reduce(function (m, x) {
+        var hit = re.exec(String((x && x.id) || ''));
+        return hit ? Math.max(m, Number(hit[1])) : m;
+      }, 0);
+    }
+    function nextAccountId() {
+      var n = maxNum(d.users, /^UA(\d+)$/);
+      return 'UA' + pad(n + 1, 3);
+    }
+    function accountStatusByProfile(kind, p) {
+      if (kind === 'teacher') {
+        if (!p.accountId) return ACCOUNT.NONE;
+        var u = d.users.filter(function (x) { return x.id === p.accountId; })[0];
+        return u ? u.status : ACCOUNT.NONE;
+      }
+      if (kind === 'agent') {
+        if (p.status === '启用') return ACCOUNT.OK;
+        return p.status === '停用' ? ACCOUNT.DISABLED : ACCOUNT.NONE;
+      }
+      if (kind === 'parent') return p.status === '停用' ? ACCOUNT.DISABLED : ACCOUNT.OK;
+      return ACCOUNT.OK;
+    }
+
+    /* 内部员工档案：角色身份来自档案，页面不得再硬编码姓名/工号；
+       noAccount 表示档案已入职但尚未开通登录账号，用于验证「新增账号」流程 */
+    [['STF001', '张敏', '13901110000', 'admin'],
+      ['STF002', '陈静', '13902220000', 'staff'],
+      ['STF003', '王敏', '13903330000', 'ops'],
+      ['STF004', '刘洋', '13904440000', 'staff', true],
+      ['STF005', '赵磊', '13905550000', 'ops', true]].forEach(function (x) {
+      if (d.staffProfiles.some(function (p) { return p.id === x[0]; })) return;
+      d.staffProfiles.push({
+        id: x[0], name: x[1], phone: x[2], roleCode: x[3], noAccount: !!x[4],
+        status: '在职', createdAt: TODAY + ' 09:00', updatedAt: TODAY + ' 09:00'
+      });
+    });
+
+    /* 统一账号：教师账号保留原有结构，只补 profileType/profileId/roleCode；
+       代理、家长、内部员工按人员档案补账号，已有账号不重复创建 */
+    d.users.forEach(function (u) {
+      u.phone = u.phone || '';
+      u.loginName = u.loginName || u.phone;
+      u.username = u.loginName;
+      u.passwordHash = u.passwordHash || '';
+      if (u.mustChangePassword === undefined) u.mustChangePassword = true;
+      u.status = [ACCOUNT.OK, ACCOUNT.DISABLED, ACCOUNT.NONE].indexOf(u.status) >= 0 ? u.status : ACCOUNT.OK;
+      if (u.teacherId) {
+        u.profileType = u.profileType || 'teacher';
+        u.profileId = u.profileId || u.teacherId;
+        u.roleCode = 'teacher';
+      } else {
+        u.profileType = u.profileType || 'staff';
+        u.profileId = u.profileId || ('STF' + pad(d.staffProfiles.findIndex(function (p) { return p.name === u.loginName; }) + 1, 3));
+        u.roleCode = u.roleCode || u.roleId || 'admin';
+      }
+      u.roleId = u.roleCode;
+      u.createdAt = u.createdAt || (TODAY + ' 09:00');
+      u.updatedAt = u.updatedAt || u.createdAt;
+      u.lastLoginAt = u.lastLoginAt || '';
+      u.disabledReason = u.disabledReason || '';
+    });
+
+    d.staffProfiles.forEach(function (p) {
+      if (p.noAccount) return;
+      var exists = d.users.filter(function (u) {
+        return u.profileType === 'staff' && u.profileId === p.id;
+      })[0];
+      if (exists) { exists.roleCode = p.roleCode; exists.roleId = p.roleCode; return; }
+      var u = {
+        id: nextAccountId(), loginName: p.phone, username: p.phone, phone: p.phone,
+        passwordHash: '', mustChangePassword: true, status: ACCOUNT.OK,
+        roleCode: p.roleCode, roleId: p.roleCode, profileType: 'staff', profileId: p.id,
+        teacherId: '', staffId: p.id, lastLoginAt: '', disabledReason: '',
+        createdAt: p.createdAt || (TODAY + ' 09:00'), updatedAt: p.createdAt || (TODAY + ' 09:00')
+      };
+      d.users.push(u);
+    });
+
+    d.agents.forEach(function (a) {
+      a.accountId = a.accountId || '';
+      a.roleCode = 'agent';
+      var acc = d.users.filter(function (u) { return u.profileType === 'agent' && u.profileId === a.id; })[0];
+      if (acc) { a.accountId = acc.id; acc.roleCode = 'agent'; acc.roleId = 'agent'; return; }
+      var st = accountStatusByProfile('agent', a);
+      var u = {
+        id: nextAccountId(), loginName: a.phone || a.id, username: a.phone || a.id, phone: a.phone || '',
+        passwordHash: '', mustChangePassword: true, status: st,
+        roleCode: 'agent', roleId: 'agent', profileType: 'agent', profileId: a.id,
+        agentId: a.id, teacherId: '', lastLoginAt: '',
+        disabledReason: st === ACCOUNT.DISABLED ? '代理已停用' : (st === ACCOUNT.NONE ? '代理待审核，账号未开通' : ''),
+        createdAt: a.createdAt || a.created || (TODAY + ' 09:00'),
+        updatedAt: a.createdAt || a.created || (TODAY + ' 09:00')
+      };
+      d.users.push(u);
+      a.accountId = u.id;
+    });
+
+    d.parents.forEach(function (p) {
+      p.accountId = p.accountId || '';
+      p.roleCode = 'parent';
+      var acc = d.users.filter(function (u) { return u.profileType === 'parent' && u.profileId === p.id; })[0];
+      if (acc) { p.accountId = acc.id; acc.roleCode = 'parent'; acc.roleId = 'parent'; return; }
+      var st = accountStatusByProfile('parent', p);
+      var u = {
+        id: nextAccountId(), loginName: p.phone || p.id, username: p.phone || p.id, phone: p.phone || '',
+        passwordHash: '', mustChangePassword: true, status: st,
+        roleCode: 'parent', roleId: 'parent', profileType: 'parent', profileId: p.id,
+        parentId: p.id, teacherId: '', lastLoginAt: '',
+        disabledReason: st === ACCOUNT.DISABLED ? '家长账号已停用' : '',
+        createdAt: TODAY + ' 09:00', updatedAt: TODAY + ' 09:00'
+      };
+      d.users.push(u);
+      p.accountId = u.id;
+    });
+
+    d.teachers.forEach(function (t) {
+      var u = t.accountId ? d.users.filter(function (x) { return x.id === t.accountId; })[0] : null;
+      if (!u) {
+        u = d.users.filter(function (x) { return x.profileType === 'teacher' && x.profileId === t.id; })[0];
+        if (u) t.accountId = u.id;
+      }
+      if (u) {
+        u.profileType = 'teacher'; u.profileId = t.id; u.teacherId = t.id;
+        u.roleCode = 'teacher'; u.roleId = 'teacher';
+      }
+    });
+
+    /* 角色与权限 */
+    ROLE_SEED.forEach(function (r, i) {
+      var role = d.roles.filter(function (x) { return x.code === r.code; })[0];
+      if (!role) {
+        role = {
+          id: 'R' + pad(i + 1, 3), code: r.code, name: r.name, description: r.description,
+          dataScope: r.dataScope, system: true, status: '启用',
+          createdAt: TODAY + ' 09:00', updatedAt: TODAY + ' 09:00'
+        };
+        d.roles.push(role);
+      }
+      role.dataScope = role.dataScope || r.dataScope;
+      role.status = role.status || '启用';
+    });
+
+    PERMISSION_SEED.forEach(function (p, i) {
+      if (d.permissions.some(function (x) { return x.code === p[0]; })) return;
+      d.permissions.push({
+        id: 'P' + pad(i + 1, 3), code: p[0], module: p[1], name: p[2],
+        description: p[3], type: p[4] || 'action', status: '启用'
+      });
+    });
+
+    var permByCode = {};
+    d.permissions.forEach(function (p) { permByCode[p.code] = p; });
+    d.roles.forEach(function (role) {
+      var def = DEFAULT_PERM[role.code] || { codes: [], dataScope: role.dataScope || 'ALL' };
+      d.permissions.forEach(function (p) {
+        var exists = d.rolePermissions.filter(function (rp) {
+          return rp.roleCode === role.code && rp.permissionCode === p.code;
+        })[0];
+        if (exists) { exists.roleId = role.id; return; }
+        var enabled = !!def.all || (def.codes || []).indexOf(p.code) >= 0;
+        d.rolePermissions.push({
+          id: 'RP-' + role.code + '-' + p.code, roleId: role.id, roleCode: role.code,
+          permissionId: p.id, permissionCode: p.code, enabled: enabled,
+          dataScope: def.dataScope || role.dataScope || 'ALL',
+          updatedAt: TODAY + ' 09:00', updatedBy: 'system'
+        });
+      });
+      if (!def.all && role.code !== 'admin') {
+        var first = d.rolePermissions.filter(function (rp) { return rp.roleCode === role.code; })[0];
+        if (first && !role.dataScope) role.dataScope = first.dataScope;
+      }
+    });
+
+    /* 字典：类型 + 选项；只补缺失，历史选项保留 */
+    DICT_TYPE_SEED.forEach(function (t) {
+      if (d.dictionaryTypes.some(function (x) { return x.code === t.code; })) return;
+      d.dictionaryTypes.push({
+        id: 'DT' + pad(d.dictionaryTypes.length + 1, 3), code: t.code, name: t.name,
+        description: t.description, status: '启用', createdAt: TODAY + ' 09:00'
+      });
+    });
+    var dictSeq = maxNum(d.dictionaryItems, /^DI(\d+)$/);
+    Object.keys(DICT_ITEM_SEED).forEach(function (typeCode) {
+      DICT_ITEM_SEED[typeCode].forEach(function (label) {
+        var exists = d.dictionaryItems.filter(function (x) {
+          return x.typeCode === typeCode && x.label === label;
+        })[0];
+        if (exists) return;
+        dictSeq++;
+        d.dictionaryItems.push({
+          id: 'DI' + pad(dictSeq, 3), typeCode: typeCode, label: label,
+          value: label, sort: dictSeq, status: '启用', remark: '',
+          createdAt: TODAY + ' 09:00', updatedAt: TODAY + ' 09:00'
+        });
+      });
+    });
+    d.meta.seq.DI = Math.max(d.meta.seq.DI || 0, dictSeq);
+    d.meta.seq.UA = Math.max(d.meta.seq.UA || 0, maxNum(d.users, /^UA(\d+)$/));
+    d.meta.seq.R = Math.max(d.meta.seq.R || 0, maxNum(d.roles, /^R(\d+)$/));
+
+    /* 通知规则 */
+    NOTIFY_RULE_SEED.forEach(function (r, i) {
+      if (d.notificationRules.some(function (x) {
+        return x.event === r.event && x.receiverRole === r.role;
+      })) return;
+      d.notificationRules.push({
+        id: 'NR' + pad(i + 1, 3), event: r.event, name: r.name,
+        receiverRole: r.role, titleTemplate: r.title, contentTemplate: r.content,
+        businessType: r.business, enabled: true, channels: ['站内信'],
+        createdAt: TODAY + ' 09:00', updatedAt: TODAY + ' 09:00'
+      });
+    });
+    d.meta.seq.NR = Math.max(d.meta.seq.NR || 0, d.notificationRules.length);
+    var ntSeq = maxNum(d.notifications, /^NT(\d+)$/);
+    d.meta.seq.NT = Math.max(d.meta.seq.NT || 0, ntSeq);
+    var audSeq = maxNum(d.auditLogs, /^AUD(\d+)$/);
+    d.meta.seq.audit = Math.max(d.meta.seq.audit || 0, audSeq);
+
+    /* 机构设置：只补默认值 */
+    Object.keys(ORG_SEED).forEach(function (k) {
+      if (d.organization[k] === undefined) d.organization[k] = ORG_SEED[k];
+    });
+    d.organization.updatedAt = d.organization.updatedAt || (TODAY + ' 09:00');
+    d.organization.updatedBy = d.organization.updatedBy || 'system';
+
+    /* 账号状态与教师档案互指：未开通账号不自动创建 */
+    d.teachers.forEach(function (t) {
+      if (t.accountId && !d.users.some(function (u) { return u.id === t.accountId; })) t.accountId = '';
+    });
+    return d;
   }
 
   /* ---------------- 数据规范化 ----------------
@@ -1520,6 +2048,7 @@
     d.flows = d.flows || [];
     /* ---- 第七轮加固域：关系 / 争议 / 收款登记 / 退款 ---- */
     d.parentStudents = d.parentStudents || [];
+    d.parentInquiries = d.parentInquiries || [];
     d.leadDisputes = d.leadDisputes || [];
     d.paymentRegistrations = d.paymentRegistrations || [];
     d.refundRequests = d.refundRequests || [];
@@ -1655,6 +2184,9 @@
     d.learningFeedbacks.forEach(function (f) {
       f.status = f.status === '草稿' ? '草稿' : '已发布';
       if (f.visibleToAgent === undefined) f.visibleToAgent = true;
+      /* 可见性拆分兼容：历史已发布反馈默认对家长可见，不因新增字段而消失 */
+      if (f.visibleToParent === undefined) f.visibleToParent = f.status === '已发布';
+      if (f.homeworkAdvice === undefined) f.homeworkAdvice = '';
       f.createdAt = f.createdAt || (TODAY + ' 09:00');
       f.publishedAt = f.publishedAt || (f.status === '已发布' ? f.createdAt : '');
     });
@@ -2152,6 +2684,70 @@
       if (!t.status) t.status = STATUS.PENDING;
       delete t.submitted;                    // 由 status 表达，不再保留布尔
       t.courseId = t.courseId || '';
+
+      /* ---- 第九轮：多词库动态训练任务的加法字段 ----
+         旧任务（单个 wordbookId）原样可用：wordbookIds 由 wordbookId 反推，
+         展示流标记 displayFlow=false 表示走历史的「逐词判断」记录方式，
+         历史 trainDetails 的读取与统计能力全部保留。 */
+      if (!Array.isArray(t.wordbookIds)) t.wordbookIds = t.wordbookId ? [t.wordbookId] : [];
+      if (!t.wordbookId && t.wordbookIds.length) t.wordbookId = t.wordbookIds[0];
+      if (!t.currentWordbookId) t.currentWordbookId = t.wordbookIds[0] || '';
+      if (typeof t.displayFlow !== 'boolean') t.displayFlow = false;
+      if (!Array.isArray(t.wordIds)) t.wordIds = [];
+      if (!Array.isArray(t.candidateWordIds)) {
+        /* 旧任务没有独立候选集合：不认识且已作答的词即候选 */
+        t.candidateWordIds = (t.wordIds || []).filter(function (id) {
+          return t.prescreen && t.prescreen[id] && !t.prescreen[id].known;
+        });
+      }
+      if (!Array.isArray(t.knownWordIds)) t.knownWordIds = [];
+      if (!Array.isArray(t.queueWordIds)) t.queueWordIds = [];
+      if (!Array.isArray(t.remainWordIds)) t.remainWordIds = [];
+      if (!t.prescreen || typeof t.prescreen !== 'object') t.prescreen = {};
+      if (!t.prescreenStats || typeof t.prescreenStats !== 'object') t.prescreenStats = null;
+      if (t.prescreenCompletedAt === undefined) t.prescreenCompletedAt = t.phase === '预筛选' ? null : (t.createdAt || null);
+      if (typeof t.targetCount !== 'number' || !(t.targetCount > 0)) {
+        t.targetCount = Math.min(TARGET_RANGE.max, Math.max(TARGET_RANGE.min, (t.queueWordIds || []).length || TARGET_RANGE.def));
+      }
+      if (!t.groupSize) t.groupSize = TRAIN_GROUP_SIZE;
+      if (!t.groupIndex) t.groupIndex = 0;
+      if (!t.results || typeof t.results !== 'object') t.results = {};
+      if (!t.finalResults || typeof t.finalResults !== 'object') t.finalResults = {};
+      if (!t.joins) t.joins = { leitner: [], plan21: [], planIds: [], green: [] };
+      /* wordbookName 是旧页面的展示字段，多词库时给一个稳定的摘要 */
+      if (!t.wordbookName) {
+        var nb = (t.wordbookIds || []).map(function (id) {
+          var b = d.wordbooks.filter(function (x) { return x.id === id; })[0];
+          return b ? b.name : '';
+        }).filter(Boolean);
+        t.wordbookName = nb.length > 1 ? nb[0] + ' 等 ' + nb.length + ' 个词库' : (nb[0] || '未指定词库');
+      }
+    });
+
+    /* 展示进度记录（第九轮新表）：只记录教师带读了几轮，不产生掌握判断 */
+    d.trainDisplays = d.trainDisplays || [];
+    d.trainDisplays.forEach(function (x) {
+      x.displayStep = Math.max(0, Math.min(DISPLAY_STEP.DONE, Number(x.displayStep) || 0));
+      x.cycleCompleted = !!x.cycleCompleted || x.displayStep >= DISPLAY_STEP.DONE;
+      x.groupIndex = Number(x.groupIndex) || 0;
+      x.updatedAt = x.updatedAt || x.at || '';
+      x.taps = Number(x.taps) || x.displayStep;
+      delete x.at;
+    });
+    d.meta.seq.TDP = Math.max(d.meta.seq.TDP || 0, d.trainDisplays.length);
+
+    /* 学员单词档案：补上独立的初筛状态（不改变已有 state / prescreenKnown 语义） */
+    d.studentWordStates = d.studentWordStates || [];
+    d.studentWordStates.forEach(function (s) {
+      if (s.prescreenKnown === undefined) s.prescreenKnown = null;
+      if (s.screeningStatus === undefined) {
+        s.screeningStatus = s.prescreenKnown === true ? SCREEN.KNOWN
+          : s.prescreenKnown === false ? SCREEN.UNKNOWN : SCREEN.NONE;
+      }
+      if (s.screeningStatus && [SCREEN.KNOWN, SCREEN.UNKNOWN].indexOf(s.screeningStatus) < 0) s.screeningStatus = SCREEN.NONE;
+      if (s.screenedKnownAt === undefined) s.screenedKnownAt = null;
+      if (s.screenedKnownBy === undefined) s.screenedKnownBy = '';
+      if (s.screeningSourceTaskId === undefined) s.screeningSourceTaskId = null;
     });
 
     /* 莱特纳任务 */
@@ -2223,6 +2819,7 @@
       }
     });
 
+    ensureSystemData(d);
     return d;
   }
 
@@ -2247,6 +2844,70 @@
     'payments', 'orderLogs', 'renewalOpportunities', 'learningFeedbacks'];
 
   /**
+   * v8 → v9 一次性迁移（系统管理域）。
+   * v9 新增账号统一字段、角色/权限、审计日志、字典、通知规则与机构设置；
+   * 原有集合原样搬运，新集合用种子补齐。无论成功失败都不删除 ee_proto_store_v8，
+   * 失败时在 meta.migration 写入原因，页面据此提示并保留旧 key 作为备份。
+   */
+  function loadLegacyV8() {
+    var raw = null;
+    try { raw = SS.getItem(LEGACY_KEY_V8); } catch (e) { return null; }
+    if (!raw) return null;
+    var old;
+    try { old = JSON.parse(raw); } catch (e) { old = null; }
+    if (!old || typeof old !== 'object') {
+      try { console.warn('[Store] ' + LEGACY_KEY_V8 + ' 无法解析，已保留原始数据作为备份，演示数据重置为 v9 种子'); } catch (e) { }
+      var bad = normalizeDb(buildSeed());
+      bad.meta.migration = {
+        from: 'v8', to: 'v9', at: stamp(), ok: false,
+        reason: 'v8 数据无法解析',
+        strategy: '迁移失败，未修改旧 key，演示数据已重置为 v9 种子',
+        carried: [], seeded: [], backupKey: LEGACY_KEY_V8
+      };
+      return bad;
+    }
+    try {
+      var seed = buildSeed();
+      var out = normalizeDb(seed);
+      var moved = [], reset = [];
+      Object.keys(seed).forEach(function (k) {
+        if (!Array.isArray(seed[k])) return;
+        if (!Array.isArray(old[k])) { reset.push(k); return; }
+        out[k] = clone(old[k]);
+        moved.push(k);
+      });
+      /* 计数器取两侧最大值，避免迁移后新建单据与历史编号冲突 */
+      var oldSeq = (old.meta && old.meta.seq) || {};
+      Object.keys(oldSeq).forEach(function (k) {
+        var n = Number(oldSeq[k]);
+        if (!isFinite(n)) return;
+        out.meta.seq[k] = Math.max(Number(out.meta.seq[k] || 0), n);
+      });
+      out.version = VERSION;
+      out.meta.migration = {
+        from: 'v8', to: 'v9', at: stamp(), ok: true,
+        strategy: '按集合搬运 + 系统管理新表用种子补齐；v8 原始数据保留在 ' + LEGACY_KEY_V8,
+        carried: moved, seeded: reset, backupKey: LEGACY_KEY_V8
+      };
+      try {
+        console.info('[Store] 已从 v8 迁移本地演示数据：保留 ' + moved.length + ' 个集合，' +
+          reset.length + ' 个集合用种子补齐；' + LEGACY_KEY_V8 + ' 已保留为备份');
+      } catch (e) { }
+      return normalizeDb(out);
+    } catch (e) {
+      try { console.warn('[Store] v8 迁移失败，已保留 ' + LEGACY_KEY_V8 + ' 原始数据，演示数据已重置：' + e.message); } catch (x) { }
+      var fail = normalizeDb(buildSeed());
+      fail.meta.migration = {
+        from: 'v8', to: 'v9', at: stamp(), ok: false,
+        reason: String(e && e.message || e),
+        strategy: '迁移失败，未修改旧 key，演示数据已重置为 v9 种子',
+        carried: [], seeded: [], backupKey: LEGACY_KEY_V8
+      };
+      return fail;
+    }
+  }
+
+  /**
    * v7 → v8 一次性迁移。
    * v8 在 v7 的基础上新增代理/线索/订单/收款/续费/学习反馈六组表，
    * 原有学习域集合结构不变，因此按集合原样搬运，新表用种子补齐。
@@ -2263,9 +2924,9 @@
       try { console.warn('[Store] ' + LEGACY_KEY_V7 + ' 无法解析，已保留原始数据作为备份，演示数据重置为 v8 种子'); } catch (e) { }
       var bad = normalizeDb(buildSeed());
       bad.meta.migration = {
-        from: 'v7', to: 'v8', at: stamp(), ok: false,
+        from: 'v7', to: 'v9', at: stamp(), ok: false,
         reason: 'v7 数据无法解析',
-        strategy: '迁移失败，未修改旧 key，演示数据已重置为 v8 种子',
+        strategy: '迁移失败，未修改旧 key，演示数据已重置为 v9 种子',
         carried: [], seeded: [], backupKey: LEGACY_KEY_V7
       };
       return bad;
@@ -2282,7 +2943,7 @@
       out.version = VERSION;
       out.meta = out.meta || {};
       out.meta.migration = {
-        from: 'v7', to: 'v8', at: stamp(), ok: true,
+        from: 'v7', to: 'v9', at: stamp(), ok: true,
         strategy: '按集合搬运 + 新表用种子补齐；v7 原始数据保留在 ' + LEGACY_KEY_V7,
         carried: moved, seeded: reset, backupKey: LEGACY_KEY_V7
       };
@@ -2296,9 +2957,9 @@
       try { console.warn('[Store] v7 迁移失败，已保留 ' + LEGACY_KEY_V7 + ' 原始数据，演示数据已重置：' + e.message); } catch (x) { }
       var bad = normalizeDb(buildSeed());
       bad.meta.migration = {
-        from: 'v7', to: 'v8', at: stamp(), ok: false,
+        from: 'v7', to: 'v9', at: stamp(), ok: false,
         reason: String(e && e.message || e),
-        strategy: '迁移失败，未修改旧 key，演示数据已重置为 v8 种子',
+        strategy: '迁移失败，未修改旧 key，演示数据已重置为 v9 种子',
         carried: [], seeded: [], backupKey: LEGACY_KEY_V7
       };
       return bad;
@@ -2329,7 +2990,7 @@
     out.version = VERSION;
     out.meta = out.meta || {};
     out.meta.migration = {
-      from: 'v6', to: 'v8', at: stamp(), ok: true,
+      from: 'v6', to: 'v9', at: stamp(), ok: true,
       strategy: '按集合搬运 + 缺失集合用种子补齐；v6 原始数据保留在 ' + LEGACY_KEY,
       carried: moved, seeded: reset, backupKey: LEGACY_KEY
     };
@@ -2352,6 +3013,8 @@
         }
       }
     } catch (e) { /* 损坏则重建 */ }
+    var legacyV8 = loadLegacyV8();
+    if (legacyV8) { db = legacyV8; save(); return db; }
     var legacyV7 = loadLegacyV7();
     if (legacyV7) { db = legacyV7; save(); return db; }
     var legacy = loadLegacyV6();
@@ -2475,6 +3138,14 @@
   }
 
   function tasksOf(studentId) {
+    if (session.role === 'teacher') assertMyStudent(studentId);
+    else if (session.role === 'parent') {
+      if (!parentHasStudent(session.parentId, studentId)) {
+        throw bizError('FORBIDDEN', '家长只能查看自己孩子的学习记录');
+      }
+    } else if (session.role === 'agent' && !hasDataAccess('', 'student', studentId)) {
+      throw bizError('FORBIDDEN', '代理只能查看自己客户的学员');
+    }
     return db.trainTasks.filter(function (t) { return t.studentId === studentId; })
       .sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
   }
@@ -2509,6 +3180,14 @@
       courseId: opt.courseId || '',
       wordbookId: bk.id,
       wordbookName: bk.name,
+      /* 第九轮加法字段：旧接口创建的仍是「单库 + 逐词判断」历史流程 */
+      wordbookIds: [bk.id],
+      currentWordbookId: bk.id,
+      targetCount: db.config.trainCap,
+      displayFlow: false,
+      candidateWordIds: [],
+      prescreenStats: null,
+      prescreenCompletedAt: null,
       createdAt: stamp(),
       status: STATUS.PENDING,     // 统一状态：已创建但还没有任何教学动作
       phase: '预筛选',             // 模块内阶段（预筛选 / 强化训练 / 最后复习 / 已提交）
@@ -2534,75 +3213,449 @@
     return t;
   }
 
-  /** 逐词保存预筛选结果（认识 / 不认识 必须显式作答） */
-  function prescreenAnswer(taskId, wordId, known) {
+  /* ============================================================
+     多词库动态训练任务（第九轮）
+     ------------------------------------------------------------
+     词库只是单词来源，不是训练任务的边界：
+       一个任务 = 学员 + 授课教师 + 关联课程 + 目标数量
+                + 若干词库来源 + 唯一的候选单词集合 + 唯一训练队列。
+     跨词库去重按基础 Word ID，不按词库关联记录。
+     旧接口 startTrainTask 保留（单库、45 上限、历史逐词判断流程），
+     历史任务因此永远能打开；新流程走 displayFlow：
+       初筛（列表）→ 五词一组展示循环 → 列表式最后复习。
+     ============================================================ */
+
+  /** 词库摘要名：1 个用名字，多个用「A 等 N 个词库」 */
+  function bookLabel(t) {
+    var names = (t.wordbookIds || []).map(function (id) {
+      var b = wordbook(id);
+      return b ? b.name : '';
+    }).filter(Boolean);
+    if (!names.length) return '未指定词库';
+    return names.length > 1 ? names[0] + ' 等 ' + names.length + ' 个词库' : names[0];
+  }
+
+  function wordbooksOfTask(t) {
+    return (t.wordbookIds || []).map(function (id) { return wordbook(id); }).filter(Boolean);
+  }
+
+  /** 该单词在本次任务里属于哪个词库（取第一个命中的来源词库） */
+  function bookOfWordInTask(t, wordId) {
+    var ids = t.wordbookIds || [];
+    for (var i = 0; i < ids.length; i++) {
+      var hit = db.wordbookWords.some(function (x) {
+        return x.wordbookId === ids[i] && x.wordId === wordId;
+      });
+      if (hit) return ids[i];
+    }
+    return '';
+  }
+
+  /**
+   * 学员是否已被标记为「初筛认识」
+   * 必须看独立的 screeningStatus，不能只看 box === 'green'：
+   * 教师手动加入绿盒、最后复习不认识放进绿盒，都不等于初筛认识。
+   */
+  function isScreenedKnown(studentId, wordId) {
+    var st = wordState(studentId, wordId);
+    return !!st && st.screeningStatus === SCREEN.KNOWN;
+  }
+
+  /** 同一单词是否已被别的未完成任务占用（只做提示，不阻断新任务） */
+  function openTaskOfWord(studentId, wordId, exceptTaskId) {
+    return db.trainTasks.filter(function (t) {
+      return t.studentId === studentId && t.id !== exceptTaskId && isOpen(t.status)
+        && (t.queueWordIds || []).indexOf(wordId) >= 0;
+    })[0] || null;
+  }
+
+  /**
+   * 创建训练任务（多词库动态训练）
+   * @param {{studentId, teacherId, courseId?, targetCount?}} opt
+   * 同一学员同时只允许一个未完成任务：避免同一批单词被两个任务并行处理
+   */
+  function createTrainTask(opt) {
+    opt = opt || {};
+    var stu = student(opt.studentId);
+    if (!stu) throw bizError('STUDENT_NOT_FOUND', '学员不存在');
+    var teacherId = opt.teacherId || sessionTeacherId();
+    if (session.role === 'teacher') {
+      if (!teacherId) throw bizError('FORBIDDEN', '教师训练任务必须绑定当前登录教师');
+      assertMyStudent(opt.studentId);
+    }
+
+    var target = Number(opt.targetCount);
+    if (!target) target = TARGET_RANGE.def;
+    if (target < TARGET_RANGE.min || target > TARGET_RANGE.max) {
+      throw bizError('TARGET_OUT_OF_RANGE',
+        '训练目标数量需在 ' + TARGET_RANGE.min + ' – ' + TARGET_RANGE.max + ' 之间');
+    }
+
+    var open = db.trainTasks.filter(function (t) {
+      return t.studentId === opt.studentId && isOpen(t.status);
+    }).sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; })[0];
+    if (open) return { ok: true, reused: true, task: open };
+
+    var t = {
+      id: 'TR' + TODAY.replace(/-/g, '') + seq('TR', 2),
+      studentId: opt.studentId,
+      teacherId: teacherId || '',
+      courseId: opt.courseId || '',
+      wordbookIds: [],
+      wordbookId: '',
+      wordbookName: '未指定词库',
+      currentWordbookId: '',
+      targetCount: target,
+      groupSize: TRAIN_GROUP_SIZE,
+      displayFlow: true,
+      createdAt: stamp(),
+      status: STATUS.PENDING,
+      phase: PHASE.PRESCREEN,
+      wordIds: [],              // 候选池：已关联词库的全部单词（按 Word ID 去重）
+      candidateWordIds: [],     // 初筛不认识的唯一候选集合
+      knownWordIds: [],         // 初筛认识
+      queueWordIds: [],         // 最终强化训练队列
+      remainWordIds: [],        // 超出目标数量、保留待训练的候选
+      prescreen: {},            // wordId -> {known, at, by, wordbookId}
+      prescreenStats: { target: target, pool: 0, known: 0, unknown: 0, screened: 0, unscreened: 0, updatedAt: stamp() },
+      prescreenCompletedAt: null,
+      groupIndex: 0,
+      wordIndex: 0,
+      results: {},              // 历史字段：displayFlow 任务不再写入掌握判断
+      finalResults: {},
+      finalIndex: 0,
+      mode: 'en2cn',
+      pausedAt: null,
+      finishedAt: null,
+      interruptReason: '',
+      joins: { leitner: [], plan21: [], planIds: [], green: [] }
+    };
+    db.trainTasks.push(t);
+    save();
+    return { ok: true, reused: false, task: t };
+  }
+
+  /**
+   * 给任务追加词库来源（可多次调用，逐词补足目标数量）
+   * @returns {{ok:boolean, added:Array, skipped:Array, task, pool:number}}
+   */  /** 调整目标训练数量（只在初筛阶段允许，进入强化训练后锁定） */
+  function setTrainTarget(taskId, count) {
     var t = trainTask(taskId);
-    if (!t) throw new Error('任务不存在');
-    if (t.phase !== '预筛选') throw new Error('当前阶段不允许修改预筛选结果');
-    if (isDone(t.status)) throw new Error('任务已提交，不能修改预筛选结果');
-    if (t.status === STATUS.CANCELLED) throw new Error('任务已取消，不能继续操作');
+    if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    if (t.phase !== PHASE.PRESCREEN) {
+      throw bizError('PHASE_LOCKED', '已经进入「' + t.phase + '」，训练目标不能再修改');
+    }
+    if (isDone(t.status) || t.status === STATUS.CANCELLED) {
+      throw bizError('TASK_CLOSED', '任务已结束，不能修改训练目标');
+    }
+    var n = Number(count);
+    if (!n || n < TARGET_RANGE.min || n > TARGET_RANGE.max) {
+      throw bizError('TARGET_OUT_OF_RANGE',
+        '训练目标数量需在 ' + TARGET_RANGE.min + ' – ' + TARGET_RANGE.max + ' 之间');
+    }
+    t.targetCount = Math.round(n);
+    recomputeCandidates(t);
+    save();
+    return { ok: true, task: t, stat: prescreenTaskStat(taskId) };
+  }
+
+  function addWordbooksToTask(taskId, bookIds) {
+    var t = trainTask(taskId);
+    if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    if (isDone(t.status)) throw bizError('TASK_DONE', '任务已提交，不能再添加词库');
+    if (t.status === STATUS.CANCELLED) throw bizError('TASK_CANCELLED', '任务已取消，不能继续添加词库');
+    if (t.phase !== PHASE.PRESCREEN) {
+      throw bizError('PHASE_LOCKED', '已经进入「' + t.phase + '」，不能再添加词库或修改初筛范围');
+    }
+    var added = [], skipped = [];
+    (bookIds || []).forEach(function (bid) {
+      var b = wordbook(bid);
+      if (!b) { skipped.push({ id: bid, name: '', reason: '词库不存在' }); return; }
+      if (b.status !== '启用') { skipped.push({ id: bid, name: b.name, reason: '词库已停用' }); return; }
+      if (!bookLinkCount(b.id)) { skipped.push({ id: bid, name: b.name, reason: '该词库还没有单词' }); return; }
+      if ((t.wordbookIds || []).indexOf(bid) >= 0) { skipped.push({ id: bid, name: b.name, reason: '已经在本次任务中' }); return; }
+      if (session.role === 'teacher' && !isAuthorized(t.studentId, b.id)) {
+        skipped.push({ id: bid, name: b.name, reason: '学员没有该词库的有效授权' });
+        return;
+      }
+      var ws = wordsOfBook(b.id);
+      t.wordbookIds = t.wordbookIds || [];
+      t.wordbookIds.push(bid);
+      ws.forEach(function (w) { if (t.wordIds.indexOf(w.id) < 0) t.wordIds.push(w.id); });
+      added.push({ id: bid, name: b.name, words: ws.length });
+    });
+    if (added.length) {
+      t.wordbookId = t.wordbookIds[0];
+      t.currentWordbookId = added[0].id;
+      t.wordbookName = bookLabel(t);
+      t.updatedAt = stamp();
+    }
+    save();
+    return { ok: added.length > 0, added: added, skipped: skipped, task: t, pool: (t.wordIds || []).length };
+  }
+
+  /**
+   * 可筛选 / 已筛选的单词清单（列表式预筛选的数据源）
+   * 自动排除：历史初筛已认识、无效授权词库、不在本次候选池的单词。
+   * @param {string} taskId
+   * @param {{wordbookId?:string, all?:boolean}} opt
+   */
+  function prescreenCandidates(taskId, opt) {
+    opt = opt || {};
+    var t = trainTask(taskId);
+    if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    var bookId = opt.wordbookId || t.currentWordbookId || (t.wordbookIds || [])[0] || '';
+    var books = opt.all ? wordbooksOfTask(t) : [wordbook(bookId)].filter(Boolean);
+    var out = [];
+    books.forEach(function (b) {
+      wordsOfBook(b.id).forEach(function (w) {
+        if ((t.wordIds || []).indexOf(w.id) < 0) return;
+        var p = t.prescreen[w.id] || null;
+        var knownBefore = isScreenedKnown(t.studentId, w.id);
+        var conflict = openTaskOfWord(t.studentId, w.id, t.id);
+        out.push({
+          id: w.id, en: w.en, ph: w.ph, mean: w.mean, pos: w.pos, audio: w.audio,
+          wordbookId: b.id, wordbookName: b.name,
+          screened: p,
+          status: p ? (p.known ? SCREEN.KNOWN : SCREEN.UNKNOWN)
+            : knownBefore ? SCREEN.KNOWN : SCREEN.NONE,
+          knownBefore: knownBefore && !p,
+          excluded: knownBefore && !p,          // 历史已初筛认识：本次直接排除，不再重复筛
+          conflictTaskId: conflict ? conflict.id : ''
+        });
+      });
+    });
+    return out;
+  }
+
+  /** 任务级 + 词库级初筛统计（顶部统计与「还差多少个」都读这里） */
+  function prescreenTaskStat(taskId) {
+    var t = trainTask(taskId);
+    if (!t) return null;
+    var pool = (t.wordIds || []).slice();
+    var known = [], unknown = [], unscreened = [], excluded = [];
+    pool.forEach(function (id) {
+      var p = t.prescreen[id];
+      if (p) { (p.known ? known : unknown).push(id); return; }
+      if (isScreenedKnown(t.studentId, id)) { excluded.push(id); return; }
+      unscreened.push(id);
+    });
+    var target = t.targetCount || TARGET_RANGE.def;
+    var byBook = {};
+    wordbooksOfTask(t).forEach(function (b) {
+      byBook[b.id] = { id: b.id, name: b.name, total: 0, known: 0, unknown: 0, screened: 0, unscreened: 0, excluded: 0 };
+    });
+    pool.forEach(function (id) {
+      var bid = bookOfWordInTask(t, id);
+      var row = byBook[bid];
+      if (!row) return;
+      row.total++;
+      var p = t.prescreen[id];
+      if (p) { row.screened++; if (p.known) row.known++; else row.unknown++; }
+      else if (isScreenedKnown(t.studentId, id)) row.excluded++;
+      else row.unscreened++;
+    });
+    return {
+      taskId: taskId, phase: t.phase, status: t.status,
+      target: target, pool: pool.length,
+      known: known.length, unknown: unknown.length,
+      unscreened: unscreened.length, excluded: excluded.length,
+      screened: known.length + unknown.length,
+      needMore: Math.max(0, target - unknown.length),
+      reached: unknown.length >= target,
+      byBook: byBook
+    };
+  }
+
+  /** 由 prescreen 结果重算候选集合与统计（唯一候选按 Word ID 去重） */
+  function recomputeCandidates(t) {
+    var known = [], unknown = [];
+    (t.wordIds || []).forEach(function (id) {
+      var p = t.prescreen[id];
+      if (!p) return;
+      (p.known ? known : unknown).push(id);
+    });
+    t.knownWordIds = known;
+    t.candidateWordIds = unknown;
+    t.prescreenStats = {
+      target: t.targetCount,
+      pool: (t.wordIds || []).length,
+      known: known.length, unknown: unknown.length,
+      screened: known.length + unknown.length,
+      unscreened: (t.wordIds || []).length - known.length - unknown.length,
+      updatedAt: stamp()
+    };
+  }
+
+  /** 撤销「初筛认识」：只撤自己这次初筛加进绿盒的记录，教师手动加入的绿盒保持不动 */
+  function revokeScreeningKnown(studentId, wordId, taskId, reason, by) {
+    var st = wordState(studentId, wordId);
+    if (!st || st.screeningStatus !== SCREEN.KNOWN) return null;
+    var ls = leitnerState(studentId, wordId);
+    if (ls && ls.box === 'green' && ls.source === SCREEN_SOURCE.PRESCREEN && (!ls.sourceTaskId || ls.sourceTaskId === taskId)) {
+      db.leitnerStates = db.leitnerStates.filter(function (x) { return x !== ls; });
+      logOp(studentId, wordId, '撤销初筛认识', 'green', null,
+        reason || '初筛误判修正', by, taskId);
+    } else if (ls) {
+      logOp(studentId, wordId, '初筛误判修正', ls.box, ls.box,
+        reason || '初筛误判修正（绿盒由教师手动管理，不自动移出）', by, taskId);
+    }
+    save();
+    return st;
+  }
+
+  /**
+   * 逐词保存初筛结果
+   * · 首次判断：认识 → 立即进绿盒并写 screeningStatus；不认识 → 进候选队列
+   * · 修正误判：必须填写原因，追加一条带 correction 的记录，原始记录保留
+   */
+  function prescreenAnswer(taskId, wordId, known, opt) {
+    opt = opt || {};
+    var t = trainTask(taskId);
+    if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    if (t.phase !== PHASE.PRESCREEN) {
+      throw bizError('PHASE_LOCKED', '当前阶段是「' + t.phase + '」，不能再修改初筛结果');
+    }
+    if (isDone(t.status)) throw bizError('TASK_DONE', '任务已提交，不能修改初筛结果');
+    if (t.status === STATUS.CANCELLED) throw bizError('TASK_CANCELLED', '任务已取消，不能继续操作');
+    if ((t.wordIds || []).indexOf(wordId) < 0) {
+      throw bizError('WORD_NOT_IN_TASK', '该单词不属于本次训练任务，不能提交判断');
+    }
+    known = !!known;
+    var prev = t.prescreen[wordId] || null;
+    if (prev && prev.known === known) {
+      return { ok: true, unchanged: true, corrected: false, task: t, stat: prescreenTaskStat(taskId) };
+    }
+    var reason = String(opt.reason || '').trim();
+    if (prev && !reason) {
+      throw bizError('REASON_REQUIRED', '修改已经提交的初筛结果必须填写原因');
+    }
     var at = stamp();
-    t.prescreen[wordId] = { known: !!known, at: at };
-    if (t.status === STATUS.PENDING || t.status === STATUS.INTERRUPTED) t.status = STATUS.ACTIVE;
-    // 预筛选记录独立成表（任务级 + 学员级都能追溯）
+    var by = t.teacherId || sessionTeacherId() || '';
+    var bid = bookOfWordInTask(t, wordId);
+    t.prescreen[wordId] = { known: known, at: at, by: by, wordbookId: bid };
+
     db.prescreens.push({
       id: 'PS' + seq('PR', 4),
-      taskId: taskId, studentId: t.studentId, wordbookId: t.wordbookId,
-      wordId: wordId, known: !!known, at: at, teacherId: t.teacherId,
-      courseId: t.courseId || ''
+      taskId: taskId, studentId: t.studentId, wordbookId: bid,
+      wordId: wordId, known: known, at: at, teacherId: by,
+      courseId: t.courseId || '',
+      correction: !!prev, correctionFrom: prev ? prev.known : null,
+      correctionNote: prev ? reason : ''
     });
+
     setWordState(t.studentId, wordId,
       known ? '初筛认识' : '待强化训练',
-      { prescreenKnown: !!known, lastTaskId: taskId });
+      { prescreenKnown: known, lastTaskId: taskId });
+
+    if (!known && prev && prev.known) {
+      revokeScreeningKnown(t.studentId, wordId, taskId, reason || '初筛误判修正', by);
+    }
+
+    var st = wordState(t.studentId, wordId);
+    if (st) {
+      st.screeningStatus = known ? SCREEN.KNOWN : SCREEN.UNKNOWN;
+      st.screeningSourceTaskId = taskId;
+      if (known) {
+        st.screenedKnownAt = at;
+        st.screenedKnownBy = by;
+        var tn = teacher(by) ? teacher(by).name : (by || '教师');
+        addToGreen(t.studentId, wordId,
+          '初筛认识（任务 ' + taskId + ' · ' + tn + '）', tn,
+          { source: SCREEN_SOURCE.PRESCREEN, taskId: taskId });
+      } else {
+        st.screenedKnownAt = null;
+        st.screenedKnownBy = '';
+      }
+    }
+
+    if (t.status === STATUS.PENDING || t.status === STATUS.INTERRUPTED) t.status = STATUS.ACTIVE;
+    if (!t.currentWordbookId) t.currentWordbookId = bid;
+    recomputeCandidates(t);
     save();
-    return t;
+    return { ok: true, unchanged: false, corrected: !!prev, task: t, stat: prescreenTaskStat(taskId) };
   }
 
   /**
    * 结束预筛选，生成训练队列
    * 规则：认识的单词不入队；不认识的按词库顺序取前 45 个；其余保留待训练
    */
-  function finishPrescreen(taskId) {
+  function finishPrescreen(taskId, opt) {
+    opt = opt || {};
     var t = trainTask(taskId);
-    if (!t) throw new Error('任务不存在');
+    if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    if (t.phase !== PHASE.PRESCREEN) {
+      return { ok: false, reason: 'PHASE_LOCKED', message: '任务已经进入「' + t.phase + '」，不需要重复结束预筛选' };
+    }
+    if (isDone(t.status) || t.status === STATUS.CANCELLED) {
+      return { ok: false, reason: 'TASK_CLOSED', message: '任务已结束，不能生成训练队列' };
+    }
 
-    var order = t.wordIds;
+    var order = t.wordIds || [];
     var known = [], unknown = [], unscreened = [];
     order.forEach(function (id) {
       var p = t.prescreen[id];
-      if (!p) { unscreened.push(id); return; }
+      if (!p) { if (!isScreenedKnown(t.studentId, id)) unscreened.push(id); return; }
       (p.known ? known : unknown).push(id);
     });
 
-    var cap = db.config.trainCap;
-    var queue = unknown.slice(0, cap);
-    var remain = unknown.slice(cap);
+    /* 队列永远按 Word ID 去重：同一单词属于多个词库时只训练一次 */
+    var cand = cleanWordIds(unknown);
+
+    if (!cand.length) {
+      return {
+        ok: false, reason: 'NO_CANDIDATE',
+        message: '本次还没有筛选出任何「不认识」的单词，无法生成训练队列',
+        candidate: 0, target: t.targetCount || TARGET_RANGE.def
+      };
+    }
+
+    var cap = t.displayFlow ? (t.targetCount || TARGET_RANGE.def) : db.config.trainCap;
+    var queue = cand.slice(0, cap);
+    var remain = cand.slice(cap);
+    /* 未达到目标数量时，必须由教师明确确认后才可以按实际数量开始 */
+    if (t.displayFlow && queue.length < cap && !opt.confirmShort) {
+      return {
+        ok: false, reason: 'SHORT_OF_TARGET',
+        message: '当前只筛出 ' + cand.length + ' 个不认识的单词，距离目标 ' + cap + ' 个还差 ' + (cap - cand.length) + ' 个。' +
+          '可以继续添加词库补足，也可以按实际数量开始训练。',
+        candidate: cand.length, target: cap, short: cap - cand.length, canConfirm: true
+      };
+    }
 
     t.knownWordIds = known;
     t.queueWordIds = queue;
     t.remainWordIds = remain;
+    t.candidateWordIds = cand;
     t.screenedCount = known.length + unknown.length;
     t.unscreenedWordIds = unscreened;
     t.status = STATUS.ACTIVE;
-    t.phase = '强化训练';
+    t.phase = PHASE.DISPLAY;
     t.groupIndex = 0;
     t.wordIndex = 0;
+    t.prescreenCompletedAt = stamp();
+    t.targetCount = cap;
+    recomputeCandidates(t);
 
-    // 队列内单词进入「待强化训练」，队列外仍保留待强化（不进本次）
+    // 队列内单词进入「待强化训练」，队列外仍保留待强化（不进本次，但不丢弃）
     remain.forEach(function (id) {
       setWordState(t.studentId, id, '待强化训练', { lastTaskId: taskId });
     });
     save();
 
     return {
+      ok: true,
       bookTotal: order.length,
+      pool: order.length,
       screened: known.length + unknown.length,
       unscreened: unscreened.length,
       known: known.length,
       unknown: unknown.length,
       queue: queue,
       remain: remain,
-      groups: groupsOf(queue, t.groupSize)
+      target: cap,
+      short: Math.max(0, cap - queue.length),
+      groups: groupsOf(queue, t.groupSize || TRAIN_GROUP_SIZE)
     };
   }
 
@@ -2611,6 +3664,152 @@
   }
 
   function groupsOfTask(t) { return groupsOf(t.queueWordIds || [], t.groupSize); }
+
+  /* ---------------- 强化训练：五词一组的展示循环 ----------------
+     展示进度独立成表 trainDisplays，只用 displayStep 表达「带读了几轮」：
+       1 = 显示英文，2 = 显示中文，3 = 英文与中文都隐藏并标记本轮完成。
+     强化训练阶段不产生认识 / 不认识的掌握判断（历史 trainDetails 只读保留）。 */
+
+  function trainDisplayOf(taskId, wordId) {
+    return db.trainDisplays.filter(function (d) {
+      return d.taskId === taskId && d.wordId === wordId;
+    })[0] || null;
+  }
+
+  function trainDisplaysOf(taskId) {
+    return db.trainDisplays.filter(function (d) { return d.taskId === taskId; });
+  }
+
+  function displayCompleted(taskId, wordId) {
+    var d = trainDisplayOf(taskId, wordId);
+    return !!(d && d.cycleCompleted);
+  }
+
+  /** 任务在「强化训练」阶段的完成度：按唯一 wordId 计，不看前端当前组 */
+  function displayStat(taskId) {
+    var t = trainTask(taskId);
+    if (!t) return null;
+    var q = t.queueWordIds || [];
+    var size = t.groupSize || TRAIN_GROUP_SIZE;
+    var groups = groupsOf(q, size).map(function (ids, i) {
+      var words = ids.map(function (id) {
+        var d = trainDisplayOf(taskId, id);
+        return {
+          id: id, step: d ? d.displayStep : 0,
+          stepLabel: DISPLAY_LABEL[d ? d.displayStep : 0],
+          completed: !!(d && d.cycleCompleted)
+        };
+      });
+      var done = words.filter(function (w) { return w.completed; }).length;
+      return {
+        index: i, wordIds: ids, words: words,
+        total: ids.length, done: done, allDone: done === ids.length
+      };
+    });
+    var total = q.length;
+    var done = groups.reduce(function (n, g) { return n + g.done; }, 0);
+    var current = Math.min(Math.max(t.groupIndex || 0, 0), Math.max(groups.length - 1, 0));
+    var firstOpen = -1;
+    groups.forEach(function (g) { if (firstOpen < 0 && !g.allDone) firstOpen = g.index; });
+    return {
+      taskId: taskId, total: total, done: done, remaining: total - done,
+      groupIndex: current, groupCount: groups.length,
+      groups: groups,
+      currentGroup: groups[current] || null,
+      currentComplete: !!(groups[current] && groups[current].allDone),
+      firstOpenGroup: firstOpen,
+      allDone: total > 0 && done === total,
+      corrections: db.trainDetails.filter(function (d) {
+        return d.taskId === taskId && d.correction;
+      }).length
+    };
+  }
+
+  /**
+   * 点击一次展示（英文 → 中文 → 隐藏并完成）
+   * 每个单词独立推进，不影响同组其它单词；第三次点击后不再自增。
+   */
+  function trainDisplayTap(taskId, wordId, opt) {
+    opt = opt || {};
+    var t = trainTask(taskId);
+    if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    if (isDone(t.status)) throw bizError('TASK_DONE', '任务已提交，不能再修改展示进度');
+    if (t.status === STATUS.CANCELLED) throw bizError('TASK_CANCELLED', '任务已取消，不能继续操作');
+    if (t.status === STATUS.INTERRUPTED) throw bizError('TASK_INTERRUPTED', '任务已中断，请先恢复训练再继续展示');
+    if (t.phase !== PHASE.DISPLAY) {
+      throw bizError('PHASE_LOCKED', '当前阶段是「' + t.phase + '」，不是强化训练');
+    }
+    if ((t.queueWordIds || []).indexOf(wordId) < 0) {
+      throw bizError('WORD_NOT_IN_QUEUE', '该单词不属于本次强化训练队列');
+    }
+
+    var d = trainDisplayOf(taskId, wordId);
+    if (!d) {
+      d = {
+        id: 'TDP' + seq('TDP', 4),
+        taskId: taskId, studentId: t.studentId, wordId: wordId,
+        groupIndex: Math.floor((t.queueWordIds || []).indexOf(wordId) / (t.groupSize || TRAIN_GROUP_SIZE)),
+        displayStep: 0, cycleCompleted: false, taps: 0,
+        updatedAt: stamp(), completedAt: null,
+        teacherId: t.teacherId || '', courseId: opt.courseId || t.courseId || ''
+      };
+      db.trainDisplays.push(d);
+    }
+    if (d.cycleCompleted) {
+      return { ok: true, already: true, record: d, stat: displayStat(taskId) };
+    }
+    d.displayStep = Math.min(DISPLAY_STEP.DONE, (d.displayStep || 0) + 1);
+    d.taps = (d.taps || 0) + 1;
+    d.updatedAt = stamp();
+    d.cycleCompleted = d.displayStep >= DISPLAY_STEP.DONE;
+    if (d.cycleCompleted) {
+      d.completedAt = d.updatedAt;
+      /* 「待最后复习」只是生命周期标记，不是掌握判断 */
+      setWordState(t.studentId, wordId, '待最后复习', { lastTrainAt: d.updatedAt, lastTaskId: taskId });
+    }
+    save();
+    return { ok: true, already: false, record: d, stat: displayStat(taskId) };
+  }
+
+  /** 切换当前组：向前只能一组一组走，且当前组必须 5 个单词全部完成展示 */
+  function setTrainGroup(taskId, index) {
+    var t = trainTask(taskId);
+    if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    var st = displayStat(taskId);
+    if (!st || !st.groupCount) throw bizError('NO_QUEUE', '本次任务还没有训练队列');
+    index = Number(index);
+    if (!(index >= 0 && index < st.groupCount)) throw bizError('GROUP_OUT_OF_RANGE', '组号超出范围');
+    if (index > st.groupIndex) {
+      var cur = st.groups[st.groupIndex];
+      if (cur && !cur.allDone) {
+        throw bizError('GROUP_NOT_DONE',
+          '第 ' + (st.groupIndex + 1) + ' 组还有 ' + (cur.total - cur.done) + ' 个单词未完成展示，不能进入下一组',
+          { groupIndex: st.groupIndex, missing: cur.total - cur.done });
+      }
+      if (index > st.groupIndex + 1) {
+        throw bizError('GROUP_SKIP', '不能跳过中间的组，请按顺序完成');
+      }
+    }
+    t.groupIndex = index;
+    save();
+    return { ok: true, task: t, stat: displayStat(taskId) };
+  }
+
+  /** 强化训练是否全部完成（Store 层判断，不依赖前端当前组） */
+  function finishDisplay(taskId) {
+    var t = trainTask(taskId);
+    if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    var st = displayStat(taskId);
+    if (!st) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    var missing = (st.groups || []).reduce(function (arr, g) {
+      g.words.forEach(function (w) { if (!w.completed) arr.push(w.id); });
+      return arr;
+    }, []);
+    if (missing.length) {
+      return { ok: false, reason: 'DISPLAY_NOT_DONE', missing: missing, stat: st };
+    }
+    return { ok: true, task: t, stat: st };
+  }
 
   function detailsOf(taskId) {
     return db.trainDetails.filter(function (d) { return d.taskId === taskId; });
@@ -2648,18 +3847,23 @@
     })[0] || null;
   }
 
-  /** 任务进度统计：强化训练与最后一轮分别按唯一 wordId 计数 */
+  /** 任务进度统计：强化训练与最后一轮分别按唯一 wordId 计数
+   *  displayFlow 任务的「已完成强化训练」= 展示循环完成（展示记录），
+   *  历史任务仍按 trainDetails 的首次判断计，两种口径各自独立不混算。 */
   function trainTaskStat(taskId) {
     var t = trainTask(taskId);
     if (!t) return null;
     var q = t.queueWordIds || [];
-    var trained = q.filter(function (id) { return !!trainFirstDetail(taskId, id); });
+    var doneOf = function (id) {
+      return t.displayFlow ? displayCompleted(taskId, id) : !!trainFirstDetail(taskId, id);
+    };
+    var trained = q.filter(doneOf);
     var finaled = q.filter(function (id) { return !!(t.finalResults && t.finalResults[id]); });
     return {
       taskId: taskId,
       queue: q.length,
       trained: trained.length,
-      trainedMissing: q.filter(function (id) { return !trainFirstDetail(taskId, id); }),
+      trainedMissing: q.filter(function (id) { return !doneOf(id); }),
       finaled: finaled.length,
       finalMissing: q.filter(function (id) { return !(t.finalResults && t.finalResults[id]); }),
       corrections: db.trainDetails.filter(function (d) {
@@ -2680,6 +3884,10 @@
     if (t.status === STATUS.CANCELLED) fail('任务已取消，不能继续操作');
     if (t.status === STATUS.INTERRUPTED) fail('任务已中断，请先恢复训练后再操作');
     if (t.phase !== '强化训练') fail('当前阶段不允许提交强化训练结果（当前：' + t.phase + '）');
+    if (t.displayFlow) {
+      throw bizError('DISPLAY_ONLY',
+        '本次训练采用展示循环流程：强化训练阶段只记录带读轮次，不产生认识 / 不认识的掌握判断；掌握结果在最后复习阶段记录');
+    }
 
     if ((t.queueWordIds || []).indexOf(wordId) < 0) fail('该单词不属于本次训练队列，不能提交');
     if (!result || ['yes', 'no', 'mid'].indexOf(result) < 0) fail('判断结果不合法');
@@ -2715,6 +3923,9 @@
     if (t.status === STATUS.INTERRUPTED) fail('任务已中断，请先恢复训练后再修正');
     if (!result || ['yes', 'no', 'mid'].indexOf(result) < 0) fail('修正结果不合法');
     if (!isStr(note) || !note.trim()) fail('误判修正必须填写原因');
+    if (t.displayFlow) {
+      throw bizError('DISPLAY_ONLY', '本次训练的强化阶段不产生掌握判断，没有可修正的判断记录');
+    }
     if ((t.queueWordIds || []).indexOf(wordId) < 0) fail('该单词不属于本次训练队列');
 
     var first = trainFirstDetail(taskId, wordId);
@@ -2821,10 +4032,20 @@
     if (!t) fail('训练任务不存在');
     if (t.status === STATUS.INTERRUPTED) return { ok: false, reason: '任务已中断，请先恢复训练', missing: [] };
     if (isDone(t.status)) return { ok: false, reason: '任务已提交', missing: [] };
-    var missing = (t.queueWordIds || []).filter(function (id) { return !trainFirstDetail(taskId, id); });
-    if (missing.length) return { ok: false, missing: missing, reason: '还有 ' + missing.length + ' 个单词未完成强化训练判断' };
+    if (t.phase === PHASE.FINAL || t.phase === PHASE.DONE) return { ok: true, task: t, already: true };
+    /* 完成口径在 Store 层判断：展示流看每条展示记录是否走完三轮，
+       历史任务看是否已有强化训练判断记录——不依赖前端当前组状态 */
+    var missing = (t.queueWordIds || []).filter(function (id) {
+      return t.displayFlow ? !displayCompleted(taskId, id) : !trainFirstDetail(taskId, id);
+    });
+    if (missing.length) {
+      return {
+        ok: false, missing: missing,
+        reason: '还有 ' + missing.length + ' 个单词未完成强化训练' + (t.displayFlow ? '展示' : '判断')
+      };
+    }
     t.status = STATUS.ACTIVE;
-    t.phase = '最后复习';
+    t.phase = PHASE.FINAL;
     t.finalIndex = 0;
     save();
     return { ok: true, task: t };
@@ -2848,8 +4069,10 @@
       fail('该单词已完成最后复习判断，如需修改请使用「修正」');
     }
 
-    // 最后一轮只能处理已通过强化训练的词
-    if (!trainFirstDetail(taskId, wordId)) fail('该单词尚未完成强化训练判断，不能进入最后复习');
+    // 最后一轮只能处理已完成强化训练的词（展示流看展示循环，历史任务看判断记录）
+    if (t.displayFlow) {
+      if (!displayCompleted(taskId, wordId)) fail('该单词尚未完成强化训练展示，不能进入最后复习');
+    } else if (!trainFirstDetail(taskId, wordId)) fail('该单词尚未完成强化训练判断，不能进入最后复习');
 
     t.finalResults[wordId] = {
       result: result, at: stamp(), correctedFrom: null, corrections: 0,
@@ -2986,15 +4209,20 @@
     return o;
   }
 
-  /** 加入绿盒（教师自主，必须记录原因） */
-  function addToGreen(studentId, wordId, reason, by) {
+  /** 加入绿盒（教师自主，必须记录原因）
+   *  opt.source 区分三种来源：初筛认识 / 教师手动加入 / 训练最后复习。
+   *  无论哪种来源，都只影响莱特纳盒子，绝不改动「初筛认识」状态。 */
+  function addToGreen(studentId, wordId, reason, by, opt) {
+    opt = opt || {};
+    var src = opt.source || SCREEN_SOURCE.MANUAL;
+    var srcTask = opt.taskId || null;
     var s = leitnerState(studentId, wordId);
     var from = s ? s.box : null;
     if (!s) {
       s = {
         id: 'LS' + seq('LS', 3), studentId: studentId, wordId: wordId, box: 'green',
         addedAt: TODAY, dueAt: null, lastReviewAt: null, lastResult: '待复习',
-        manualToday: false, reason: reason, source: '教师手动加入', sourceTaskId: null, by: by || '李婉'
+        manualToday: false, reason: reason, source: src, sourceTaskId: srcTask, by: by || '李婉'
       };
       db.leitnerStates.push(s);
     } else {
@@ -3002,9 +4230,11 @@
       s.dueAt = null;
       s.reason = reason;
       s.by = by || '李婉';
+      s.source = src;
+      s.sourceTaskId = srcTask;
       s.addedAt = TODAY;
     }
-    logOp(studentId, wordId, '加入绿盒', from, 'green', reason, by);
+    logOp(studentId, wordId, '加入绿盒', from, 'green', reason, by, srcTask);
     save();
     return s;
   }
@@ -3714,7 +4944,8 @@
       need.forEach(function (id) {
         var s = leitnerState(t.studentId, id);
         if (s && s.box === 'green') return;
-        addToGreen(t.studentId, id, '训练最后复习未通过（任务 ' + t.id + '）', opt.by || '李婉');
+        addToGreen(t.studentId, id, '训练最后复习未通过（任务 ' + t.id + '）', opt.by || '李婉',
+          { source: SCREEN_SOURCE.TRAIN_FINAL, taskId: taskId });
       });
       t.joins.green = need.slice();
     }
@@ -4020,6 +5251,7 @@
       .sort(function (a, b) { return (a.date + a.start) < (b.date + b.start) ? 1 : -1; });
   }
   function coursesOfTeacher(teacherId, date) {
+    if (session.role === 'teacher') teacherId = assertSelfTeacher(teacherId);
     return db.courses.filter(function (c) {
       return (!teacherId || c.teacherId === teacherId) && (!date || c.date === date);
     }).sort(function (a, b) { return a.start < b.start ? -1 : 1; });
@@ -4043,6 +5275,7 @@
     return db.courseRecords.filter(function (r) { return r.courseId === courseId; })[0] || null;
   }
   function recordsOfTeacher(teacherId) {
+    if (session.role === 'teacher') teacherId = assertSelfTeacher(teacherId);
     return db.courseRecords.filter(function (r) { return r.teacherId === teacherId; })
       .sort(function (a, b) { return a.planStart < b.planStart ? 1 : -1; });
   }
@@ -4373,7 +5606,7 @@
     if (!rp) fail('报告不存在');
     if (rp.status === REPORT_STATUS.PUBLISHED) fail('报告已发布，不能再修改');
     patch = patch || {};
-    ['performance', 'weak', 'next'].forEach(function (k) {
+    ['performance', 'weak', 'next', 'homeworkAdvice'].forEach(function (k) {
       if (patch[k] !== undefined) rp.content[k] = patch[k];
     });
     if (patch.title !== undefined) rp.title = patch.title;
@@ -4416,6 +5649,21 @@
     rp.publishedBy = by || rp.teacherId;
     /* 报告发布即生成一条「已发布」学习反馈，代理与家长只看这一层投影 */
     syncFeedbackFromReport(rp);
+    var stu = student(rp.studentId) || {};
+    var parentRel = db.parentStudents.filter(function (x) {
+      return x.studentId === rp.studentId && !x.endAt;
+    })[0];
+    recordAudit({
+      module: '教学与报告', action: '发布学习报告', resourceType: 'report', resourceId: rp.id,
+      resourceName: (stu.name || rp.studentId) + ' / ' + (rp.courseId || ''),
+      beforeData: { status: REPORT_STATUS.SUBMITTED },
+      afterData: { status: rp.status, publishedBy: rp.publishedBy },
+      reason: '报告发布后家长可见', result: '成功'
+    });
+    notify('REPORT_PUBLISHED', {
+      studentName: stu.name || '', parentId: parentRel ? parentRel.parentId : '',
+      businessId: rp.id, link: 'parent/report.html?id=' + rp.id
+    });
     save();
     return { ok: true, report: rp };
   }
@@ -5460,12 +6708,59 @@
     'teachingExperience', 'teachingStyle', 'availability'];
 
   /* ---------- 会话与权限 ---------- */
+  function accountForSession() {
+    if (session.accountId) {
+      return db.users.filter(function (u) { return u.id === session.accountId; })[0] || null;
+    }
+    if (session.operatorId && String(session.operatorId).indexOf('UA') === 0) {
+      return db.users.filter(function (u) { return u.id === session.operatorId; })[0] || null;
+    }
+    /* 只有对应业务身份才用对应档案定位账号，避免切角色后残留 teacherId 借到他人账号 */
+    if (session.role === 'teacher' && session.teacherId) {
+      return db.users.filter(function (u) { return u.teacherId === session.teacherId; })[0] || null;
+    }
+    if (session.role === 'agent' && session.agentId) {
+      return db.users.filter(function (u) { return u.agentId === session.agentId; })[0] || null;
+    }
+    if (session.role === 'parent' && session.parentId) {
+      return db.users.filter(function (u) { return u.parentId === session.parentId; })[0] || null;
+    }
+    /* 内部角色在旧页面里可能只设置了 role + 操作人姓名；只在同一角色内匹配，
+       不存在跨角色借用。若该角色只有一个启用账号，它就是当前会话身份。 */
+    if (['admin', 'staff', 'ops'].indexOf(session.role) >= 0) {
+      var sameRole = db.users.filter(function (u) {
+        return u.roleCode === session.role && u.profileType === 'staff';
+      });
+      var byName = sameRole.filter(function (u) { return staffNameOf(u) === session.operatorName; })[0];
+      if (byName) return byName;
+      if (sameRole.length === 1) return sameRole[0];
+    }
+    return null;
+  }
+  function sessionAccountActive() {
+    var u = accountForSession();
+    if (!u) return true; /* 兼容没有统一账号的内部会话（setSession 未传 accountId） */
+    return u.status === ACCOUNT.OK;
+  }
   function setSession(s) {
     s = s || {};
     var roleChanged = !!s.role && s.role !== session.role;
+    if (s.accountId) {
+      var acc = db.users.filter(function (u) { return u.id === s.accountId; })[0];
+      if (!acc) throw bizError('NO_ACCOUNT', '账号不存在：' + s.accountId);
+      if (acc.status !== ACCOUNT.OK) {
+        throw bizError('ACCOUNT_DISABLED',
+          '账号「' + acc.loginName + '」' + (acc.status === ACCOUNT.NONE ? '未开通' : '已禁用') + '，不能作为当前身份',
+          { accountId: acc.id, status: acc.status });
+      }
+      session.accountId = acc.id;
+      if (!s.operatorName) { s.operatorName = (staffNameOf(acc) || acc.loginName); }
+    } else if ('accountId' in s) {
+      session.accountId = '';
+    }
     if (s.role) session.role = s.role;
     if (s.operatorName) { session.operatorName = s.operatorName; session.operatorId = s.operatorName; }
-    else if (roleChanged && ROLE_DEFAULT_OPERATOR[session.role]) {
+    else if (roleChanged && !s.accountId && ROLE_DEFAULT_OPERATOR[session.role]) {
       session.operatorName = ROLE_DEFAULT_OPERATOR[session.role];
       session.operatorId = session.operatorName;
     }
@@ -5480,9 +6775,50 @@
   function currentSession() { return clone(session); }
   /* 操作人一律取自当前会话；不再按角色内置姓名，避免硬编码身份。 */
   function operatorForRole(role) {
-    return session.operatorName || '';
+    var acc = accountForSession();
+    return (acc && staffNameOf(acc)) || session.operatorName || '';
   }
-  function can(action) { return (PERMS[action] || []).indexOf(session.role) >= 0; }
+  function rolePermissionOf(roleCode, permissionCode) {
+    return db.rolePermissions.filter(function (rp) {
+      return rp.roleCode === roleCode && rp.permissionCode === permissionCode;
+    })[0] || null;
+  }
+  /** 动态权限判断：先按新权限编码查 rolePermissions，未迁移的历史动作才回落到静态 PERMS */
+  function can(action) {
+    if (!sessionAccountActive()) return false;
+    var code = ACTION_PERM[action];
+    if (code) {
+      var rp = rolePermissionOf(session.role, code);
+      return !!(rp && rp.enabled);
+    }
+    return (PERMS[action] || []).indexOf(session.role) >= 0;
+  }
+  function hasPermission(userId, permissionCode) {
+    var roleCode = session.role;
+    var statusOk = true;
+    if (userId) {
+      var u = db.users.filter(function (x) {
+        return x.id === userId || x.profileId === userId || x.loginName === userId;
+      })[0];
+      if (u) {
+        roleCode = u.roleCode || u.roleId || '';
+        statusOk = u.status === ACCOUNT.OK;
+      } else if (ROLE_SEED.some(function (r) { return r.code === userId; })) {
+        roleCode = userId;
+      } else {
+        return false;
+      }
+    } else {
+      statusOk = sessionAccountActive();
+    }
+    var rp = rolePermissionOf(roleCode, permissionCode);
+    return !!(statusOk && rp && rp.enabled);
+  }
+  function assertPermission(permissionCode) {
+    if (!hasPermission('', permissionCode)) {
+      throw bizError('FORBIDDEN', '当前身份无权执行该操作（' + permissionCode + '）', { permission: permissionCode });
+    }
+  }
   function assertCan(action) {
     if (!can(action)) {
       var e = new Error('当前角色（' + (ROLE_LABEL[session.role] || session.role) +
@@ -5752,6 +7088,7 @@
       .sort(function (a, b) { return a.startAt < b.startAt ? 1 : -1; });
   }
   function currentStudentsOf(id) {
+    if (session.role === 'teacher') id = assertSelfTeacher(id);
     return currentRelationsOf(id).map(function (r) {
       var s = student(r.studentId);
       if (!s) return null;
@@ -5769,6 +7106,7 @@
     }).filter(Boolean);
   }
   function historyStudentsOf(id) {
+    if (session.role === 'teacher') id = assertSelfTeacher(id);
     return historyRelationsOf(id).map(function (r) {
       var s = student(r.studentId);
       var done = db.courses.filter(function (c) {
@@ -6088,7 +7426,8 @@
       id: 'UA' + seq('UA', 3), loginName: t.phone, phone: t.phone,
       /* 原型不保存明文口令，也不伪造哈希：真实系统在此写入加密凭据 */
       passwordHash: '', mustChangePassword: true,
-      status: ACCOUNT.OK, roleId: 'teacher', teacherId: t.id,
+      status: ACCOUNT.OK, roleCode: 'teacher', roleId: 'teacher', teacherId: t.id,
+      profileType: 'teacher', profileId: t.id,
       openedAt: now, openedBy: session.operatorName, disabledAt: '',
       inviteChannel: opt.inviteChannel || '短信邀请',
       createdAt: now, updatedAt: now
@@ -6101,12 +7440,18 @@
       effectiveAt: now, remark: '登录名 ' + u.loginName + '，角色 teacher'
     });
     logChange(t.id, 'accountId', '', u.id);
+    recordAudit({
+      module: '教师管理', action: '开通教师账号', resourceType: 'account', resourceId: u.id,
+      resourceName: t.name, beforeData: { accountId: '' },
+      afterData: { accountId: u.id, loginName: u.loginName, status: u.status },
+      reason: opt.reason || '为教师开通登录账号', result: '成功'
+    });
     save();
     return u;
   }
 
   /* ---------- 账号状态（单独入口，便于权限与留痕统一校验） ---------- */
-  function setAccountStatus(teacherId, status, opt) {
+  function setTeacherAccountStatus(teacherId, status, opt) {
     assertCan('teacher.account');
     opt = opt || {};
     var u = accountOf(teacherId);
@@ -6115,8 +7460,15 @@
       throw bizError('BAD_STATUS', '账号状态只能设置为「正常」或「已禁用」');
     }
     if (u.status === status) return u;
+    var beforeStatus = u.status;
     if (status === ACCOUNT.OK) enableAccount(teacherId, opt.reason || '手动启用账号');
     else disableAccount(teacherId, opt.reason || '手动禁用账号');
+    recordAudit({
+      module: '教师管理', action: status === ACCOUNT.OK ? '启用教师账号' : '禁用教师账号',
+      resourceType: 'account', resourceId: u.id, resourceName: (teacher(teacherId) || {}).name || teacherId,
+      beforeData: { status: beforeStatus }, afterData: { status: status },
+      reason: opt.reason || '手动调整教师登录账号状态', result: '成功'
+    });
     save();
     return u;
   }
@@ -6429,6 +7781,12 @@
     db.teacherStudents.push(r);
     syncStudentCache(studentId);
     t.updatedAt = stamp();
+    recordAudit({
+      module: '教学资源分配', action: '正式分配学员', resourceType: 'student', resourceId: s.id,
+      resourceName: s.name, beforeData: { teacherId: '', teacherName: '未分配', relationId: '' },
+      afterData: { teacherId: t.id, teacherName: t.name, relationId: r.id, startAt: r.startAt, demandId: r.demandId },
+      reason: reason, result: '成功'
+    });
     save();
     return r;
   }
@@ -6467,6 +7825,13 @@
     db.teacherStudents.push(r);
     syncStudentCache(studentId);
     nt.updatedAt = stamp();
+    recordAudit({
+      module: '教学资源分配', action: '更换负责教师', resourceType: 'student', resourceId: s.id,
+      resourceName: s.name,
+      beforeData: { teacherId: cur ? cur.teacherId : '', relationId: cur ? cur.id : '' },
+      afterData: { teacherId: nt.id, teacherName: nt.name, relationId: r.id, startAt: r.startAt },
+      reason: reason, result: '成功'
+    });
     save();
     return { from: from, to: r };
   }
@@ -6485,6 +7850,13 @@
     cur.endReason = reason;
     cur.attention = '';
     syncStudentCache(studentId);
+    recordAudit({
+      module: '教学资源分配', action: '解除师生关系', resourceType: 'student', resourceId: s.id,
+      resourceName: s.name,
+      beforeData: { teacherId: cur.teacherId, relationId: cur.id, status: REL.ACTIVE },
+      afterData: { teacherId: '', relationId: cur.id, status: cur.status, endAt: cur.endAt },
+      reason: reason, result: '成功'
+    });
     save();
     return cur;
   }
@@ -6575,9 +7947,8 @@
 
   /* ---------- 会话里的教师身份 ---------- */
   function sessionTeacherId() {
-    if (session.teacherId) return session.teacherId;
-    var t = db.teachers.filter(function (x) { return x.name === session.operatorName; })[0];
-    return t ? t.id : '';
+    /* 身份只来自会话：不再按姓名反查教师，也不自动借用默认教师 */
+    return session.teacherId || '';
   }
   /** 演示环境没有真实登录页：未设置会话教师时，用第一位「可授课」教师作为默认身份 */
   function defaultTeacherId() {
@@ -7038,6 +8409,15 @@
       /* 重新发布通知：不改状态，只留一条流水，让「又催了一次」这件事有记录 */
       logDemand(x.id, DEMAND_ACTION.PUBLISHED, opt.reason || '重新发布通知（需求仍在需求池中）');
       x.updatedAt = stamp();
+      recordAudit({
+        module: '学员需求', action: '重新发布学员需求', resourceType: 'demand', resourceId: x.id,
+        resourceName: x.studentName || x.id, beforeData: { status: x.status }, afterData: { status: x.status },
+        reason: opt.reason || '重新发布通知', result: '成功'
+      });
+      notify('DEMAND_PUBLISHED', {
+        studentName: x.studentName || '', businessId: x.id,
+        link: 'teacher/demand-center.html?tab=open'
+      });
       save();
       return x;
     }
@@ -7047,6 +8427,15 @@
     x.publishedAt = stamp();
     x.updatedAt = x.publishedAt;
     logDemand(x.id, DEMAND_ACTION.PUBLISHED, opt.reason || '发布到待接单需求池', { from: from, to: x.status });
+    recordAudit({
+      module: '学员需求', action: '发布学员需求', resourceType: 'demand', resourceId: x.id,
+      resourceName: x.studentName || x.id, beforeData: { status: from }, afterData: { status: x.status },
+      reason: opt.reason || '向教师开放接单', result: '成功'
+    });
+    notify('DEMAND_PUBLISHED', {
+      studentName: x.studentName || '', businessId: x.id,
+      link: 'teacher/demand-center.html?tab=open'
+    });
     save();
     return x;
   }
@@ -7217,6 +8606,20 @@
       });
       logDemand(x.id, DEMAND_ACTION.CONFIRMED,
         '教务确认「' + chk.teacher.name + '」：' + reason, { from: DEMAND.CONFIRM, to: x.status });
+      recordAudit({
+        module: '学员需求', action: '教务确认人选', resourceType: 'demand', resourceId: x.id,
+        resourceName: x.studentName || x.id, beforeData: { status: DEMAND.CONFIRM, teacherId: '' },
+        afterData: { status: x.status, teacherId: teacherId, reason: reason },
+        reason: reason, result: '成功'
+      });
+      notify('DEMAND_CONFIRMED', {
+        studentName: x.studentName || '', teacherId: teacherId, businessId: x.id,
+        link: 'teacher/demand-center.html?tab=mine'
+      });
+      notify('DEMAND_WAIT_ASSIGN', {
+        studentName: x.studentName || '', businessId: x.id,
+        link: 'admin/assign-task.html?id=' + x.id
+      });
       save();
       return demandView(x);
     } catch (e) {
@@ -7254,6 +8657,11 @@
       });
       logDemand(x.id, DEMAND_ACTION.CONFIRM_REVOKED,
         '撤销对「' + prevName + '」的确认：' + reason, { from: DEMAND.ASSIGN, to: x.status });
+      recordAudit({
+        module: '学员需求', action: '撤销教务确认', resourceType: 'demand', resourceId: x.id,
+        resourceName: x.studentName || x.id, beforeData: { status: DEMAND.ASSIGN, teacherId: prev },
+        afterData: { status: x.status, teacherId: '' }, reason: reason, result: '成功'
+      });
       save();
       return demandView(x);
     } catch (e) {
@@ -7501,6 +8909,18 @@
         '管理员正式分配：' + chk.student.name + ' → ' + chk.teacher.name +
         (chk.isChange ? '（原负责教师 ' + chk.currentTeacher.name + ' 的关系已结束）' : '') +
         '，关系 ' + rel.id, { from: from, to: x.status });
+      recordAudit({
+        module: '教学分配', action: chk.isChange ? '更换负责教师' : '正式分配教师',
+        resourceType: 'demand', resourceId: x.id,
+        resourceName: chk.student.name + ' / ' + chk.teacher.name,
+        beforeData: { status: from, teacherId: chk.isChange ? chk.currentTeacher.id : '' },
+        afterData: { status: x.status, teacherId: chk.teacher.id, relationId: rel.id },
+        reason: reason, result: '成功'
+      });
+      notify('DEMAND_ASSIGNED', {
+        studentName: chk.student.name, teacherId: chk.teacher.id, businessId: x.id,
+        link: 'teacher/my-students.html'
+      });
       save();
       return {
         ok: true, demand: x, relation: rel, teacher: chk.teacher,
@@ -7527,6 +8947,7 @@
   }
   function wordbookRequests(q) {
     q = q || {};
+    if (session.role === 'teacher') q.teacherId = assertSelfTeacher(q.teacherId);
     return db.studentWordbookRequests.filter(function (r) {
       if (q.status && r.status !== q.status) return false;
       if (q.studentId && r.studentId !== q.studentId) return false;
@@ -7620,6 +9041,16 @@
         };
         db.studentWordbookRequests.push(r);
         out.push(r);
+        recordAudit({
+          module: '教学资源', action: '提交词库申请', resourceType: 'wordbookRequest', resourceId: r.id,
+          resourceName: s.name + ' / ' + (wordbook(wid) || {}).name,
+          beforeData: null, afterData: { studentId: s.id, wordbookId: wid, status: r.status },
+          reason: reason, result: '成功'
+        });
+        notify('WORD_REQUEST', {
+          teacherName: (teacher(tid) || {}).name || tid, studentName: s.name,
+          businessId: r.id, link: 'admin/wordbook-request.html?tab=pending'
+        });
       });
       save();
       return out;
@@ -7697,6 +9128,17 @@
       r.reviewedAt = stamp();
       r.reviewRemark = remark || (approve ? '同意开通' : '');
       r.updatedAt = r.reviewedAt;
+      recordAudit({
+        module: '教学资源', action: approve ? '审核词库申请（通过）' : '审核词库申请（驳回）',
+        resourceType: 'wordbookRequest', resourceId: r.id,
+        resourceName: s.name + ' / ' + b.name, beforeData: { status: WBR.PENDING },
+        afterData: { status: r.status, grantId: grant ? grant.id : '', remark: r.reviewRemark },
+        reason: r.reviewRemark, result: '成功'
+      });
+      notify(approve ? 'WORD_GRANTED' : 'WORD_REJECTED', {
+        studentName: s.name, teacherId: r.teacherId, grantId: grant ? grant.id : '',
+        businessId: r.id, link: 'teacher/demand-center.html?tab=wbreq'
+      });
       save();
       return { request: r, grant: grant, approved: approve };
     } catch (e) {
@@ -7933,8 +9375,9 @@
     return p ? p.id : '';
   }
   function sessionParentId() {
+    /* 家长身份只认会话；缺失时不再借用第一位家长 */
     if (session.parentId) return session.parentId;
-    return defaultParentId();
+    return isDemoMode() ? defaultParentId() : '';
   }
   /** 代理身份只能操作自己：与教师 assertSelfTeacher 口径一致 */
   function assertSelfAgent(agentId) {
@@ -8105,6 +9548,21 @@
     if (p.kids.indexOf(studentId) < 0) p.kids.push(studentId);
     save();
     return rel;
+  }
+  /** 解除家长—孩子关联：只移除关系，不删除任何历史课程/订单/报告/复习记录 */
+  function unlinkParentStudent(parentId, studentId) {
+    assertCan('student.create');
+    var before = db.parentStudents.length;
+    db.parentStudents = db.parentStudents.filter(function (x) {
+      return !(x.parentId === parentId && x.studentId === studentId);
+    });
+    var p = parent(parentId);
+    if (p && Array.isArray(p.kids)) {
+      p.kids = p.kids.filter(function (k) { return k !== studentId; });
+    }
+    if (db.parentStudents.length === before) throw bizError('RELATION_NOT_FOUND', '家长与学员不存在关联');
+    save();
+    return { removed: true, parentId: parentId, studentId: studentId };
   }
   /** 课时账户归属唯一口径：有 studentId 时只按 ID；仅历史数据缺 studentId 才回退姓名 */
   function accountBelongsTo(acc, s) {
@@ -8459,6 +9917,9 @@
     var l = lead(leadId);
     if (!l) throw bizError('LEAD_NOT_FOUND', '客户线索不存在');
     if (session.role === 'agent') return agentLeadView(leadId);
+    if (session.role === 'parent' || session.role === 'teacher') {
+      throw bizError('FORBIDDEN', '当前身份不能查看客户线索');
+    }
     var s = l.convertedStudentId ? student(l.convertedStudentId) : null;
     return {
       lead: l, student: s, parent: s && s.parent ? parent(s.parent) : null,
@@ -8576,12 +10037,16 @@
       if (a.status !== '启用') throw bizError('AGENT_DISABLED', '代理「' + a.name + '」不是启用状态，不能录入客户');
       selfAgent = a.id;
     }
+    var channel = String(input.channel || '其他');
+    if (!dictionaryHas('lead_channel', channel)) {
+      throw bizError('DICT_INVALID', '获客渠道「' + channel + '」不在数据字典中，请先在字典管理中维护');
+    }
     var id = nextLeadId();
     var followerId = session.role === 'agent' ? selfAgent : (input.followerId || session.operatorId || '');
     var l = {
       id: id, code: id, name: name, phone: phone,
       kidName: String(input.kidName || '').trim(), grade: String(input.grade || '').trim(),
-      book: String(input.book || '').trim(), channel: input.channel || '其他',
+      book: String(input.book || '').trim(), channel: channel,
       sourceAgentId: selfAgent, currentAgentId: selfAgent, agentId: selfAgent,
       followerId: followerId, followerName: input.followerName || followerId,
       intent: String(input.intent || ''), intentProductId: input.intentProductId || '',
@@ -8595,6 +10060,18 @@
     leadLog(id, LEAD_ACTION.CREATED,
       '线索建立（' + l.channel + '）' + (selfAgent ? '，首次获客代理 ' + (agent(selfAgent) || {}).name : '，机构直营'),
       '', LEAD.NEW);
+    recordAudit({
+      module: '客户管理', action: '新建客户线索', resourceType: 'lead', resourceId: l.id,
+      resourceName: l.name, beforeData: null,
+      afterData: { name: l.name, phone: l.phone, channel: l.channel, agentId: l.currentAgentId, status: l.status },
+      reason: input.remark || '录入新客户线索', result: '成功'
+    });
+    if (selfAgent) {
+      notify('LEAD_ASSIGNED', {
+        leadName: l.name, agentId: selfAgent, businessId: l.id,
+        link: 'agent/customer-detail.html?id=' + l.id
+      });
+    }
     save();
     return l;
   }
@@ -8607,6 +10084,9 @@
     input = input || {};
     var content = String(input.content || '').trim();
     if (!content) throw bizError('CONTENT_REQUIRED', '请填写本次跟进内容');
+    if (input.type && !dictionaryHas('follow_type', input.type)) {
+      throw bizError('DICT_INVALID', '跟进方式「' + input.type + '」不在数据字典中，请先维护字典');
+    }
     var to = input.status || '';
     if (to && to === l.status) to = '';
     if (to) {
@@ -8691,6 +10171,19 @@
       '；维护人 ' + (from.followerId || '未指定') + ' → ' + (l.followerId || '未指定') +
       '；首次获客归属 ' + (from.sourceAgentId || '机构直营') + ' 不变；原因：' + reason,
       from.agentId + '/' + from.followerId, l.currentAgentId + '/' + l.followerId);
+    recordAudit({
+      module: '客户管理', action: '客户归属移交', resourceType: 'lead', resourceId: l.id,
+      resourceName: l.name, beforeData: from,
+      afterData: { agentId: l.currentAgentId, followerId: l.followerId, sourceAgentId: from.sourceAgentId },
+      reason: reason, result: '成功'
+    });
+    if (from.agentId !== l.currentAgentId) {
+      notify('LEAD_TRANSFER', {
+        leadName: l.name, agentId: l.currentAgentId || from.agentId,
+        agentName: (agent(l.currentAgentId) || {}).name || '机构直营',
+        businessId: l.id, link: 'agent/customer-detail.html?id=' + l.id
+      });
+    }
     save();
     return l;
   }
@@ -8808,6 +10301,16 @@
       leadLog(l.id, LEAD_ACTION.ORDERED,
         '提交报名订单 ' + o.id + '：' + p.name + '，金额 ¥' + o.amount + '，待管理员审核收款',
         l.status, l.status);
+      recordAudit({
+        module: '报名收款', action: '提交报名订单', resourceType: 'order', resourceId: o.id,
+        resourceName: stu.name + ' / ' + p.name, beforeData: null,
+        afterData: { studentId: stu.id, parentId: parentObj.id, agentId: o.agentId, amount: o.amount, status: o.status },
+        reason: input.remark || '代理/教务提交报名订单', result: '成功'
+      });
+      notify('ORDER_REVIEW', {
+        orderNo: o.id, studentName: stu.name, amount: o.amount, businessId: o.id,
+        link: 'admin/order-list.html?id=' + o.id
+      });
       save();
       return orderView(o.id);
     } catch (e) {
@@ -8882,6 +10385,11 @@
           '关联续费机会 ' + restored.id + ' 恢复为「待跟进」，跟进记录保留，可重新选套餐提交',
           o.status, o.status);
       }
+      recordAudit({
+        module: '报名收款', action: '审核报名订单（驳回）', resourceType: 'order', resourceId: o.id,
+        resourceName: o.id, beforeData: { status: from }, afterData: { status: o.status },
+        reason: reason, result: '成功'
+      });
       save();
       return o;
     }
@@ -8890,6 +10398,11 @@
     o.reviewedAt = stamp();
     o.updatedAt = o.reviewedAt;
     orderLog(o.id, 'REVIEWED', '审核通过，待确认收款（未收款不产生课时）', from, o.status);
+    recordAudit({
+      module: '报名收款', action: '审核报名订单（通过）', resourceType: 'order', resourceId: o.id,
+      resourceName: o.id, beforeData: { status: from }, afterData: { status: o.status },
+      reason: opt.reason || '订单信息审核通过', result: '成功'
+    });
     save();
     return o;
   }
@@ -9061,6 +10574,26 @@
     }
     return { order: o, account: acc, payment: pay, split: split };
   }
+  /** 收款确认后的审计 + 通知（不改变任何业务状态，只记录与告知） */
+  function afterPaymentConfirmed(o, amount, paymentId, registrationId) {
+    var stuAddr = student(o.studentId) || {};
+    recordAudit({
+      module: '报名收款', action: '确认收款并入账', resourceType: 'order', resourceId: o.id,
+      resourceName: (stuAddr.name || o.studentId) + ' / ' + o.productName,
+      beforeData: { paidAmountBefore: Number(o.paidAmount || 0) - Number(amount || 0), status: ORDER.REVIEWED },
+      afterData: {
+        paymentId: paymentId || '', registrationId: registrationId || '',
+        amount: amount, paidAmount: o.paidAmount, creditedHours: o.creditedHours,
+        status: o.status, lessonAccountId: o.lessonAccountId
+      },
+      reason: '管理员确认到账，课时已入账', result: '成功'
+    });
+    notify('PAYMENT_CONFIRMED', {
+      orderNo: o.id, amount: amount, studentName: stuAddr.name || '',
+      agentId: o.agentId, parentId: o.parentId, businessId: o.id,
+      link: 'agent/workbench.html'
+    });
+  }
   /** 收款登记：只登记待确认，不写账户；登记 ≠ 入账 */
   function registerPayment(orderId, opt) {
     assertCan('order.create');
@@ -9081,9 +10614,12 @@
         '登记金额超出订单应收：订单 ¥' + o.amount + '，已确认 ¥' + confirmedSum + '，待确认 ¥' + pendingSum +
         '，本次 ¥' + amount + '，累计溢价 ¥' + (confirmedSum + pendingSum + amount - o.amount));
     }
+    var method = String(opt.method || '微信');
+    if (!dictionaryHas('pay_method', method)) {
+      throw bizError('DICT_INVALID', '支付方式「' + method + '」不在数据字典中，请先在字典管理中维护');
+    }
     var reg = {
-      id: nextId('PST', 'PST', 3), orderId: o.id, amount: amount,
-      method: PAY_METHODS.indexOf(opt.method) >= 0 ? opt.method : (opt.method || '微信'),
+      id: nextId('PST', 'PST', 3), orderId: o.id, amount: amount, method: method,
       voucherNo: String(opt.voucherNo || ''), note: String(opt.note || ''),
       registeredBy: operatorNameNow(), registeredAt: stamp(),
       status: PAY_REG.PENDING, confirmedBy: '', confirmedAt: '', paymentId: '',
@@ -9093,6 +10629,16 @@
     orderLog(o.id, 'PAYMENT_REGISTERED',
       '收款登记 ¥' + amount + '（' + reg.method + (reg.voucherNo ? '，凭证 ' + reg.voucherNo : '') +
       '），待管理员确认，未确认前不入课时', o.status, o.status);
+    recordAudit({
+      module: '报名收款', action: '登记收款', resourceType: 'order', resourceId: o.id,
+      resourceName: o.id, beforeData: { paidAmount: o.paidAmount, status: o.status },
+      afterData: { registrationId: reg.id, amount: amount, method: method, status: reg.status },
+      reason: opt.note || '登记线下收款，待确认', result: '成功'
+    });
+    notify('PAYMENT_REGISTERED', {
+      orderNo: o.id, amount: amount, businessId: o.id,
+      link: 'admin/order-list.html?id=' + o.id
+    });
     save();
     return reg;
   }
@@ -9116,7 +10662,8 @@
     }
     var snap = JSON.stringify(db);
     try {
-      applyPaymentConfirmation(o, reg, opt);
+      var applied = applyPaymentConfirmation(o, reg, opt);
+      afterPaymentConfirmed(o, reg.amount, applied.payment ? applied.payment.id : '', reg.id);
       save();
       return orderView(o.id);
     } catch (e) {
@@ -9177,7 +10724,8 @@
         createdAt: stamp(), updatedAt: stamp()
       };
       db.paymentRegistrations.push(reg);
-      applyPaymentConfirmation(o, reg, opt);
+      var applied = applyPaymentConfirmation(o, reg, opt);
+      afterPaymentConfirmed(o, amount, applied.payment ? applied.payment.id : '', reg.id);
       save();
       return orderView(o.id);
     } catch (e) {
@@ -9335,6 +10883,12 @@
     db.refundRequests.push(r);
     orderLog(o.id, 'REFUND_REQUESTED',
       '退款申请 ' + r.id + '：¥' + amount + '，事由：' + reason + '（待管理员审核）', o.status, o.status);
+    recordAudit({
+      module: '报名收款', action: '发起退款申请', resourceType: 'refund', resourceId: r.id,
+      resourceName: o.id, beforeData: { refundedAmount: o.refundedAmount, status: o.status },
+      afterData: { amount: amount, reason: reason, status: r.status },
+      reason: reason, result: '成功'
+    });
     save();
     return r;
   }
@@ -9357,6 +10911,11 @@
       r.result = rejectReason;
       r.updatedAt = r.reviewedAt;
       orderLog(o.id, 'REFUND_REJECTED', '退款申请 ' + r.id + ' 驳回：' + rejectReason, o.status, o.status);
+      recordAudit({
+        module: '报名收款', action: '审核退款（驳回）', resourceType: 'refund', resourceId: r.id,
+        resourceName: o.id, beforeData: { status: REFUND.PENDING },
+        afterData: { status: r.status, amount: r.amount }, reason: rejectReason, result: '成功'
+      });
       save();
       return { request: r, order: o, reversedHours: 0 };
     }
@@ -9424,6 +10983,15 @@
           '关联续费机会 ' + restored.id + ' 恢复为「待跟进」', ORDER.REFUNDED, ORDER.REFUNDED);
       }
       syncStudentRemain(o.studentId);
+      recordAudit({
+        module: '报名收款', action: '审核退款（通过）', resourceType: 'refund', resourceId: r.id,
+        resourceName: o.id, beforeData: { refundedAmount: approvedBefore, status: ORDER.CREDITED },
+        afterData: {
+          refundedAmount: o.refundedAmount, reversedHours: reverse,
+          accountRemain: acc.remain, status: o.status
+        },
+        reason: r.result, result: '成功'
+      });
       save();
       refreshRenewalOpportunities(o.studentId);
       save();
@@ -9463,6 +11031,12 @@
         ref: opt.ref || '有权限的课时调整', note: why
       });
       syncStudentRemain(s.id);
+      recordAudit({
+        module: '课时账户', action: '调整课时', resourceType: 'lessonAccount', resourceId: acc.id,
+        resourceName: s.name, beforeData: { remain: before, adjust: Number(acc.adjust || 0) - delta },
+        afterData: { remain: acc.remain, adjust: acc.adjust, delta: delta },
+        reason: why, result: '成功'
+      });
       save();
       refreshRenewalOpportunities(s.id);
       save();
@@ -9521,6 +11095,10 @@
         };
         db.renewalOpportunities.push(r);
         created.push(r);
+        notify(source === '课时不足' ? 'LESSON_LOW' : 'RENEWAL_CREATED', {
+          studentName: s.name, remain: a.remain, sourceType: source,
+          agentId: at.agentId, businessId: r.id, link: 'agent/renewal-list.html'
+        });
       });
     });
     return created;
@@ -9621,7 +11199,8 @@
       id: feedbackId(), studentId: rp.studentId, teacherId: rp.teacherId,
       courseId: rp.courseId, reportId: rp.id, title: rp.title,
       performance: rp.content.performance || '', weak: rp.content.weak || '',
-      next: rp.content.next || '', status: '已发布', visibleToAgent: true,
+      next: rp.content.next || '', status: '已发布', visibleToAgent: true, visibleToParent: true,
+      homeworkAdvice: (rp.content && rp.content.homeworkAdvice) || '',
       createdAt: rp.createdAt || stamp(), publishedAt: rp.publishedAt || stamp()
     };
     db.learningFeedbacks.push(f);
@@ -9651,23 +11230,33 @@
       courseId: courseId, reportId: input.reportId || '', title: title,
       performance: String(input.performance || ''), weak: String(input.weak || ''),
       next: String(input.next || ''), status: publish ? '已发布' : '草稿',
-      visibleToAgent: input.visibleToAgent !== false,
+      visibleToAgent: input.visibleToAgent !== false, visibleToParent: input.visibleToParent !== false,
+      homeworkAdvice: String(input.homeworkAdvice || ''),
       createdAt: stamp(), publishedAt: publish ? stamp() : ''
     };
     db.learningFeedbacks.push(f);
     save();
     return f;
   }
-  function learningFeedbacksOfStudent(studentId) {
+  /**
+   * 学习反馈可见性：家长与代理的可见性相互独立，草稿一律不进投影。
+   *   audience === 'parent' → 已发布 且 visibleToParent
+   *   audience === 'agent'  → 已发布 且 visibleToAgent
+   *   其余（教师/内部）→ 仅已发布
+   */
+  function learningFeedbacksOfStudent(studentId, audience) {
     return db.learningFeedbacks.filter(function (f) {
-      return f.studentId === studentId && f.status === '已发布' && f.visibleToAgent;
+      if (f.studentId !== studentId || f.status !== '已发布') return false;
+      if (audience === 'parent') return f.visibleToParent !== false;
+      if (audience === 'agent') return f.visibleToAgent !== false;
+      return true;
     }).sort(function (a, b) { return a.publishedAt < b.publishedAt ? 1 : -1; });
   }
-  /** 代理只能看到自己客户学员的已发布反馈，字段也做最小投影 */
+  /** 代理只能看到自己客户学员、代理可见的已发布反馈，字段也做最小投影 */
   function agentFeedbacksForStudent(studentId) {
     var s = student(studentId);
     if (!s) return [];
-    return learningFeedbacksOfStudent(studentId).map(function (f) {
+    return learningFeedbacksOfStudent(studentId, 'agent').map(function (f) {
       var t = teacher(f.teacherId);
       return {
         id: f.id, studentId: f.studentId, studentName: s.name,
@@ -9689,12 +11278,13 @@
     var pid = resolveParentId(parentId);
     var out = [];
     parentStudents(pid).forEach(function (s) {
-      learningFeedbacksOfStudent(s.id).forEach(function (f) {
+      learningFeedbacksOfStudent(s.id, 'parent').forEach(function (f) {
         var t = teacher(f.teacherId);
         out.push({
           id: f.id, studentId: s.id, studentName: s.name, title: f.title,
           teacherName: t ? t.name : '教师', performance: f.performance,
-          weak: f.weak, next: f.next, publishedAt: f.publishedAt
+          weak: f.weak, next: f.next, homeworkAdvice: f.homeworkAdvice || '',
+          publishedAt: f.publishedAt
         });
       });
     });
@@ -9720,7 +11310,7 @@
         totalHours: accs.reduce(function (n, a) { return n + Number(a.buy || 0) + Number(a.gift || 0); }, 0),
         usedHours: accs.reduce(function (n, a) { return n + Number(a.used || 0); }, 0),
         lastCourse: s.lastCourse || '', lastContent: s.lastContent || '',
-        latestFeedback: learningFeedbacksOfStudent(s.id)[0] || null
+        latestFeedback: learningFeedbacksOfStudent(s.id, 'parent')[0] || null
       };
     });
   }
@@ -9740,14 +11330,31 @@
   }
   function parentHours(parentId) {
     var pid = resolveParentId(parentId);
+    var lowTh = (db.organization && db.organization.lessonAlertThreshold) || 5;
+    var expDays = (db.organization && db.organization.expireAlertDays) || 14;
+    function daysLeftOf(expDateStr) {
+      if (!expDateStr) return -1;
+      var d = String(expDateStr).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return -1;
+      var cur = new Date(TODAY.slice(0, 4), Number(TODAY.slice(5, 7)) - 1, Number(TODAY.slice(8, 10)));
+      var exp = new Date(d.slice(0, 4), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10)));
+      return Math.round((exp - cur) / 86400000);
+    }
     return parentStudents(pid).map(function (s) {
+      var accs = accountsOfStudent(s.id);
+      var remainAll = accs.reduce(function (n, a) { return n + Number(a.remain || 0); }, 0);
       return {
         studentId: s.id, studentName: s.name, remain: s.remain,
-        accounts: accountsOfStudent(s.id).map(function (a) {
+        totalRemain: remainAll,
+        lowAlert: remainAll > 0 && remainAll <= lowTh,
+        accounts: accs.map(function (a) {
+          var expAt = a.expireAt || a.valid || '';
+          var daysLeft = daysLeftOf(expAt);
           return {
             id: a.id, product: a.product, totalHours: Number(a.buy || 0) + Number(a.gift || 0),
             usedHours: Number(a.used || 0), remain: Number(a.remain || 0),
-            expireAt: a.expireAt || a.valid || '', status: a.status
+            expireAt: expAt, status: a.status,
+            daysLeft: daysLeft, expiring: (daysLeft >= 0 && daysLeft <= expDays)
           };
         })
       };
@@ -9769,6 +11376,368 @@
       feedbacks: parentFeedbacks(pid),
       policy: { canSeeInternalFlows: false, note: '家长端只展示自己孩子的订单状态、课时余额汇总与已发布反馈' }
     };
+  }
+
+  /* ---------------- 家长端专用授权接口（P0 数据安全） ----------------
+     设计原则：
+       1. 当前登录角色必须是 parent，parentId 只取自有效会话（resolveParentId）。
+       2. 所有 studentId 必须通过 ParentStudent 关系校验，不能信任前端参数。
+       3. 所有业务详情 ID 再次校验归属；返回最小必要投影，不暴露内部字段。
+       4. 写操作必须记录操作家长与时间。
+       原型阶段在 Store 内模拟会话校验；正式全栈版必须在服务端重新校验。 */
+  /** 家长是否拥有该学员：以 ParentStudent 关系表为唯一口径 */
+  function parentHasStudent(parentId, studentId) {
+    if (!studentId) return false;
+    return parentStudents(parentId).some(function (s) { return s.id === studentId; });
+  }
+  /** 越权即拒绝：家长只能访问自己关联的孩子 */
+  function assertParentChild(parentId, studentId) {
+    if (session.role !== 'parent') {
+      throw bizError('FORBIDDEN', '家长专用接口仅限家长身份调用');
+    }
+    var pid = resolveParentId(parentId);
+    if (!parentHasStudent(pid, studentId)) {
+      throw bizError('FORBIDDEN', '该学员不在当前家长名下，无法访问');
+    }
+    return pid;
+  }
+  /** 学员详情投影：只给家长端需要的最小字段，不返回内部对象 */
+  function parentStudentDetail(parentId, studentId) {
+    var pid = assertParentChild(parentId, studentId);
+    var s = student(studentId);
+    if (!s) throw bizError('STUDENT_NOT_FOUND', '学员不存在');
+    var accs = accountsOfStudent(s.id);
+    var done = db.courses.filter(function (c) {
+      return c.studentId === s.id && c.status === COURSE_STATUS.DONE;
+    }).sort(function (a, b) { return (a.date + a.start) < (b.date + b.start) ? 1 : -1; });
+    var lastDone = done[0] || null;
+    var t = teacher(s.teacherId);
+    return {
+      id: s.id, name: s.name, gender: s.gender, grade: s.grade, book: s.book,
+      school: s.school, status: s.status,
+      teacherId: s.teacherId, teacherName: (t && t.name) || s.teacherName || '未分配',
+      remain: s.remain,
+      totalHours: accs.reduce(function (n, a) { return n + Number(a.buy || 0) + Number(a.gift || 0); }, 0),
+      usedHours: accs.reduce(function (n, a) { return n + Number(a.used || 0); }, 0),
+      lastCourse: s.lastCourse || '', lastContent: s.lastContent || '',
+      lastCourseDate: lastDone ? lastDone.date : (s.lastCourse || ''),
+      lastCourseTopic: lastDone ? (lastDone.topic || '') : (s.lastContent || ''),
+      reviewSummary: parentReviewSummary(s.id)
+    };
+  }
+  /** 课程列表投影：课程状态与报告状态独立；历史课程保留原教师快照 */
+  function parentCourses(parentId, studentId, filters) {
+    var pid = assertParentChild(parentId, studentId);
+    filters = filters || {};
+    var rows = db.courses.filter(function (c) {
+      if (c.studentId !== studentId) return false;
+      if (filters.status && c.status !== filters.status) return false;
+      return true;
+    }).sort(function (a, b) { return (a.date + a.start) < (b.date + b.start) ? 1 : -1; }).map(function (c) {
+      var rp = recordOfCourse(c.id);
+      var rep = reportOfCourse(c.id);
+      var t = teacher(c.teacherId);
+      return {
+        id: c.id, date: c.date, start: c.start, end: c.end,
+        status: c.status, deductState: c.deductState || (c.deduct === '已扣课' ? '已扣课' : '未扣课'),
+        teacherName: c.teacherName || (t ? t.name : c.teacher || ''),
+        teacherId: c.teacherId, topic: c.topic || '',
+        reportStatus: rep ? rep.status : '未生成',
+        reportId: rep ? rep.id : '',
+        reportViewable: !!(rep && rep.status === REPORT_STATUS.PUBLISHED),
+        note: c.note || '',
+        actualStart: rp ? rp.actualStart : '', actualEnd: rp ? rp.actualEnd : ''
+      };
+    });
+    if (filters.report !== undefined && filters.report !== '') {
+      rows = rows.filter(function (c) {
+        return filters.report === '有报告' ? c.reportStatus !== '未生成'
+          : filters.report === '已发布' ? c.reportStatus === '已发布' : true;
+      });
+    }
+    return rows;
+  }
+  function parentCourseDetail(parentId, studentId, courseId) {
+    var pid = assertParentChild(parentId, studentId);
+    var c = course(courseId);
+    if (!c || c.studentId !== studentId) throw bizError('COURSE_NOT_FOUND', '课程不存在');
+    var rp = reportOfCourse(courseId);
+    var rec = recordOfCourse(courseId);
+    var t = teacher(c.teacherId);
+    return {
+      id: c.id, date: c.date, start: c.start, end: c.end,
+      status: c.status, deductState: c.deductState || (c.deduct === '已扣课' ? '已扣课' : '未扣课'),
+      teacherName: c.teacherName || (t ? t.name : c.teacher || ''),
+      topic: c.topic || '', note: c.note || '',
+      actualStart: rec ? rec.actualStart : '', actualEnd: rec ? rec.actualEnd : '',
+      reportStatus: rp ? rp.status : '未生成', reportId: rp ? rp.id : '',
+      reportViewable: !!(rp && rp.status === REPORT_STATUS.PUBLISHED)
+    };
+  }
+  /** 报告列表投影：只给已发布且对家长可见的报告 */
+  function parentReports(parentId, studentId, filters) {
+    var pid = assertParentChild(parentId, studentId);
+    filters = filters || {};
+    return db.reports.filter(function (r) {
+      if (r.studentId !== studentId) return false;
+      if (r.status !== REPORT_STATUS.PUBLISHED || r.visibleToParent === false) return false;
+      if (filters.courseId && r.courseId !== filters.courseId) return false;
+      return true;
+    }).sort(function (a, b) { return a.courseDate < b.courseDate ? 1 : -1; }).map(function (r) {
+      var t = teacher(r.teacherId);
+      return {
+        id: r.id, courseId: r.courseId, courseDate: r.courseDate, title: r.title,
+        teacherName: (t && t.name) || '教师', summary: r.content ? r.content.performance : '',
+        publishedAt: r.publishedAt || '', status: r.status
+      };
+    });
+  }
+  function parentReportDetail(parentId, studentId, reportId) {
+    var pid = assertParentChild(parentId, studentId);
+    var rp = report(reportId);
+    if (!rp || rp.studentId !== studentId) throw bizError('REPORT_NOT_FOUND', '报告不存在');
+    if (rp.status !== REPORT_STATUS.PUBLISHED || rp.visibleToParent === false) {
+      throw bizError('FORBIDDEN', '该报告尚未对家长发布');
+    }
+    var t = teacher(rp.teacherId);
+    var c = course(rp.courseId);
+    var rec = rp.recordId ? courseRecord(rp.recordId) : recordOfCourse(rp.courseId);
+    var snap = rec ? recordView(rec) : null;
+    var art = db.articleTasks.filter(function (a) { return a.courseId === rp.courseId; })[0] || null;
+    var artStat = art ? articleTaskStat(art.id) : null;
+    return {
+      id: rp.id, courseId: rp.courseId, courseDate: rp.courseDate, title: rp.title,
+      teacherName: (t && t.name) || '教师', publishedAt: rp.publishedAt || '',
+      courseStatus: c ? c.status : '', planStart: c ? (c.date + ' ' + c.start) : '',
+      planEnd: c ? (c.date + ' ' + c.end) : '',
+      actualStart: rec ? rec.actualStart : '', actualEnd: rec ? rec.actualEnd : '',
+      content: {
+        performance: rp.content.performance || '', weak: rp.content.weak || '',
+        next: rp.content.next || '', homeworkAdvice: rp.content.homeworkAdvice || ''
+      },
+      stats: {
+        trainWords: snap ? snap.trainWords : 0, mastered: snap ? snap.mastered : 0,
+        weak: snap ? snap.weak : 0, leitnerWords: snap ? snap.leitnerWords : 0,
+        plan21Words: snap ? snap.plan21Words : 0,
+        articleCount: snap ? snap.articleCount : 0,
+        articleMastered: snap ? snap.articleMastered : 0,
+        articleWeak: snap ? snap.articleWeak : 0
+      },
+      article: art ? { id: art.id, name: art.articleName } : null,
+      articleStat: artStat ? { mastered: artStat.mastered, weak: artStat.weak, readDone: artStat.readDone } : null
+    };
+  }
+  /** 复习汇总（真实口径）：今日到期 / 全部待复习 / 已通过 */
+  function parentReviewSummary(parentId, studentId) {
+    if (arguments.length < 2) { studentId = parentId; parentId = resolveParentId(); }
+    assertParentChild(parentId, studentId);
+    var rows = buildParentReviewRows(studentId);
+    return {
+      today: rows.filter(function (r) { return r.dueToday; }).length,
+      all: rows.length,
+      passed: wordStates(studentId).filter(function (s) { return s.state === '本次通过'; }).length
+    };
+  }
+  /** 构建家长可见的复习单词行（两套体系独立计算、按 wordId 合并） */
+  function buildParentReviewRows(studentId) {
+    var rows = [];
+    var seen = {};
+    function pushWord(wordId, systems, extra) {
+      if (!seen[wordId]) {
+        seen[wordId] = 1;
+        rows.push({ wordId: wordId, systems: systems.slice(), extra: extra });
+      } else {
+        var hit = rows.filter(function (r) { return r.wordId === wordId; })[0];
+        systems.forEach(function (sy) { if (hit.systems.indexOf(sy) < 0) hit.systems.push(sy); });
+        if (extra && extra.dueToday) hit.extra.dueToday = true;
+        if (extra && extra.dueAt && (!hit.extra.dueAt || hit.extra.dueAt > extra.dueAt)) hit.extra.dueAt = extra.dueAt;
+      }
+    }
+    // 莱特纳：未毕业单词；今日到期 = 红盒/黄盒到期 + 手动今日加入
+    leitnerStates(studentId).forEach(function (s) {
+      if (s.box === 'graduated') return;
+      pushWord(s.wordId, ['莱特纳'], {
+        dueToday: isDue(s) || (s.manualToday && s.box !== 'graduated'),
+        dueAt: s.dueAt || '', leitnerBox: s.box, leitnerBoxName: boxName(s.box), lastResult: s.lastResult || '待复习'
+      });
+    });
+    // 21 天：未取消计划里未完成任务的单词，按各自任务日期计算到期
+    plansOf(studentId).forEach(function (p) {
+      if (p.status === '已取消') return;
+      plan21Tasks(p.id).forEach(function (t) {
+        if (isDone(t.status) || !t.wordIds || !t.wordIds.length) return;
+        t.wordIds.forEach(function (wid) {
+          pushWord(wid, ['21 天'], { dueToday: t.date <= TODAY, dueAt: t.date, planDay: t.day });
+        });
+      });
+    });
+    return rows.map(function (r) {
+      var w = word(r.wordId);
+      var st = wordState(studentId, r.wordId);
+      return {
+        wordId: r.wordId,
+        en: w ? w.en : r.wordId, ph: w ? w.ph : '',
+        cn: w ? w.mean.map(function (m) { return m.cn; }).join('；') : '',
+        unit: w ? (w.grade + ' ' + w.unit) : '',
+        bookIds: wordbookIdsOf(r.wordId), bookNames: wordbookNamesOf(r.wordId),
+        systems: r.systems, state: st ? st.state : '未训练',
+        dueToday: !!r.extra.dueToday, dueAt: r.extra.dueAt || '',
+        leitnerBox: r.extra.leitnerBox || null, leitnerBoxName: r.extra.leitnerBoxName || '',
+        lastResult: r.extra.lastResult || ''
+      };
+    });
+  }
+  /** 家长待复习三视图：today / all / passed */
+  function parentReviewWords(parentId, studentId, options) {
+    var pid = assertParentChild(parentId, studentId);
+    options = options || {};
+    var view = options.view || 'all';
+    var system = options.system || 'all';
+    var rows = buildParentReviewRows(studentId);
+    if (view === 'today') rows = rows.filter(function (r) { return r.dueToday; });
+    if (view === 'passed') {
+      return wordStates(studentId).filter(function (s) { return s.state === '本次通过'; })
+        .map(function (s) {
+          var w = word(s.wordId);
+          return {
+            wordId: s.wordId, en: w ? w.en : s.wordId, ph: w ? w.ph : '', cn: w ? w.mean.map(function (m) { return m.cn; }).join('；') : '',
+            unit: w ? (w.grade + ' ' + w.unit) : '', bookIds: wordbookIdsOf(s.wordId), bookNames: wordbookNamesOf(s.wordId),
+            systems: ['已通过'], state: s.state, dueToday: false, dueAt: '', leitnerBox: null, leitnerBoxName: '', lastResult: ''
+          };
+        });
+    }
+    if (system === 'leitner') rows = rows.filter(function (r) { return r.systems.indexOf('莱特纳') >= 0; });
+    if (system === 'plan21') rows = rows.filter(function (r) { return r.systems.indexOf('21 天') >= 0; });
+    if (isStr(options.bookId)) rows = rows.filter(function (r) { return r.bookIds.indexOf(options.bookId) >= 0; });
+    if (!options.includePassed) rows = rows.filter(function (r) { return r.state !== '本次通过'; });
+    var rank = { '待复习': 0, '暂不确定': 1, '待强化训练': 2, '待最后复习': 3, '初筛认识': 4, '本次通过': 5, '未训练': 6 };
+    rows.sort(function (a, b) {
+      var d = (rank[a.state] === undefined ? 9 : rank[a.state]) - (rank[b.state] === undefined ? 9 : rank[b.state]);
+      if (d) return d;
+      return a.en < b.en ? -1 : a.en > b.en ? 1 : 0;
+    });
+    return rows;
+  }
+  /** 家庭复习记录（家长可见范围，可按日期） */
+  function parentFamilyChecks(parentId, studentId, date) {
+    var pid = assertParentChild(parentId, studentId);
+    var d = date || TODAY;
+    return db.familyChecks.filter(function (c) {
+      return c.studentId === studentId && (!date || c.date === d);
+    }).map(function (c) {
+      return { id: c.id, parentId: c.parentId, studentId: c.studentId, wordId: c.wordId, date: c.date, checked: !!c.checked, at: c.at, by: c.by };
+    });
+  }
+  function parentFamilyCheckAt(parentId, studentId, wordId, date) {
+    var pid = assertParentChild(parentId, studentId);
+    return db.familyChecks.filter(function (c) {
+      return c.studentId === studentId && c.wordId === wordId && c.date === (date || TODAY);
+    })[0] || null;
+  }
+  /** 家庭复习勾选：只写辅助表，不改变正式学习状态；记录操作家长与时间 */
+  function toggleParentFamilyCheck(parentId, studentId, wordId, checked) {
+    var pid = assertParentChild(parentId, studentId);
+    if (!isStr(wordId)) throw bizError('WORD_REQUIRED', '单词参数缺失');
+    // wordId 必须存在于该学员的有效复习数据中
+    var valid = buildParentReviewRows(studentId).some(function (r) { return r.wordId === wordId; });
+    var passed = wordStates(studentId).some(function (s) { return s.wordId === wordId && s.state === '本次通过'; });
+    if (!valid && !passed) throw bizError('WORD_NOT_REVIEW', '该单词不在该学员的有效复习数据中');
+    var p = parent(pid);
+    var c = parentFamilyCheckAt(pid, studentId, wordId, TODAY);
+    if (checked) {
+      if (!c) {
+        db.familyChecks.push({
+          id: 'FC' + seq('FC', 4), parentId: pid, studentId: studentId, wordId: wordId,
+          date: TODAY, checked: true, at: stamp(), by: (p ? p.name : '') || '家长'
+        });
+      } else {
+        c.checked = true; c.parentId = pid; c.at = stamp(); c.by = (p ? p.name : '') || '家长';
+      }
+    } else if (c) {
+      c.checked = false; c.at = stamp();
+    }
+    save();
+    return parentFamilyCheckAt(pid, studentId, wordId, TODAY);
+  }
+  /** 当前孩子选择状态：五页共享，切换后全局生效 */
+  function setParentCurrentChild(parentId, studentId) {
+    var pid = resolveParentId(parentId);
+    if (!parentHasStudent(pid, studentId)) throw bizError('FORBIDDEN', '不能切换到自己名下的孩子之外');
+    try { sessionStorage.setItem('ee_parent_current_child_' + pid, studentId); } catch (e) { /* 降级为内存 */ }
+    return studentId;
+  }
+  function parentCurrentChild(parentId) {
+    var pid = resolveParentId(parentId);
+    var kids = parentStudents(pid).map(function (s) { return s.id; });
+    if (!kids.length) return '';
+    var saved = null;
+    try { saved = sessionStorage.getItem('ee_parent_current_child_' + pid); } catch (e) { saved = null; }
+    if (saved && kids.indexOf(saved) >= 0) return saved;
+    return kids[0];
+  }
+  /* ---------------- 家长咨询 ----------------
+     家长只能查看自己的咨询；咨询真实落库并生成教务待处理事项与通知。 */
+  function parentInquiries(parentId) {
+    var pid = resolveParentId(parentId);
+    return db.parentInquiries.filter(function (q) { return q.parentId === pid; })
+      .sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+  }
+  function parentInquiryDetail(parentId, inquiryId) {
+    var pid = resolveParentId(parentId);
+    var q = db.parentInquiries.filter(function (x) { return x.id === inquiryId && x.parentId === pid; })[0];
+    if (!q) throw bizError('INQUIRY_NOT_FOUND', '咨询记录不存在');
+    return clone(q);
+  }
+  function createParentInquiry(input) {
+    var pid = resolveParentId();
+    if (session.role !== 'parent') throw bizError('FORBIDDEN', '仅家长可发起咨询');
+    input = input || {};
+    var type = String(input.type || '').trim();
+    var content = String(input.content || '').trim();
+    if (!content) throw bizError('CONTENT_REQUIRED', '请填写咨询内容');
+    var studentId = input.studentId || '';
+    if (studentId && !parentHasStudent(pid, studentId)) {
+      throw bizError('FORBIDDEN', '只能为孩子发起咨询');
+    }
+    var p = parent(pid);
+    var q = {
+      id: 'IQ' + seq('IQ', 3), parentId: pid, studentId: studentId || '',
+      type: type || '其他', content: content,
+      contact: input.contact || (p ? p.phone : ''),
+      status: '待处理', assignedStaffId: '', reply: '',
+      createdAt: stamp(), updatedAt: stamp(), resolvedAt: ''
+    };
+    db.parentInquiries.push(q);
+    save();
+    var kidName = studentId ? ((student(studentId) || {}).name || '') : '';
+    notify('PARENT_INQUIRY', {
+      parentId: pid, parentName: (p ? p.name : '') || '家长', studentName: kidName,
+      type: q.type, content: q.content, businessId: q.id,
+      link: 'admin/parent-inquiry.html?inquiry=' + q.id
+    });
+    return clone(q);
+  }
+  /** 教务处理咨询：标记状态 / 填写回复（教务端调用，需权限） */
+  function handleParentInquiry(inquiryId, input) {
+    assertCan('parent.view');
+    input = input || {};
+    var q = db.parentInquiries.filter(function (x) { return x.id === inquiryId; })[0];
+    if (!q) throw bizError('INQUIRY_NOT_FOUND', '咨询记录不存在');
+    if (input.reply !== undefined) {
+      q.reply = String(input.reply || '');
+      if (q.reply.trim()) q.status = '已回复';
+    }
+    if (input.status) q.status = input.status;
+    if (input.assignedStaffId !== undefined) q.assignedStaffId = input.assignedStaffId;
+    q.updatedAt = stamp();
+    if (q.status === '已回复' || q.status === '已关闭') q.resolvedAt = q.resolvedAt || stamp();
+    if (input.reply !== undefined && input.reply.trim()) {
+      notify('PARENT_INQUIRY_REPLIED', {
+        parentId: q.parentId, type: q.type, businessId: q.id, link: 'parent/hours.html'
+      });
+    }
+    save();
+    return clone(q);
   }
 
   /* ---------------- 佣金：本轮只占位预估，不做结算 ---------------- */
@@ -9799,6 +11768,979 @@
     });
   }
 
+  /* ============================================================
+     第八轮：系统管理域（统一账号 / 角色权限 / 审计 / 字典 / 通知 / 机构）
+     ============================================================ */
+  function staffNameOf(acc) {
+    if (!acc) return '';
+    if (acc.profileType === 'staff') {
+      var sp = db.staffProfiles.filter(function (p) { return p.id === acc.profileId; })[0];
+      return sp ? sp.name : (acc.loginName || '');
+    }
+    if (acc.profileType === 'teacher') {
+      var t = teacher(acc.profileId || acc.teacherId);
+      return t ? t.name : (acc.loginName || '');
+    }
+    if (acc.profileType === 'agent') {
+      var a = agent(acc.profileId);
+      return a ? a.name : (acc.loginName || '');
+    }
+    if (acc.profileType === 'parent') {
+      var p = parent(acc.profileId);
+      return p ? p.name : (acc.loginName || '');
+    }
+    return acc.loginName || acc.username || '';
+  }
+  function accountStatusLabel(status) {
+    return status === ACCOUNT.OK ? '启用'
+      : status === ACCOUNT.DISABLED ? '禁用'
+        : status === ACCOUNT.NONE ? '待激活' : String(status || '');
+  }
+  function accountById(id) {
+    return db.users.filter(function (u) { return u.id === id; })[0] || null;
+  }
+  function accountOfProfile(profileType, profileId) {
+    return db.users.filter(function (u) {
+      return u.profileType === profileType && u.profileId === profileId;
+    })[0] || null;
+  }
+  function accountRows(filters) {
+    filters = filters || {};
+    return db.users.filter(function (u) {
+      if (filters.roleCode && u.roleCode !== filters.roleCode) return false;
+      if (filters.status && u.status !== filters.status && accountStatusLabel(u.status) !== filters.status) return false;
+      if (filters.profileType && u.profileType !== filters.profileType) return false;
+      if (filters.keyword) {
+        var kw = String(filters.keyword).toLowerCase();
+        var hay = [u.loginName, u.phone, staffNameOf(u), u.profileId].join(' ').toLowerCase();
+        if (hay.indexOf(kw) < 0) return false;
+      }
+      return true;
+    }).map(function (u) {
+      var role = db.roles.filter(function (r) { return r.code === u.roleCode; })[0];
+      return {
+        id: u.id, loginName: u.loginName, phone: u.phone,
+        roleCode: u.roleCode, roleName: role ? role.name : (ROLE_LABEL[u.roleCode] || u.roleCode),
+        profileType: u.profileType, profileId: u.profileId, profileName: staffNameOf(u),
+        status: u.status, statusLabel: accountStatusLabel(u.status),
+        dataScope: role ? role.dataScope : 'ALL',
+        dataScopeLabel: role ? (DATA_SCOPE_LABEL[role.dataScope] || role.dataScope) : '全部数据',
+        lastLoginAt: u.lastLoginAt || '', createdAt: u.createdAt || '',
+        disabledReason: u.disabledReason || '', mustChangePassword: !!u.mustChangePassword
+      };
+    }).sort(function (a, b) {
+      var ra = ROLE_SEED.findIndex(function (r) { return r.code === a.roleCode; });
+      var rb = ROLE_SEED.findIndex(function (r) { return r.code === b.roleCode; });
+      return ra - rb || (a.profileName < b.profileName ? -1 : 1);
+    });
+  }
+  function accountSummary() {
+    var rows = accountRows();
+    var enabled = rows.filter(function (r) { return r.status === ACCOUNT.OK; }).length;
+    return {
+      total: rows.length, enabled: enabled,
+      disabled: rows.filter(function (r) { return r.status === ACCOUNT.DISABLED; }).length,
+      pending: rows.filter(function (r) { return r.status === ACCOUNT.NONE; }).length,
+      byRole: ROLE_SEED.map(function (r) {
+        return { code: r.code, name: r.name, count: rows.filter(function (x) { return x.roleCode === r.code; }).length };
+      })
+    };
+  }
+  function profileNameOf(type, id) {
+    if (type === 'teacher') { var t = teacher(id); return t ? t.name : ''; }
+    if (type === 'agent') { var a = agent(id); return a ? a.name : ''; }
+    if (type === 'parent') { var p = parent(id); return p ? p.name : ''; }
+    var sp = db.staffProfiles.filter(function (x) { return x.id === id; })[0];
+    return sp ? sp.name : '';
+  }
+  function createAccount(input) {
+    assertPermission('account.create');
+    input = input || {};
+    var type = input.profileType;
+    var pid = String(input.profileId || '').trim();
+    if (['staff', 'teacher', 'agent', 'parent'].indexOf(type) < 0) {
+      throw bizError('BAD_PROFILE', '账号必须绑定已有的人员档案（员工/教师/代理/家长）');
+    }
+    if (!pid) throw bizError('NO_PROFILE', '请选择要绑定的人员档案');
+    if (!profileNameOf(type, pid)) throw bizError('PROFILE_NOT_FOUND', '人员档案不存在：' + pid);
+    if (accountOfProfile(type, pid)) {
+      throw bizError('DUPLICATE_BINDING', '该人员档案已绑定账号，同一人员不能重复开通');
+    }
+    var roleCode = input.roleCode
+      || (type === 'staff' ? '' : type);
+    if (type !== 'staff' && roleCode !== type) {
+      throw bizError('ROLE_MISMATCH', '教师/代理/家长账号的角色必须与档案类型一致');
+    }
+    if (!roleCode || !db.roles.some(function (r) { return r.code === roleCode && r.status === '启用'; })) {
+      throw bizError('ROLE_NOT_FOUND', '请选择有效角色');
+    }
+    var loginName = String(input.loginName || input.phone || '').trim();
+    if (!loginName) throw bizError('NO_LOGIN', '登录名不能为空');
+    if (db.users.some(function (u) { return u.loginName.toLowerCase() === loginName.toLowerCase(); })) {
+      throw bizError('DUPLICATE_LOGIN', '登录名已被占用：' + loginName);
+    }
+    var status = input.status && [ACCOUNT.OK, ACCOUNT.DISABLED, ACCOUNT.NONE].indexOf(input.status) >= 0
+      ? input.status : ACCOUNT.OK;
+    var now = stamp();
+    var acc = {
+      id: nextId('UA', 'UA', 3), loginName: loginName, username: loginName,
+      phone: String(input.phone || ''), passwordHash: '', mustChangePassword: true,
+      status: status, roleCode: roleCode, roleId: roleCode, profileType: type, profileId: pid,
+      teacherId: type === 'teacher' ? pid : '', agentId: type === 'agent' ? pid : '',
+      parentId: type === 'parent' ? pid : '', staffId: type === 'staff' ? pid : '',
+      lastLoginAt: '', disabledReason: status === ACCOUNT.DISABLED ? (input.reason || '新建时禁用') : '',
+      openedAt: now, openedBy: operatorForRole(), createdAt: now, updatedAt: now
+    };
+    db.users.push(acc);
+    if (type === 'teacher') {
+      var t = teacher(pid);
+      t.accountId = acc.id;
+      t.updatedAt = now;
+      logCoop(t.id, COOP_ACTION.ACCOUNT_OPENED, { reason: '系统管理开通账号', remark: '登录名 ' + loginName });
+    } else if (type === 'agent') {
+      agent(pid).accountId = acc.id;
+    } else if (type === 'parent') {
+      parent(pid).accountId = acc.id;
+    }
+    recordAudit({
+      module: '系统管理', action: '账号开通', resourceType: 'account', resourceId: acc.id,
+      resourceName: profileNameOf(type, pid) + '（' + loginName + '）',
+      beforeData: null, afterData: { loginName: loginName, roleCode: roleCode, status: status },
+      reason: input.reason || '为已有人员档案开通登录账号', result: '成功'
+    });
+    save();
+    return clone(acc);
+  }
+  function updateAccount(accountId, input) {
+    assertPermission('account.edit');
+    input = input || {};
+    var acc = accountById(accountId);
+    if (!acc) throw bizError('ACCOUNT_NOT_FOUND', '账号不存在');
+    var before = { loginName: acc.loginName, phone: acc.phone, roleCode: acc.roleCode, status: acc.status };
+    if (input.loginName !== undefined) {
+      var ln = String(input.loginName || '').trim();
+      if (!ln) throw bizError('NO_LOGIN', '登录名不能为空');
+      if (db.users.some(function (u) { return u.id !== acc.id && u.loginName.toLowerCase() === ln.toLowerCase(); })) {
+        throw bizError('DUPLICATE_LOGIN', '登录名已被占用：' + ln);
+      }
+      acc.loginName = ln; acc.username = ln;
+    }
+    if (input.phone !== undefined) acc.phone = String(input.phone || '');
+    if (input.roleCode !== undefined && input.roleCode !== acc.roleCode) {
+      if (acc.profileType !== 'staff' && input.roleCode !== acc.profileType) {
+        throw bizError('ROLE_MISMATCH', '教师/代理/家长账号不能改成与档案不一致的角色');
+      }
+      var role = db.roles.filter(function (r) { return r.code === input.roleCode && r.status === '启用'; })[0];
+      if (!role) throw bizError('ROLE_NOT_FOUND', '目标角色不存在或已停用');
+      acc.roleCode = role.code; acc.roleId = role.code;
+      if (acc.profileType === 'staff') {
+        var sp = db.staffProfiles.filter(function (p) { return p.id === acc.profileId; })[0];
+        if (sp) sp.roleCode = role.code;
+      }
+    }
+    acc.updatedAt = stamp();
+    recordAudit({
+      module: '系统管理', action: '账号编辑', resourceType: 'account', resourceId: acc.id,
+      resourceName: staffNameOf(acc) + '（' + acc.loginName + '）',
+      beforeData: before, afterData: { loginName: acc.loginName, phone: acc.phone, roleCode: acc.roleCode },
+      reason: input.reason || '修改账号信息', result: '成功'
+    });
+    save();
+    return clone(acc);
+  }
+  function normalizeAccountStatus(status) {
+    if (status === '启用' || status === '正常') return ACCOUNT.OK;
+    if (status === '禁用' || status === '已禁用') return ACCOUNT.DISABLED;
+    if (status === '待激活' || status === '未开通') return ACCOUNT.NONE;
+    return status;
+  }
+  function setUserAccountStatus(accountId, status, opt) {
+    assertPermission('account.disable');
+    opt = opt || {};
+    var acc = accountById(accountId);
+    if (!acc) throw bizError('ACCOUNT_NOT_FOUND', '账号不存在');
+    var next = normalizeAccountStatus(status);
+    if ([ACCOUNT.OK, ACCOUNT.DISABLED, ACCOUNT.NONE].indexOf(next) < 0) {
+      throw bizError('BAD_STATUS', '账号状态只能是启用/禁用/待激活');
+    }
+    if (acc.status === next) return clone(acc);
+    if (next !== ACCOUNT.OK && !String(opt.reason || '').trim()) {
+      throw bizError('REASON_REQUIRED', '封禁/停用账号必须填写原因');
+    }
+    var currentAcc = accountForSession();
+    if (next !== ACCOUNT.OK && currentAcc && currentAcc.id === acc.id) {
+      throw bizError('SELF_DISABLE', '不能禁用当前正在使用的账号');
+    }
+    if (next !== ACCOUNT.OK && acc.roleCode === 'admin') {
+      var otherAdmin = db.users.filter(function (u) {
+        return u.roleCode === 'admin' && u.status === ACCOUNT.OK && u.id !== acc.id;
+      }).length;
+      if (!otherAdmin) throw bizError('LAST_ADMIN', '不能禁用最后一个可用的管理员账号');
+    }
+    var before = { status: acc.status, disabledReason: acc.disabledReason };
+    acc.status = next;
+    acc.disabledReason = next === ACCOUNT.OK ? '' : String(opt.reason || '');
+    acc.disabledAt = next === ACCOUNT.OK ? '' : stamp();
+    acc.updatedAt = stamp();
+    if (next === ACCOUNT.DISABLED && session.accountId === acc.id) session.accountId = '';
+    recordAudit({
+      module: '系统管理', action: next === ACCOUNT.OK ? '启用账号' : '禁用账号',
+      resourceType: 'account', resourceId: acc.id,
+      resourceName: staffNameOf(acc) + '（' + acc.loginName + '）',
+      beforeData: before, afterData: { status: acc.status, disabledReason: acc.disabledReason },
+      reason: opt.reason || '手动调整账号状态', result: '成功'
+    });
+    save();
+    return clone(acc);
+  }
+  function resetAccountCredential(accountId, opt) {
+    assertPermission('account.reset_credential');
+    opt = opt || {};
+    var acc = accountById(accountId);
+    if (!acc) throw bizError('ACCOUNT_NOT_FOUND', '账号不存在');
+    acc.passwordHash = '';
+    acc.mustChangePassword = true;
+    acc.credentialResetAt = stamp();
+    acc.updatedAt = stamp();
+    recordAudit({
+      module: '系统管理', action: '重置登录凭证', resourceType: 'account', resourceId: acc.id,
+      resourceName: staffNameOf(acc) + '（' + acc.loginName + '）',
+      beforeData: { mustChangePassword: true }, afterData: { mustChangePassword: true },
+      reason: opt.reason || '管理员重置凭证', result: '成功'
+    });
+    save();
+    return clone(acc);
+  }
+
+  /* ---------- 角色与权限 ---------- */
+  function roles() { return db.roles.slice(); }
+  function roleOf(roleId) {
+    return db.roles.filter(function (r) { return r.id === roleId || r.code === roleId; })[0] || null;
+  }
+  function roleRows() {
+    return db.roles.map(function (r) {
+      var members = db.users.filter(function (u) { return u.roleCode === r.code && u.status === ACCOUNT.OK; });
+      var enabledCount = db.rolePermissions.filter(function (rp) {
+        return rp.roleCode === r.code && rp.enabled;
+      }).length;
+      return {
+        id: r.id, code: r.code, name: r.name, description: r.description,
+        dataScope: r.dataScope, dataScopeLabel: DATA_SCOPE_LABEL[r.dataScope] || r.dataScope,
+        memberCount: members.length, permissionCount: enabledCount,
+        totalPermissionCount: db.permissions.length,
+        system: !!r.system, status: r.status,
+        updatedAt: r.updatedAt || '', updatedBy: r.updatedBy || ''
+      };
+    });
+  }
+  function permissionCatalog() {
+    return db.permissions.map(function (p) {
+      return { code: p.code, module: p.module, name: p.name, description: p.description, type: p.type };
+    });
+  }
+  function permissionMatrix(roleId) {
+    var r = roleOf(roleId);
+    if (!r) throw bizError('ROLE_NOT_FOUND', '角色不存在');
+    var modules = [];
+    db.permissions.forEach(function (p) {
+      var group = modules.filter(function (m) { return m.module === p.module; })[0];
+      if (!group) { group = { module: p.module, items: [] }; modules.push(group); }
+      var rp = rolePermissionOf(r.code, p.code);
+      group.items.push({
+        code: p.code, name: p.name, description: p.description, type: p.type,
+        enabled: !!(rp && rp.enabled), dataScope: rp ? rp.dataScope : r.dataScope
+      });
+    });
+    return {
+      role: { id: r.id, code: r.code, name: r.name, dataScope: r.dataScope, system: !!r.system },
+      modules: modules, dataScopeOptions: DATA_SCOPE_STATUS.map(function (s) {
+        return { code: s, label: DATA_SCOPE_LABEL[s] || s };
+      })
+    };
+  }
+  function updateRolePermissions(roleId, permissions, opt) {
+    assertPermission('permission.configure');
+    opt = opt || {};
+    var r = roleOf(roleId);
+    if (!r) throw bizError('ROLE_NOT_FOUND', '角色不存在');
+    var list = Array.isArray(permissions) ? permissions : (permissions && permissions.permissions) || [];
+    if (!list.length) throw bizError('EMPTY_PERMISSION', '至少保留一项权限');
+    var before = {};
+    db.rolePermissions.forEach(function (rp) {
+      if (rp.roleCode === r.code) before[rp.permissionCode] = rp.enabled;
+    });
+    list.forEach(function (item) {
+      if (!item || !item.code) return;
+      var rp = rolePermissionOf(r.code, item.code);
+      if (!rp) return;
+      if (r.code === 'admin' && item.code === 'permission.configure' && item.enabled === false) {
+        throw bizError('PROTECTED_PERMISSION', '机构管理员必须保留「配置角色权限」，避免机构失去管理入口');
+      }
+      rp.enabled = !!item.enabled;
+      if (item.dataScope && DATA_SCOPE_STATUS.indexOf(item.dataScope) >= 0) rp.dataScope = item.dataScope;
+      rp.updatedAt = stamp();
+      rp.updatedBy = operatorForRole();
+    });
+    if (opt.dataScope && DATA_SCOPE_STATUS.indexOf(opt.dataScope) >= 0) {
+      r.dataScope = opt.dataScope;
+      db.rolePermissions.forEach(function (rp) { if (rp.roleCode === r.code) rp.dataScope = opt.dataScope; });
+    }
+    r.updatedAt = stamp();
+    r.updatedBy = operatorForRole();
+    recordAudit({
+      module: '系统管理', action: '修改角色权限', resourceType: 'role', resourceId: r.id,
+      resourceName: r.name, beforeData: before,
+      afterData: (function () {
+        var out = {};
+        db.rolePermissions.forEach(function (rp) { if (rp.roleCode === r.code) out[rp.permissionCode] = rp.enabled; });
+        return out;
+      })(),
+      reason: opt.reason || '调整角色菜单与操作权限', result: '成功'
+    });
+    save();
+    return permissionMatrix(r.id);
+  }
+  function resetRolePermissions(roleId, opt) {
+    assertPermission('permission.configure');
+    var r = roleOf(roleId);
+    if (!r) throw bizError('ROLE_NOT_FOUND', '角色不存在');
+    var def = DEFAULT_PERM[r.code];
+    if (!def) throw bizError('NO_DEFAULT', '自定义角色没有预置权限可恢复');
+    db.rolePermissions.forEach(function (rp) {
+      if (rp.roleCode !== r.code) return;
+      rp.enabled = !!def.all || (def.codes || []).indexOf(rp.permissionCode) >= 0;
+      rp.dataScope = def.dataScope || r.dataScope;
+      rp.updatedAt = stamp();
+      rp.updatedBy = operatorForRole();
+    });
+    r.dataScope = def.dataScope || r.dataScope;
+    recordAudit({
+      module: '系统管理', action: '恢复默认权限', resourceType: 'role', resourceId: r.id,
+      resourceName: r.name, beforeData: null, afterData: { dataScope: r.dataScope },
+      reason: (opt && opt.reason) || '恢复角色预置权限', result: '成功'
+    });
+    save();
+    return permissionMatrix(r.id);
+  }
+  function createRole(input) {
+    assertPermission('role.edit');
+    input = input || {};
+    var name = String(input.name || '').trim();
+    if (!name) throw bizError('NO_NAME', '角色名称不能为空');
+    var code = String(input.code || '').trim().replace(/[^a-zA-Z0-9_]/g, '');
+    if (!code) code = 'custom_' + (db.roles.length + 1);
+    if (db.roles.some(function (r) { return r.code === code; })) throw bizError('DUPLICATE_ROLE', '角色编码已存在');
+    var role = {
+      id: nextId('R', 'R', 3), code: code, name: name,
+      description: String(input.description || '自定义角色'),
+      dataScope: DATA_SCOPE_STATUS.indexOf(input.dataScope) >= 0 ? input.dataScope : 'ALL',
+      system: false, status: '启用', createdAt: stamp(), updatedAt: stamp()
+    };
+    db.roles.push(role);
+    db.permissions.forEach(function (p) {
+      db.rolePermissions.push({
+        id: 'RP-' + code + '-' + p.code, roleId: role.id, roleCode: code,
+        permissionId: p.id, permissionCode: p.code, enabled: false,
+        dataScope: role.dataScope, updatedAt: stamp(), updatedBy: operatorForRole()
+      });
+    });
+    recordAudit({
+      module: '系统管理', action: '新建角色', resourceType: 'role', resourceId: role.id,
+      resourceName: role.name, beforeData: null, afterData: { code: role.code, dataScope: role.dataScope },
+      reason: input.reason || '新建自定义角色', result: '成功'
+    });
+    save();
+    return clone(role);
+  }
+  function updateRole(roleId, input) {
+    assertPermission('role.edit');
+    input = input || {};
+    var r = roleOf(roleId);
+    if (!r) throw bizError('ROLE_NOT_FOUND', '角色不存在');
+    var before = { name: r.name, description: r.description, dataScope: r.dataScope, status: r.status };
+    if (input.name !== undefined) {
+      if (!String(input.name || '').trim()) throw bizError('NO_NAME', '角色名称不能为空');
+      r.name = String(input.name).trim();
+    }
+    if (input.description !== undefined) r.description = String(input.description || '');
+    if (input.status !== undefined) {
+      if (r.system && input.status === '停用') throw bizError('SYSTEM_ROLE', '系统角色不能停用');
+      r.status = input.status === '停用' ? '停用' : '启用';
+    }
+    r.updatedAt = stamp(); r.updatedBy = operatorForRole();
+    recordAudit({
+      module: '系统管理', action: '编辑角色', resourceType: 'role', resourceId: r.id,
+      resourceName: r.name, beforeData: before,
+      afterData: { name: r.name, description: r.description, status: r.status },
+      reason: input.reason || '维护角色信息', result: '成功'
+    });
+    save();
+    return clone(r);
+  }
+  function roleAccounts(roleCode) {
+    return db.users.filter(function (u) {
+      return u.roleCode === roleCode;
+    }).map(function (u) {
+      var name = staffNameOf(u);
+      var available = u.status === ACCOUNT.OK;
+      var reason = '';
+      if (!available) {
+        reason = u.status === ACCOUNT.NONE ? '账号未开通' : (u.disabledReason || '账号已禁用');
+      }
+      if (available && u.profileType === 'teacher') {
+        var t = teacher(u.profileId);
+        if (!t || t.cooperationStatus !== COOP.READY) {
+          available = false;
+          reason = '合作状态：' + ((t && t.cooperationStatus) || '未知');
+        }
+      }
+      if (available && u.profileType === 'agent') {
+        var a = agent(u.profileId);
+        if (!a || a.status !== '启用') {
+          available = false;
+          reason = a ? (a.status === '待审核' ? '代理待审核，暂不可登录' : '代理已停用') : '代理档案不存在';
+        }
+      }
+      if (available && u.profileType === 'parent') {
+        var p = parent(u.profileId);
+        if (!p || p.status === '停用') {
+          available = false;
+          reason = '家长账号已停用';
+        }
+      }
+      return {
+        accountId: u.id, id: u.profileId, profileId: u.profileId, profileType: u.profileType,
+        name: name, code: u.profileId || u.id, available: available, reason: reason,
+        status: u.status, statusLabel: accountStatusLabel(u.status),
+        meta: ROLE_LABEL[u.roleCode] || u.roleCode
+      };
+    }).sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+  }
+  function currentIdentity() {
+    var role = session.role;
+    var acc = accountForSession();
+    var base = {
+      role: role, roleName: ROLE_LABEL[role] || role,
+      accountId: acc ? acc.id : '', available: true, reason: ''
+    };
+    if (role === 'teacher') {
+      if (!session.teacherId) return mergeIdentity(base, { name: '未识别教师身份', code: '', available: false });
+      var t = teacher(session.teacherId);
+      if (!t) return mergeIdentity(base, { name: '未识别教师身份', code: '', available: false });
+      var ok = acc ? acc.status === ACCOUNT.OK && t.cooperationStatus === COOP.READY : t.cooperationStatus === COOP.READY;
+      return mergeIdentity(base, {
+        name: t.name, code: t.id, available: ok,
+        reason: ok ? '' : (acc && acc.status !== ACCOUNT.OK ? '账号' + accountStatusLabel(acc.status) : '合作状态：' + t.cooperationStatus)
+      });
+    }
+    if (role === 'agent') {
+      var a = session.agentId ? agent(session.agentId) : null;
+      if (!a) return mergeIdentity(base, { name: '未识别代理身份', code: '', available: false });
+      return mergeIdentity(base, { name: a.name, code: a.id, available: a.status === '启用', reason: a.status === '启用' ? '' : '代理' + a.status });
+    }
+    if (role === 'parent') {
+      var p = session.parentId ? parent(session.parentId) : null;
+      if (!p) return mergeIdentity(base, { name: '未识别家长身份', code: '', available: false });
+      return mergeIdentity(base, { name: p.name, code: p.id, available: p.status !== '停用', reason: p.status === '停用' ? '家长账号已停用' : '' });
+    }
+    if (!acc) return mergeIdentity(base, { name: '未识别员工身份', code: '', available: false });
+    return mergeIdentity(base, { name: staffNameOf(acc), code: acc.profileId, available: acc.status === ACCOUNT.OK });
+  }
+  function mergeIdentity(base, extra) {
+    var out = clone(base);
+    Object.keys(extra || {}).forEach(function (k) { out[k] = extra[k]; });
+    return out;
+  }
+
+  /* ---------- 数据范围 ---------- */
+  function identityOf(userId) {
+    if (userId) {
+      var u = db.users.filter(function (x) {
+        return x.id === userId || x.profileId === userId || x.loginName === userId;
+      })[0];
+      if (u) {
+        return {
+          roleCode: u.roleCode, teacherId: u.teacherId || (u.profileType === 'teacher' ? u.profileId : ''),
+          agentId: u.profileType === 'agent' ? u.profileId : '',
+          parentId: u.profileType === 'parent' ? u.profileId : ''
+        };
+      }
+      if (ROLE_SEED.some(function (r) { return r.code === userId; })) {
+        return { roleCode: userId, teacherId: '', agentId: '', parentId: '' };
+      }
+      return null;
+    }
+    return {
+      roleCode: session.role, teacherId: session.teacherId,
+      agentId: session.agentId, parentId: session.parentId
+    };
+  }
+  function teacherHasStudent(teacherId, studentId) {
+    return db.teacherStudents.some(function (r) {
+      return r.teacherId === teacherId && r.studentId === studentId && !r.endAt;
+    });
+  }
+  function parentHasStudent(parentId, studentId) {
+    return db.parentStudents.some(function (r) {
+      return r.parentId === parentId && r.studentId === studentId && !r.endAt;
+    });
+  }
+  function agentHasLead(agentId, leadId) {
+    var l = db.leads.filter(function (x) { return x.id === leadId; })[0];
+    if (!l) return false;
+    return leadCurrentAgentId(l) === agentId || l.sourceAgentId === agentId || l.agentId === agentId;
+  }
+  function hasDataAccess(userId, resourceType, resourceId, action) {
+    var id = identityOf(userId);
+    if (!id) return false;
+    var scope = roleDataScope(id.roleCode);
+    if (scope === 'ALL') return true;
+    if (scope === 'ASSIGNED') {
+      if (!id.teacherId) return false;
+      if (resourceType === 'student') return teacherHasStudent(id.teacherId, resourceId);
+      if (resourceType === 'course') {
+        var c = db.courses.filter(function (x) { return x.id === resourceId; })[0];
+        return !!c && c.teacherId === id.teacherId;
+      }
+      if (resourceType === 'report') {
+        var rp = db.reports.filter(function (x) { return x.id === resourceId; })[0];
+        return !!rp && rp.teacherId === id.teacherId;
+      }
+      if (resourceType === 'demand') {
+        var d = db.studentDemands.filter(function (x) { return x.id === resourceId; })[0];
+        return !!d && (d.teacherId === id.teacherId || d.selectedTeacherId === id.teacherId);
+      }
+      if (resourceType === 'account') return resourceId === id.teacherId;
+      return false;
+    }
+    if (scope === 'OWN') {
+      if (!id.agentId) return false;
+      if (resourceType === 'lead') return agentHasLead(id.agentId, resourceId);
+      if (resourceType === 'order') {
+        var o = db.orders.filter(function (x) { return x.id === resourceId; })[0];
+        return !!o && o.agentId === id.agentId;
+      }
+      if (resourceType === 'student') {
+        var s = db.students.filter(function (x) { return x.id === resourceId; })[0];
+        if (!s) return false;
+        if (s.agentId === id.agentId) return true;
+        var lo = db.orders.filter(function (x) { return x.studentId === s.id && x.agentId === id.agentId; })[0];
+        if (lo) return true;
+        return db.leads.some(function (l) {
+          return l.convertedStudentId === s.id && agentHasLead(id.agentId, l.id);
+        });
+      }
+      if (resourceType === 'renewal') {
+        var rn = db.renewalOpportunities.filter(function (x) { return x.id === resourceId; })[0];
+        return !!rn && rn.agentId === id.agentId;
+      }
+      if (resourceType === 'report') {
+        var rp2 = db.reports.filter(function (x) { return x.id === resourceId; })[0];
+        if (!rp2) return false;
+        return db.orders.some(function (o2) {
+          return o2.studentId === rp2.studentId && o2.agentId === id.agentId;
+        });
+      }
+      if (resourceType === 'account') return resourceId === id.agentId;
+      return false;
+    }
+    if (scope === 'RELATED') {
+      if (!id.parentId) return false;
+      if (resourceType === 'student') return parentHasStudent(id.parentId, resourceId);
+      if (resourceType === 'order') {
+        var o3 = db.orders.filter(function (x) { return x.id === resourceId; })[0];
+        return !!o3 && (o3.parentId === id.parentId ||
+          parentHasStudent(id.parentId, o3.studentId));
+      }
+      if (resourceType === 'report') {
+        var rp3 = db.reports.filter(function (x) { return x.id === resourceId; })[0];
+        return !!rp3 && parentHasStudent(id.parentId, rp3.studentId);
+      }
+      if (resourceType === 'course') {
+        var c2 = db.courses.filter(function (x) { return x.id === resourceId; })[0];
+        return !!c2 && parentHasStudent(id.parentId, c2.studentId);
+      }
+      if (resourceType === 'account') return resourceId === id.parentId;
+      return false;
+    }
+    return false;
+  }
+  function assertDataAccess(resourceType, resourceId) {
+    if (!hasDataAccess('', resourceType, resourceId)) {
+      throw bizError('FORBIDDEN', '当前身份无权访问该' + resourceType + '：' + resourceId);
+    }
+  }
+  function roleDataScope(roleCode) {
+    var r = db.roles.filter(function (x) { return x.code === roleCode; })[0];
+    return r ? r.dataScope : 'ALL';
+  }
+
+  /* ---------- 操作审计 ---------- */
+  function recordAudit(input) {
+    input = input || {};
+    var acc = accountForSession();
+    var row = {
+      id: 'AUD' + seq('audit', 4),
+      operatorId: session.accountId || session.accountId || session.operatorId || session.role,
+      operatorName: (acc && staffNameOf(acc)) || session.operatorName || (ROLE_LABEL[session.role] || session.role),
+      operatorRole: session.role, operatorRoleLabel: ROLE_LABEL[session.role] || session.role,
+      accountId: acc ? acc.id : '', identityId: acc ? acc.profileId : '',
+      module: input.module || '系统管理', action: input.action || '操作',
+      resourceType: input.resourceType || '', resourceId: input.resourceId || '',
+      resourceName: input.resourceName || '',
+      beforeData: input.beforeData === undefined ? null : input.beforeData,
+      afterData: input.afterData === undefined ? null : input.afterData,
+      reason: input.reason || '', result: input.result || '成功',
+      errorMessage: input.errorMessage || '',
+      createdAt: stamp()
+    };
+    db.auditLogs.push(row);
+    return row;
+  }
+  function auditRows(filters) {
+    filters = filters || {};
+    var list = db.auditLogs.slice();
+    if (filters.module) list = list.filter(function (x) { return x.module === filters.module; });
+    if (filters.resourceType) list = list.filter(function (x) { return x.resourceType === filters.resourceType; });
+    if (filters.resourceId) list = list.filter(function (x) { return x.resourceId === filters.resourceId; });
+    if (filters.operatorRole) list = list.filter(function (x) { return x.operatorRole === filters.operatorRole; });
+    if (filters.keyword) {
+      var kw = String(filters.keyword).toLowerCase();
+      list = list.filter(function (x) {
+        return [x.operatorName, x.action, x.resourceName, x.resourceId, x.reason].join(' ').toLowerCase().indexOf(kw) >= 0;
+      });
+    }
+    if (filters.action) list = list.filter(function (x) { return x.action.indexOf(filters.action) >= 0; });
+    return list.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+  }
+  function auditOf(auditId) {
+    return db.auditLogs.filter(function (x) { return x.id === auditId; })[0] || null;
+  }
+  function auditStat() {
+    var rows = db.auditLogs;
+    return {
+      total: rows.length,
+      today: rows.filter(function (x) { return String(x.createdAt).slice(0, 10) === TODAY; }).length,
+      failed: rows.filter(function (x) { return x.result === '失败'; }).length,
+      modules: (function () {
+        var m = {};
+        rows.forEach(function (x) { m[x.module] = (m[x.module] || 0) + 1; });
+        return m;
+      })()
+    };
+  }
+
+  /* ---------- 数据字典 ---------- */
+  function dictionaryTypes(includeDisabled) {
+    return db.dictionaryTypes.filter(function (t) {
+      return includeDisabled || t.status === '启用';
+    }).map(function (t) {
+      return {
+        id: t.id, code: t.code, name: t.name, description: t.description, status: t.status,
+        itemCount: db.dictionaryItems.filter(function (x) { return x.typeCode === t.code; }).length,
+        enabledCount: db.dictionaryItems.filter(function (x) {
+          return x.typeCode === t.code && x.status === '启用';
+        }).length
+      };
+    });
+  }
+  function dictionaryItems(typeCode, includeDisabled) {
+    return db.dictionaryItems.filter(function (x) {
+      return x.typeCode === typeCode && (includeDisabled || x.status === '启用');
+    }).sort(function (a, b) { return Number(a.sort || 0) - Number(b.sort || 0); })
+      .map(function (x) {
+        return {
+          id: x.id, typeCode: x.typeCode, label: x.label, value: x.value || x.label,
+          sort: x.sort, status: x.status, remark: x.remark || '',
+          usage: dictionaryUsage(x.typeCode, x.label)
+        };
+      });
+  }
+  function dictionaryOptions(typeCode) {
+    return dictionaryItems(typeCode).map(function (x) { return x.label; });
+  }
+  function dictionaryHas(typeCode, label) {
+    return dictionaryItems(typeCode).some(function (x) { return x.label === label || x.value === label; });
+  }
+  function dictionaryItem(id) {
+    return db.dictionaryItems.filter(function (x) { return x.id === id; })[0] || null;
+  }
+  function dictionaryUsage(typeCode, label) {
+    var n = 0;
+    function has(v) { return v === label; }
+    if (typeCode === 'lead_channel') n = db.leads.filter(function (l) { return has(l.channel); }).length;
+    else if (typeCode === 'lead_level') n = db.leads.filter(function (l) { return has(l.level); }).length;
+    else if (typeCode === 'follow_type') n = db.leadFollowUps.filter(function (f) { return has(f.type || f.method); }).length;
+    else if (typeCode === 'agent_type') n = db.agents.filter(function (a) { return has(a.type); }).length;
+    else if (typeCode === 'pay_method') n = db.payments.filter(function (p) { return has(p.method); }).length;
+    else if (typeCode === 'grade') {
+      n = db.students.filter(function (s) { return has(s.grade); }).length +
+        db.studentDemands.filter(function (d) { return has(d.grade); }).length;
+    } else if (typeCode === 'textbook') {
+      n = db.students.filter(function (s) { return has(s.book); }).length +
+        db.teachers.filter(function (t) { return (t.textbooks || []).indexOf(label) >= 0; }).length;
+    } else if (typeCode === 'relation') n = db.parents.filter(function (p) { return has(p.relation); }).length;
+    else if (typeCode === 'decline_reason') n = db.teacherResponses.filter(function (r) { return has(r.declineReason); }).length;
+    return n;
+  }
+  function createDictionaryItem(input) {
+    assertPermission('dictionary.manage');
+    input = input || {};
+    var typeCode = String(input.typeCode || '').trim();
+    var type = db.dictionaryTypes.filter(function (t) { return t.code === typeCode; })[0];
+    if (!type) throw bizError('DICT_TYPE_NOT_FOUND', '字典类型不存在：' + typeCode);
+    if (type.status !== '启用') throw bizError('DICT_TYPE_DISABLED', '该字典类型已停用');
+    var label = String(input.label || '').trim();
+    if (!label) throw bizError('NO_LABEL', '字典项名称不能为空');
+    if (db.dictionaryItems.some(function (x) { return x.typeCode === typeCode && x.label === label; })) {
+      throw bizError('DUPLICATE_ITEM', '同一字典类型下已存在「' + label + '」');
+    }
+    var maxSort = db.dictionaryItems.filter(function (x) { return x.typeCode === typeCode; })
+      .reduce(function (m, x) { return Math.max(m, Number(x.sort || 0)); }, 0);
+    var item = {
+      id: 'DI' + seq('DI', 3), typeCode: typeCode, label: label,
+      value: String(input.value || label), sort: input.sort ? Number(input.sort) : maxSort + 1,
+      status: '启用', remark: String(input.remark || ''), createdAt: stamp(), updatedAt: stamp()
+    };
+    db.dictionaryItems.push(item);
+    recordAudit({
+      module: '数据字典', action: '新增字典项', resourceType: 'dictionary', resourceId: item.id,
+      resourceName: type.name + ' / ' + label, beforeData: null,
+      afterData: { typeCode: typeCode, label: label, sort: item.sort },
+      reason: input.reason || '业务需要新增下拉选项', result: '成功'
+    });
+    save();
+    return clone(item);
+  }
+  function updateDictionaryItem(itemId, input) {
+    assertPermission('dictionary.manage');
+    input = input || {};
+    var item = dictionaryItem(itemId);
+    if (!item) throw bizError('DICT_ITEM_NOT_FOUND', '字典项不存在');
+    var before = { label: item.label, sort: item.sort, status: item.status, remark: item.remark };
+    if (input.label !== undefined) {
+      var label = String(input.label || '').trim();
+      if (!label) throw bizError('NO_LABEL', '字典项名称不能为空');
+      if (db.dictionaryItems.some(function (x) {
+        return x.id !== item.id && x.typeCode === item.typeCode && x.label === label;
+      })) throw bizError('DUPLICATE_ITEM', '同一字典类型下已存在「' + label + '」');
+      item.label = label;
+      if (!input.value) item.value = label;
+    }
+    if (input.value !== undefined) item.value = String(input.value || '');
+    if (input.sort !== undefined) item.sort = Number(input.sort) || item.sort;
+    if (input.remark !== undefined) item.remark = String(input.remark || '');
+    if (input.status !== undefined) item.status = input.status === '停用' ? '停用' : '启用';
+    item.updatedAt = stamp();
+    recordAudit({
+      module: '数据字典', action: '编辑字典项', resourceType: 'dictionary', resourceId: item.id,
+      resourceName: item.typeCode + ' / ' + item.label, beforeData: before,
+      afterData: { label: item.label, sort: item.sort, status: item.status, remark: item.remark },
+      reason: input.reason || '维护字典项', result: '成功'
+    });
+    save();
+    return clone(item);
+  }
+  function removeDictionaryItem(itemId, opt) {
+    assertPermission('dictionary.manage');
+    var item = dictionaryItem(itemId);
+    if (!item) throw bizError('DICT_ITEM_NOT_FOUND', '字典项不存在');
+    var used = dictionaryUsage(item.typeCode, item.label);
+    if (used > 0) {
+      throw bizError('IN_USE', '当前字典项被 ' + used + ' 条历史业务数据引用，只能停用不能删除', { usage: used });
+    }
+    db.dictionaryItems = db.dictionaryItems.filter(function (x) { return x.id !== item.id; });
+    recordAudit({
+      module: '数据字典', action: '删除字典项', resourceType: 'dictionary', resourceId: item.id,
+      resourceName: item.typeCode + ' / ' + item.label, beforeData: { label: item.label, status: item.status },
+      afterData: null, reason: (opt && opt.reason) || '删除未被引用的字典项', result: '成功'
+    });
+    save();
+    return true;
+  }
+
+  /* ---------- 消息通知 ---------- */
+  function currentReceiver() {
+    if (session.role === 'teacher') return { role: 'teacher', id: session.teacherId || '' };
+    if (session.role === 'agent') return { role: 'agent', id: session.agentId || '' };
+    if (session.role === 'parent') return { role: 'parent', id: session.parentId || '' };
+    var acc = accountForSession();
+    return { role: session.role, id: acc ? acc.id : (session.accountId || '') };
+  }
+  function renderNotifyTemplate(tpl, payload) {
+    return String(tpl || '').replace(/\{(\w+)\}/g, function (m, k) {
+      return payload && payload[k] != null ? String(payload[k]) : '';
+    });
+  }
+  function notify(eventCode, payload, opt) {
+    opt = opt || {};
+    payload = payload || {};
+    var rules = db.notificationRules.filter(function (r) {
+      return r.event === eventCode && r.enabled;
+    });
+    var created = [];
+    rules.forEach(function (rule) {
+      var role = rule.receiverRole;
+      var targets = [];
+      if (role === 'teacher') {
+        if (payload.teacherId) {
+          targets = db.users.filter(function (u) {
+            return u.roleCode === 'teacher' && u.profileId === payload.teacherId && u.status === ACCOUNT.OK;
+          });
+        } else {
+          targets = db.users.filter(function (u) { return u.roleCode === 'teacher' && u.status === ACCOUNT.OK; });
+        }
+      } else if (role === 'agent') {
+        targets = payload.agentId ? db.users.filter(function (u) {
+          return u.roleCode === 'agent' && u.profileId === payload.agentId && u.status === ACCOUNT.OK;
+        }) : [];
+      } else if (role === 'parent') {
+        targets = payload.parentId ? db.users.filter(function (u) {
+          return u.roleCode === 'parent' && u.profileId === payload.parentId && u.status === ACCOUNT.OK;
+        }) : [];
+      } else {
+        targets = db.users.filter(function (u) { return u.roleCode === role && u.status === ACCOUNT.OK; });
+      }
+      targets.forEach(function (u) {
+        var dup = db.notifications.some(function (n) {
+          return n.eventCode === eventCode && n.ruleId === rule.id &&
+            n.receiverRole === role && n.receiverId === (role === 'teacher' || role === 'agent' || role === 'parent' ? u.profileId : u.id) &&
+            n.businessId === (payload.businessId || '');
+        });
+        if (dup && !opt.allowDuplicate) return;
+        var receiverId = (role === 'teacher' || role === 'agent' || role === 'parent') ? u.profileId : u.id;
+        var n = {
+          id: 'NT' + seq('NT', 3), ruleId: rule.id, eventCode: eventCode, eventName: rule.name,
+          receiverRole: role, receiverId: receiverId, receiverAccountId: u.id,
+          receiverName: staffNameOf(u),
+          title: renderNotifyTemplate(rule.titleTemplate, payload),
+          content: renderNotifyTemplate(rule.contentTemplate, payload),
+          businessType: payload.businessType || rule.businessType || '',
+          businessId: payload.businessId || '',
+          link: payload.link || defaultNotificationLink(rule, payload),
+          readAt: '', createdAt: stamp()
+        };
+        db.notifications.push(n);
+        created.push(n);
+      });
+    });
+    return created;
+  }
+  function defaultNotificationLink(rule, payload) {
+    var id = payload.businessId || '';
+    if (payload.link) return payload.link;
+    if (rule.businessType === 'lead') return 'agent/customer-detail.html?id=' + id;
+    if (rule.businessType === 'order') {
+      if (rule.receiverRole === 'parent') return 'parent/hours.html';
+      if (rule.receiverRole === 'agent') return 'agent/workbench.html';
+      return 'admin/order-list.html?id=' + id;
+    }
+    if (rule.businessType === 'demand') {
+      if (rule.receiverRole === 'teacher') return 'teacher/demand-center.html?tab=open';
+      return 'admin/assign-task.html';
+    }
+    if (rule.businessType === 'wordbookRequest') return 'teacher/demand-center.html?tab=wbreq';
+    if (rule.businessType === 'report') return 'parent/report.html?id=' + id;
+    if (rule.businessType === 'renewal') return 'agent/renewal-list.html';
+    return 'notifications.html';
+  }
+  function notificationRows(filters) {
+    filters = filters || {};
+    var me = currentReceiver();
+    var list = db.notifications.filter(function (n) {
+      if (filters.all) return true;
+      return n.receiverRole === me.role && n.receiverId === me.id;
+    });
+    if (filters.unread) list = list.filter(function (n) { return !n.readAt; });
+    if (filters.eventCode) list = list.filter(function (n) { return n.eventCode === filters.eventCode; });
+    return list.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+  }
+  function unreadNotificationCount() {
+    return notificationRows({ unread: true }).length;
+  }
+  function markNotificationRead(notificationId) {
+    var me = currentReceiver();
+    var n = db.notifications.filter(function (x) { return x.id === notificationId; })[0];
+    if (!n) throw bizError('NOTIFY_NOT_FOUND', '通知不存在');
+    if (n.receiverRole !== me.role || n.receiverId !== me.id) {
+      throw bizError('FORBIDDEN', '不能操作他人的通知');
+    }
+    if (!n.readAt) { n.readAt = stamp(); save(); }
+    return clone(n);
+  }
+  function markAllNotificationsRead() {
+    var me = currentReceiver();
+    var n = 0;
+    db.notifications.forEach(function (x) {
+      if (x.receiverRole === me.role && x.receiverId === me.id && !x.readAt) { x.readAt = stamp(); n++; }
+    });
+    if (n) save();
+    return n;
+  }
+  function notificationRules() { return db.notificationRules.map(function (r) { return clone(r); }); }
+  function updateNotificationRule(ruleId, input) {
+    assertPermission('notification.manage');
+    input = input || {};
+    var r = db.notificationRules.filter(function (x) { return x.id === ruleId; })[0];
+    if (!r) throw bizError('RULE_NOT_FOUND', '通知规则不存在');
+    var before = {
+      enabled: r.enabled, titleTemplate: r.titleTemplate, contentTemplate: r.contentTemplate
+    };
+    if (input.enabled !== undefined) r.enabled = !!input.enabled;
+    if (input.titleTemplate !== undefined) r.titleTemplate = String(input.titleTemplate || '');
+    if (input.contentTemplate !== undefined) r.contentTemplate = String(input.contentTemplate || '');
+    if (input.receiverRole !== undefined && ROLE_SEED.some(function (x) { return x.code === input.receiverRole; })) {
+      r.receiverRole = input.receiverRole;
+    }
+    r.updatedAt = stamp(); r.updatedBy = operatorForRole();
+    recordAudit({
+      module: '消息通知', action: '编辑通知规则', resourceType: 'notificationRule', resourceId: r.id,
+      resourceName: r.name, beforeData: before,
+      afterData: { enabled: r.enabled, titleTemplate: r.titleTemplate, contentTemplate: r.contentTemplate },
+      reason: input.reason || '调整通知模板/开关', result: '成功'
+    });
+    save();
+    return clone(r);
+  }
+  function allNotifications(filters) {
+    filters = filters || {};
+    filters.all = true;
+    return notificationRows(filters);
+  }
+
+  /* ---------- 机构设置 ---------- */
+  function organizationSettings() { return clone(db.organization); }
+  function updateOrganizationSettings(input) {
+    assertPermission('organization.manage');
+    input = input || {};
+    var before = clone(db.organization);
+    ['name', 'campus', 'address', 'contactPhone', 'contactEmail', 'workingHours', 'defaultTimezone']
+      .forEach(function (k) { if (input[k] !== undefined) db.organization[k] = String(input[k] || ''); });
+    if (input.lessonAlertThreshold !== undefined) {
+      var n = Number(input.lessonAlertThreshold);
+      if (!isFinite(n) || n < 0) throw bizError('BAD_THRESHOLD', '课时预警阈值必须是非负数字');
+      db.organization.lessonAlertThreshold = n;
+    }
+    if (input.expireAlertDays !== undefined) {
+      var d = Number(input.expireAlertDays);
+      if (!isFinite(d) || d < 0) throw bizError('BAD_EXPIRE', '套餐临期提醒天数必须是非负数字');
+      db.organization.expireAlertDays = d;
+    }
+    if (input.allowAgentRegisterPayment !== undefined) {
+      db.organization.allowAgentRegisterPayment = !!input.allowAgentRegisterPayment;
+    }
+    db.organization.updatedAt = stamp();
+    db.organization.updatedBy = operatorForRole();
+    recordAudit({
+      module: '机构设置', action: '更新机构设置', resourceType: 'organization', resourceId: 'ORG',
+      resourceName: db.organization.name + ' · ' + db.organization.campus,
+      beforeData: before, afterData: clone(db.organization),
+      reason: input.reason || '维护机构基础参数', result: '成功'
+    });
+    save();
+    return clone(db.organization);
+  }
+
   /* ---------------- 迁移提示 ---------------- */
   function migrationInfo() {
     return db.meta && db.meta.migration ? clone(db.meta.migration) : null;
@@ -9823,7 +12765,12 @@
     users: users, usersOfRole: usersOfRole,
     /* 教师资源池：生命周期 */
     createTeacher: createTeacher, updateTeacher: updateTeacher, setAvailability: setAvailability,
-    openTeacherAccount: openTeacherAccount, setAccountStatus: setAccountStatus,
+    openTeacherAccount: openTeacherAccount,
+    setAccountStatus: function (targetId, status, opt) {
+      return accountById(targetId)
+        ? setUserAccountStatus(targetId, status, opt)
+        : setTeacherAccountStatus(targetId, status, opt);
+    },
     activateTeacher: activateTeacher,
     pauseTeacher: pauseTeacher, resumeTeacher: resumeTeacher,
     exitTeacher: exitTeacher, rejoinTeacher: rejoinTeacher,
@@ -9892,6 +12839,15 @@
     wordState: wordState, wordStates: wordStates, setWordState: setWordState, ensureWordState: ensureWordState,
     /* 训练 */
     trainTask: trainTask, tasksOf: tasksOf, activeTask: activeTask, startTrainTask: startTrainTask,
+    /* 训练（第九轮：多词库动态选词 + 展示循环） */
+    createTrainTask: createTrainTask, addWordbooksToTask: addWordbooksToTask,
+    setTrainTarget: setTrainTarget,
+    wordbooksOfTask: wordbooksOfTask, bookOfWordInTask: bookOfWordInTask, bookLabel: bookLabel,
+    isScreenedKnown: isScreenedKnown, openTaskOfWord: openTaskOfWord,
+    prescreenCandidates: prescreenCandidates, prescreenTaskStat: prescreenTaskStat,
+    trainDisplayOf: trainDisplayOf, trainDisplaysOf: trainDisplaysOf, displayCompleted: displayCompleted,
+    displayStat: displayStat, trainDisplayTap: trainDisplayTap, setTrainGroup: setTrainGroup,
+    finishDisplay: finishDisplay, revokeScreeningKnown: revokeScreeningKnown,
     prescreenAnswer: prescreenAnswer, finishPrescreen: finishPrescreen,
     queueOf: queueOf, groupsOfTask: groupsOfTask, groupsOf: groupsOf, detailsOf: detailsOf,
     prescreensOf: prescreensOf, trainDetailsOf: trainDetailsOf, finalReviewsOf: finalReviewsOf,
@@ -9989,8 +12945,19 @@
     parents: function () { return db.parents; },
     parent: parent, parentChildren: parentChildren, parentOrders: parentOrders,
     parentStudents: parentStudents, parentStudentLinks: parentStudentLinks,
-    linkParentStudent: linkParentStudent,
+    linkParentStudent: linkParentStudent, unlinkParentStudent: unlinkParentStudent,
     parentHours: parentHours, parentView: parentView,
+    /* P0 家长专用授权接口 */
+    parentHasStudent: parentHasStudent, assertParentChild: assertParentChild,
+    parentStudentDetail: parentStudentDetail,
+    parentCourses: parentCourses, parentCourseDetail: parentCourseDetail,
+    parentReports: parentReports, parentReportDetail: parentReportDetail,
+    parentReviewWords: parentReviewWords, parentReviewSummary: parentReviewSummary,
+    parentFamilyChecks: parentFamilyChecks, parentFamilyCheckAt: parentFamilyCheckAt,
+    toggleParentFamilyCheck: toggleParentFamilyCheck,
+    setParentCurrentChild: setParentCurrentChild, parentCurrentChild: parentCurrentChild,
+    createParentInquiry: createParentInquiry, parentInquiries: parentInquiries,
+    parentInquiryDetail: parentInquiryDetail, handleParentInquiry: handleParentInquiry,
     agentCommissionPreview: agentCommissionPreview, commissionSummary: commissionSummary,
     migrationInfo: migrationInfo,
     LEAD_STATUS: LEAD_STATUS, LEAD: LEAD, LEAD_NEXT: LEAD_NEXT, LEAD_TONE: LEAD_TONE,
@@ -10004,8 +12971,35 @@
     AGENT_STATUS: AGENT_STATUS, AGENT_TONE: AGENT_TONE, AGENT_TYPES: AGENT_TYPES,
     RENEWAL_STATUS: RENEWAL_STATUS, RENEWAL: RENEWAL, RENEWAL_TONE: RENEWAL_TONE,
     RENEWAL_SOURCE: RENEWAL_SOURCE,
+    /* ---------- 第八轮：系统管理 ---------- */
+    accountRows: accountRows, accountSummary: accountSummary,
+    staffProfiles: function () { return db.staffProfiles.slice(); },
+    accountById: accountById, accountOfProfile: accountOfProfile,
+    createAccount: createAccount, updateAccount: updateAccount,
+    setUserAccountStatus: setUserAccountStatus, resetAccountCredential: resetAccountCredential,
+    roleAccounts: roleAccounts, currentIdentity: currentIdentity,
+    hasPermission: hasPermission, assertPermission: assertPermission,
+    roleDataScope: roleDataScope, hasDataAccess: hasDataAccess, assertDataAccess: assertDataAccess,
+    roles: roles, roleOf: roleOf, roleRows: roleRows, createRole: createRole, updateRole: updateRole,
+    permissionCatalog: permissionCatalog, permissionMatrix: permissionMatrix,
+    updateRolePermissions: updateRolePermissions, resetRolePermissions: resetRolePermissions,
+    recordAudit: recordAudit, auditRows: auditRows, auditOf: auditOf, auditStat: auditStat,
+    dictionaryTypes: dictionaryTypes, dictionaryItems: dictionaryItems,
+    dictionaryOptions: dictionaryOptions, dictionaryHas: dictionaryHas,
+    createDictionaryItem: createDictionaryItem, updateDictionaryItem: updateDictionaryItem,
+    removeDictionaryItem: removeDictionaryItem, dictionaryUsage: dictionaryUsage,
+    notificationRules: notificationRules, updateNotificationRule: updateNotificationRule,
+    notify: notify, notifications: notificationRows, unreadNotificationCount: unreadNotificationCount,
+    markNotificationRead: markNotificationRead, markAllNotificationsRead: markAllNotificationsRead,
+    allNotifications: allNotifications,
+    organizationSettings: organizationSettings, updateOrganizationSettings: updateOrganizationSettings,
+    DATA_SCOPE_LABEL: DATA_SCOPE_LABEL, ACTION_PERM: ACTION_PERM, PERMISSION_SEED: PERMISSION_SEED,
     /* 状态词表 */
     STATUS: STATUS, COURSE_STATUS: COURSE_STATUS, REPORT_STATUS: REPORT_STATUS,
+    /* 单词训练域：三种教学状态各自的词表 */
+    SCREEN: SCREEN, SCREEN_TONE: SCREEN_TONE, SCREEN_SOURCE: SCREEN_SOURCE,
+    DISPLAY_STEP: DISPLAY_STEP, DISPLAY_LABEL: DISPLAY_LABEL,
+    PHASE: PHASE, TRAIN_GROUP_SIZE: TRAIN_GROUP_SIZE, TARGET_RANGE: TARGET_RANGE,
     statusTone: statusTone, isOpen: isOpen, isDone: isDone, isActive: isActive,
     /* 统计 */
     stats: stats,

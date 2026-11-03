@@ -7,6 +7,8 @@ window.PROTO_ROOT = window.PROTO_ROOT || '';
 
 const Proto = (() => {
   const root = () => window.PROTO_ROOT || '';
+  /** 兼容尚未接入 Store 的历史页面：无数据层时退化为纯静态导航，不报错 */
+  const hasStore = () => typeof Store !== 'undefined' && Store;
 
   /* ---------------- 菜单配置（按角色） ---------------- */
   const MENUS = {
@@ -49,7 +51,7 @@ const Proto = (() => {
         { id: 'import', label: '资源导入', href: 'resource/import.html' },
       ]},
       { group: '系统设置', items: [
-        { id: 'system', label: '用户与权限', href: 'admin/system.html' },
+        { id: 'system', label: '系统设置', href: 'admin/system.html' },
       ]},
     ],
     teacher: [
@@ -86,6 +88,9 @@ const Proto = (() => {
       ]},
       { group: '资源中心', items: [
         { id: 'wordbook-list', label: '词库管理', href: 'resource/wordbook-list.html' },
+      ]},
+      { group: '系统设置', items: [
+        { id: 'system', label: '系统设置', href: 'admin/system.html' },
       ]},
     ],
     agent: [
@@ -130,91 +135,103 @@ const Proto = (() => {
     parent: { label: '家长', short: '家长', home: 'parent/home.html', cls: 'b', glyph: '家' },
   };
   const ROLE_ORDER = ['admin', 'staff', 'ops', 'teacher', 'agent', 'parent'];
-  const INTERNAL_OPERATOR = { admin: '张敏', staff: '陈静', ops: '王敏' };
-  const INTERNAL_CODE = { admin: 'U-ADMIN', staff: 'U-STAFF', ops: 'U-OPS' };
+
+  /* 菜单 → 权限编码：菜单可见性与 Store 的 rolePermissions 同源，
+     角色权限被修改后刷新页面即同步收紧/放开，不再只改配置不改行为。 */
+  const MENU_PERM = {
+    dashboard: ['lead.view.all', 'lead.view.own'],
+    'lead-list': ['lead.view.all', 'lead.view.own'],
+    'agent-list': ['lead.view.all'],
+    'renewal-list': ['renewal.view.all', 'renewal.view.own'],
+    'student-list': ['student.view'],
+    'parent-list': ['parent.view'],
+    'teacher-list': ['teacher.view'],
+    'schedule-calendar': ['lesson.view.all', 'demand.confirm'],
+    'course-list': ['lesson.view.all', 'lesson.view.own'],
+    'demand-list': ['demand.view'],
+    'response-manage': ['demand.confirm'],
+    'assign-task': ['teacher.assign_student', 'demand.assign'],
+    'wordbook-request': ['wordbook.review', 'wordbook.grant', 'wordbook.request'],
+    'product-list': ['order.view.all', 'order.create'],
+    'order-list': ['order.view.all', 'order.create'],
+    'hour-account': ['lesson_account.view'],
+    'hour-flow': ['lesson_account.view'],
+    'material-list': ['wordbook.view'],
+    'wordbook-list': ['wordbook.view'],
+    'article-list': ['wordbook.view'],
+    import: ['wordbook.edit', 'wordbook.create'],
+    system: ['account.view', 'role.view', 'audit.view'],
+    workbench: ['lesson.view.own'],
+    'course-workbench': ['lesson.view.own'],
+    'my-students': ['student.view'],
+    'teaching-record': ['lesson.view.own'],
+    'demand-open': ['demand.respond'],
+    'demand-mine': ['demand.respond'],
+    'demand-wbreq': ['wordbook.request'],
+    'student-profile': ['student.view'],
+    'word-setup': ['student.view'],
+    'article-training': ['student.view'],
+    leitner: ['student.view'],
+    memory21: ['student.view'],
+    'assign-log': ['teacher.assign_student', 'demand.assign'],
+    'wordbook-grant': ['wordbook.grant', 'wordbook.review'],
+    'agent-workbench': ['lead.view.own', 'lead.view.all'],
+    'agent-customers': ['lead.view.own', 'lead.view.all'],
+    'agent-report': ['lead.create'],
+    'agent-renewal': ['renewal.view.own', 'renewal.view.all'],
+    'agent-commission': ['renewal.view.own', 'renewal.view.all'],
+    'parent-home': ['student.view'],
+    'parent-hours': ['lesson_account.view'],
+    'parent-records': ['lesson.view.own'],
+    'parent-reports': ['report.view.own'],
+  };
 
   function escHtml(v) {
     return String(v == null ? '' : v).replace(/[&<>"]/g,
       c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
 
-  /** 角色可选账号：教师 / 代理 / 家长从 Store 读，内部角色使用演示身份 */
+  /** 角色可选账号：统一从 Store 的账号表读取，禁用/未开通账号不可切换 */
   function roleAccounts(role) {
-    if (role === 'admin' || role === 'staff' || role === 'ops') {
-      return [{
-        id: INTERNAL_OPERATOR[role], name: INTERNAL_OPERATOR[role],
-        code: INTERNAL_CODE[role], available: true, reason: '', meta: ROLE_META[role].label
-      }];
-    }
-    if (role === 'teacher') {
-      return (Store.teachers() || []).map(t => {
-        const acc = Store.accountStatusOf ? Store.accountStatusOf(t.id) : '';
-        const ok = t.cooperationStatus === '可授课' && acc === '正常';
-        let reason = '';
-        if (!ok) {
-          if (t.cooperationStatus !== '可授课') reason = '合作状态：' + t.cooperationStatus;
-          else if (acc === '未开通') reason = '登录账号未开通';
-          else reason = '登录账号已禁用';
-        }
-        return {
-          id: t.id, name: t.name, code: t.id, available: ok, reason: reason,
-          meta: (t.grades || []).join(' / ')
-        };
-      });
-    }
-    if (role === 'agent') {
-      return (Store.agents() || []).map(a => {
-        const ok = a.status === '启用';
-        return {
-          id: a.id, name: a.name, code: a.id, available: ok,
-          reason: ok ? '' : (a.status === '待审核' ? '代理待审核，暂不可登录' : '代理已停用'),
-          meta: a.type || ''
-        };
-      });
-    }
-    if (role === 'parent') {
-      return (Store.parents() || []).map(p => {
-        const ok = p.status !== '停用';
-        return {
-          id: p.id, name: p.name, code: p.id, available: ok,
-          reason: ok ? '' : '家长账号已停用',
-          meta: [p.relation || '', p.phone ? '尾号 ' + p.phone.slice(-4) : ''].filter(Boolean).join(' · ')
-        };
-      });
-    }
-    return [];
+    if (!hasStore()) return [];
+    const rows = Store.roleAccounts ? Store.roleAccounts(role) : [];
+    return rows.map(a => ({
+      id: a.id, accountId: a.accountId, profileId: a.profileId, profileType: a.profileType,
+      name: a.name, code: a.code, available: a.available, reason: a.reason,
+      meta: a.meta || ROLE_META[role].label
+    }));
   }
 
-  /** 当前会话里的角色身份；教师 / 家长沿用页面级演示兜底，代理缺失时明确显示未识别 */
+  /** 当前身份只来自会话；页面角色与会话角色不一致时明确显示未识别，绝不借用他人身份 */
   function roleIdentity(role) {
-    const s = Store.currentSession();
-    if (role === 'teacher') {
-      const tid = s.teacherId || (Store.defaultTeacherId ? Store.defaultTeacherId() : '');
-      const t = tid ? Store.teacher(tid) : null;
-      return t ? { role, name: t.name, code: t.id, available: true }
-        : { role, name: '未识别教师身份', code: '', available: false };
-    }
-    if (role === 'agent') {
-      const a = s.agentId ? Store.agent(s.agentId) : null;
-      return a ? { role, name: a.name, code: a.id, available: true }
-        : { role, name: '未识别代理身份', code: '', available: false };
-    }
-    if (role === 'parent') {
-      const pid = s.parentId || (Store.defaultParentId ? Store.defaultParentId() : '');
-      const p = pid ? Store.parent(pid) : null;
-      return p ? { role, name: p.name, code: p.id, available: true }
-        : { role, name: '未识别家长身份', code: '', available: false };
-    }
-    const name = (s.role === role && s.operatorName === INTERNAL_OPERATOR[role])
-      ? s.operatorName : INTERNAL_OPERATOR[role];
-    /* 内部角色没有数据库账号表，固定使用演示编码（U-ADMIN / U-STAFF / U-OPS），
-       不把操作人姓名当成编码显示 */
-    return { role, name, code: INTERNAL_CODE[role], available: true };
+    const s = hasStore() ? Store.currentSession() : { role: '' };
+    const unknown = { role, name: role === 'teacher' ? '未识别教师身份'
+      : role === 'parent' ? '未识别家长身份'
+        : role === 'agent' ? '未识别代理身份' : '未识别员工身份', code: '', available: false };
+    if (role !== s.role) return unknown;
+    const ident = hasStore() && Store.currentIdentity ? Store.currentIdentity() : null;
+    if (!ident) return unknown;
+    return { role, name: ident.name, code: ident.code, available: ident.available, reason: ident.reason || '' };
+  }
+
+  /** 按角色权限过滤菜单；权限收紧后对应的菜单组立即消失 */
+  function menusFor(role) {
+    const groups = MENUS[role] || [];
+    if (!hasStore()) return groups;
+    return groups.map(g => ({
+      group: g.group,
+      items: g.items.filter(it => {
+        const codes = MENU_PERM[it.id];
+        if (!codes || !codes.length) return true;
+        return codes.some(c => Store.hasPermission && Store.hasPermission('', c));
+      })
+    })).filter(g => g.items.length);
   }
 
   /** 页面角色：会话里已显式选择过身份就沿用该角色，否则用页面默认角色。
       不做跨角色映射（例如教师打开教务页面不会静默变成教务），权限由 Store 拦截。 */
   function pageRole(defaultRole) {
+    if (!hasStore()) return defaultRole;
     const s = Store.currentSession();
     if (!(Store.sessionPersisted && Store.sessionPersisted())) return defaultRole;
     return ROLE_ORDER.indexOf(s.role) >= 0 ? s.role : defaultRole;
@@ -254,22 +271,29 @@ const Proto = (() => {
   function switchRole(role, accountId) {
     const meta = ROLE_META[role];
     if (!meta) return;
-    const acc = roleAccounts(role).filter(a => a.id === accountId)[0];
+    const acc = roleAccounts(role).filter(a => a.id === accountId || a.accountId === accountId)[0];
     if (!acc) return;
     if (!acc.available) {
       toast('该账号当前不可切换：' + (acc.reason || '不可用'), 'warn');
       return;
     }
+    const pid = acc.profileId || acc.id;
     closeRolePanel();
     clearSwitchRuntime();
-    Store.setSession({
-      role: role,
-      operatorName: acc.name,
-      operatorId: acc.id,
-      teacherId: role === 'teacher' ? acc.id : '',
-      agentId: role === 'agent' ? acc.id : '',
-      parentId: role === 'parent' ? acc.id : ''
-    });
+    try {
+      Store.setSession({
+        role: role,
+        accountId: acc.accountId || '',
+        operatorName: acc.name,
+        operatorId: acc.accountId || pid,
+        teacherId: role === 'teacher' ? pid : '',
+        agentId: role === 'agent' ? pid : '',
+        parentId: role === 'parent' ? pid : ''
+      });
+    } catch (e) {
+      toast('切换失败：' + (e.message || '账号不可用'), 'warn');
+      return;
+    }
     location.href = root() + meta.home;
   }
 
@@ -396,7 +420,7 @@ const Proto = (() => {
    * 家长端等没有顶栏的移动页面在 DOMContentLoaded 时挂到 .m-head。
    */
   function roleSwitcher(opts = {}) {
-    const currentRole = opts.role || (Store.currentSession().role || 'admin');
+    const currentRole = opts.role || ((hasStore() && Store.currentSession().role) || 'admin');
     let host = document.querySelector('[data-role-switcher]');
     if (!host) {
       const right = document.querySelector('.topbar-right');
@@ -436,7 +460,7 @@ const Proto = (() => {
 
     const sidebar = document.getElementById('sidebar');
     if (sidebar) {
-      const groups = MENUS[role] || [];
+      const groups = menusFor(role);
       sidebar.innerHTML = `
         <div class="brand">
           <div class="brand-mark">EE</div>
@@ -462,6 +486,7 @@ const Proto = (() => {
 
     const topbar = document.getElementById('topbar');
     if (topbar) {
+      const unread = hasStore() && Store.unreadNotificationCount ? Store.unreadNotificationCount() : 0;
       topbar.innerHTML = `
         <div class="topbar-org">
           <strong>${rid.org}</strong>
@@ -469,7 +494,7 @@ const Proto = (() => {
         </div>
         <div class="topbar-right">
           <div data-role-switcher></div>
-          <div class="topbar-icon" title="消息通知" onclick="Proto.toast('3 条待处理提醒','warn')">✉<span class="dot"></span></div>
+          <a class="topbar-icon" title="消息中心" href="${root()}notifications.html">✉${unread ? `<span class="dot">${unread > 99 ? '99+' : unread}</span>` : ''}</a>
           <div class="user-chip"><div class="avatar ${rid.cls}">${escHtml((ident.name || '?').slice(0, 1))}</div><span>${escHtml(ident.name)}</span></div>
         </div>`;
     }
@@ -637,15 +662,34 @@ const Proto = (() => {
    * 演示环境没有登录页，会话为空时才用第一位「可授课」教师兜底，并写回会话，
    * 保证后续页面（我的学员 / 训练 / 报告）读到的是同一个教师身份。
    */
+  let teacherNoticeShown = false;
+  function showTeacherIdentityNotice() {
+    if (teacherNoticeShown) return;
+    teacherNoticeShown = true;
+    Proto.toast('未识别教师登录身份：请从顶栏切换为具体教师账号', 'warn');
+    if (typeof document === 'undefined' || !document.body) return;
+    const bar = document.createElement('div');
+    bar.className = 'card';
+    bar.style.cssText = 'margin:16px 20px 0;padding:14px 16px;border-left:4px solid var(--warning);background:var(--surface)';
+    bar.innerHTML = '<b>未识别教师身份</b><div class="small muted" style="margin-top:4px">' +
+      '为避免张冠李戴，本页不会自动借用其他教师身份。请使用右上角「切换角色」选择具体教师。</div>';
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
   function teacherId() {
     const s = Store.currentSession();
     if (s.teacherId) return s.teacherId;
-    const id = Store.defaultTeacherId();
-    Store.setSession({
-      role: 'teacher', teacherId: id,
-      operatorName: (Store.teacher(id) || {}).name || ''
-    });
-    return id;
+    if (Store.isDemoMode && Store.isDemoMode()) {
+      const demoId = Store.defaultTeacherId();
+      if (demoId) {
+        Store.setSession({
+          role: 'teacher', teacherId: demoId,
+          operatorName: (Store.teacher(demoId) || {}).name || ''
+        });
+        return demoId;
+      }
+    }
+    showTeacherIdentityNotice();
+    return '';
   }
 
   /** 当前登录教师姓名（用于操作记录 by 字段），与学生档案的「当前教师」同源 */
@@ -693,16 +737,35 @@ const Proto = (() => {
     return id ? ((Store.agent(id) || {}).name || '') : '';
   }
 
-  /** 当前登录家长 ID：取自会话；演示环境才用第一位家长兜底 */
+  let parentNoticeShown = false;
+  function showParentIdentityNotice() {
+    if (parentNoticeShown) return;
+    parentNoticeShown = true;
+    Proto.toast('未识别家长登录身份：请使用右上角切换为具体家长账号', 'warn');
+    if (typeof document === 'undefined' || !document.body) return;
+    const bar = document.createElement('div');
+    bar.className = 'card';
+    bar.style.cssText = 'margin:16px 20px 0;padding:14px 16px;border-left:4px solid var(--warning);background:var(--surface)';
+    bar.innerHTML = '<b>未识别家长身份</b><div class="small muted" style="margin-top:4px">' +
+      '为避免看到别人家孩子的数据，本页不会自动借用其他家长身份。请从右上角切换到具体家长。</div>';
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+  /** 当前登录家长 ID：只认会话；仅显式演示模式才回落到演示家长 */
   function parentId() {
     const s = Store.currentSession();
     if (s.parentId) return s.parentId;
-    const id = Store.defaultParentId();
-    Store.setSession({
-      role: 'parent', parentId: id,
-      operatorName: (Store.parent(id) || {}).name || ''
-    });
-    return id;
+    if (Store.isDemoMode && Store.isDemoMode()) {
+      const demoId = Store.defaultParentId();
+      if (demoId) {
+        Store.setSession({
+          role: 'parent', parentId: demoId,
+          operatorName: (Store.parent(demoId) || {}).name || ''
+        });
+        return demoId;
+      }
+    }
+    showParentIdentityNotice();
+    return '';
   }
   function parentName() {
     const id = parentId();
@@ -714,7 +777,7 @@ const Proto = (() => {
     $, $$, money, int, toast, openModal, closeModal, openDrawer, closeDrawer,
     confirmBox, initTabs, switchTab, renderRows, speak, playAudio, isPhone, markInvalid, setText,
     teacherId, teacherName, agentId, agentName, parentId, parentName,
-    MENUS, ROLE_META, roleName,
+    MENUS, ROLE_META, roleName, escHtml, menusFor,
   };
 })();
 

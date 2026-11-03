@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>家长端 · 课程记录</title>
 <link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .c-row { padding: 12px 14px; align-items: flex-start; cursor: pointer; }
+  .detail-k { color: var(--text-3); font-size: 12.5px; }
+</style>
 </head>
 <body class="mobile-bg">
 <div class="m-frame">
@@ -18,8 +22,12 @@
   </div>
 
   <div class="m-body">
+    <div class="m-seg" id="kidSeg" style="display:none"></div>
+
     <div class="m-seg" id="seg">
       <div class="on" data-f="all">全部</div>
+      <div data-f="待上课">待上课</div>
+      <div data-f="授课中">授课中</div>
       <div data-f="已完成">已完成</div>
       <div data-f="未上课">未上课</div>
       <div data-f="已取消">已取消</div>
@@ -27,13 +35,15 @@
 
     <div class="small muted" style="padding:0 2px" id="count">—</div>
 
-    <div class="m-card" style="padding:0" id="list"></div>
+    <div class="m-card" style="padding:0" id="list">
+      <div class="m-row" style="justify-content:center"><span class="small muted">加载中…</span></div>
+    </div>
 
     <div class="m-card">
       <div class="small muted" style="line-height:1.8">
-        家长可查看课程时间、教师、主题与报告状态。<br>
-        报告只有在教师<b>发布</b>后才能查看内容；整理中的课程会显示「老师整理中」。<br>
-        如对课程记录有疑问，请联系机构教务核对，家长端不支持修改课程与课时。
+        课程状态表示实际上课进度，报告状态表示教师记录与发布进度，两者相互独立。<br>
+        报告只有在教师<b>发布</b>后才能查看；历史课程保留当时授课教师。<br>
+        未上课、已取消的课程<b>不扣除课时</b>；家长端不支持修改课程与课时。
       </div>
     </div>
   </div>
@@ -46,63 +56,128 @@
     <a class="m-tab" href="hours.html"><span class="ic">◷</span>课时</a>
   </div>
 </div>
+
+<!-- 课程详情抽屉 -->
+<div class="drawer-mask" id="detailDrawer-mask"></div>
+<div class="drawer" id="detailDrawer"></div>
+
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
 <script src="../assets/js/store.js"></script>
 <script>
-/* 家长身份取自会话：只允许查看自己孩子的课程，越权参数自动回落到第一个孩子 */
+/* 家长端课程记录：六状态筛选 + 课程/报告状态独立 + 课程详情 + 历史教师保留 */
 const q = new URLSearchParams(location.search);
 const PID = Proto.parentId();
 Store.setSession({ role: 'parent', parentId: PID, operatorName: Proto.parentName() });
 const KIDS = Store.parentChildren(PID);
-const STUDENT = KIDS.filter(k => k.id === q.get('student'))[0]
-  ? q.get('student') : (KIDS[0] ? KIDS[0].id : '');
+let curKid = '';
 let filter = 'all';
 
 const CTAG = { '待上课': 'tag-slate', '授课中': 'tag-blue', '已完成': 'tag-green', '未上课': 'tag-amber', '已取消': 'tag-slate' };
 const RTAG = { '未生成': 'tag-slate', '编辑中': 'tag-amber', '已提交': 'tag-blue', '已发布': 'tag-green' };
 const RTXT = { '未生成': '无报告', '编辑中': '老师整理中', '已提交': '老师整理中', '已发布': '报告已发布' };
 
-function render() {
-  const stu = Store.student(STUDENT);
-  document.getElementById('stuName').textContent = stu ? stu.name : '';
-  document.getElementById('stuName').onclick = null;
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
-  const list = Store.coursesOf(STUDENT).filter(c => filter === 'all' || c.status === filter);
+function initKid() {
+  const fromURL = q.get('student');
+  const shared = Store.parentCurrentChild(PID);
+  curKid = (fromURL && KIDS.some(k => k.id === fromURL)) ? fromURL
+    : (shared && KIDS.some(k => k.id === shared)) ? shared : (KIDS[0] ? KIDS[0].id : '');
+  if (curKid !== shared && curKid !== fromURL) { try { Store.setParentCurrentChild(PID, curKid); } catch (e) {} }
+  const seg = document.getElementById('kidSeg');
+  if (KIDS.length > 1) {
+    seg.style.display = 'flex';
+    seg.innerHTML = KIDS.map(k => `<div class="${k.id === curKid ? 'on' : ''}" data-k="${k.id}">${esc(k.name)}</div>`).join('');
+    seg.addEventListener('click', e => {
+      const k = e.target.closest('[data-k]');
+      if (!k) return;
+      Store.setParentCurrentChild(PID, k.dataset.k);
+      curKid = k.dataset.k;
+      Array.from(seg.children).forEach(x => x.classList.toggle('on', x.dataset.k === curKid));
+      render();
+    });
+  }
+}
+
+function render() {
+  const stu = Store.student(curKid);
+  document.getElementById('stuName').textContent = stu ? stu.name : '';
+
+  let list = [];
+  try { list = Store.parentCourses(PID, curKid, { status: filter === 'all' ? '' : filter }); }
+  catch (e) {
+    document.getElementById('list').innerHTML =
+      `<div class="m-row" style="justify-content:center"><span class="small" style="color:var(--danger)">加载失败：${esc(e.message)}</span></div>`;
+    document.getElementById('count').textContent = '';
+    return;
+  }
+
   document.getElementById('count').textContent =
     (stu ? stu.name + ' · ' : '') + '共 ' + list.length + ' 节课（含未来排课）';
 
   document.getElementById('list').innerHTML = list.length ? list.map((c, i) => {
-    const rp = Store.reportOfCourse(c.id);
-    const canOpen = rp && rp.status === '已发布';
-    const tag = rp ? `<span class="tag ${RTAG[rp.status]} nodot">${RTXT[rp.status]}</span>`
-      : '<span class="tag tag-slate nodot">无报告</span>';
-    const inner = `
+    const canOpen = c.reportViewable;
+    const tag = `<span class="tag ${RTAG[c.reportStatus] || 'tag-slate'} nodot">${RTXT[c.reportStatus] || c.reportStatus}</span>`;
+    const style = 'padding:12px 14px;align-items:flex-start' + (i === list.length - 1 ? ';border-bottom:none' : '');
+    return `<div class="m-row c-row" style="${style}" onclick="openDetail('${c.id}')">
       <div style="flex:1">
-        <div style="font-size:13.5px;font-weight:600">${c.date.slice(5)} ${c.start} — ${c.end}</div>
-        <div class="small muted" style="margin-top:2px">${c.teacher} · ${rp ? rp.title : '一对一课程'}</div>
+        <div style="font-size:13.5px;font-weight:600">${esc(c.date.slice(5))} ${esc(c.start)} — ${esc(c.end)}</div>
+        <div class="small muted" style="margin-top:2px">${esc(c.teacherName)} · ${esc(c.topic || '一对一课程')}</div>
         <div class="flex gap4 mt8">
-          <span class="tag ${CTAG[c.status]} nodot">${c.status}</span>
+          <span class="tag ${CTAG[c.status] || 'tag-slate'} nodot">${c.status}</span>
           ${tag}
         </div>
       </div>
-      <span class="muted">${canOpen ? '›' : ''}</span>`;
-    const style = 'padding:12px 14px;align-items:flex-start' + (i === list.length - 1 ? ';border-bottom:none' : '');
-    return canOpen
-      ? `<a class="m-row" href="report.html?student=${STUDENT}&report=${rp.id}" style="${style}">${inner}</a>`
-      : `<div class="m-row" style="${style}">${inner}</div>`;
+      <span class="muted">›</span>
+    </div>`;
   }).join('') : '<div class="m-row" style="justify-content:center"><span class="small muted">没有符合条件的课程</span></div>';
 }
 
+function openDetail(courseId) {
+  let detail;
+  try { detail = Store.parentCourseDetail(PID, curKid, courseId); }
+  catch (e) { Proto.toast(e.message, 'err'); return; }
+  const c = detail;
+  const reportLink = c.reportViewable
+    ? `<a class="btn btn-block btn-primary" href="report.html?student=${curKid}&report=${c.reportId}">查看学习报告</a>`
+    : (c.reportStatus === '未生成' ? ''
+       : `<div class="small muted">报告${c.reportStatus === '编辑中' || c.reportStatus === '已提交' ? '老师整理中，发布后可查看' : ''}</div>`);
+  const reason = (c.status === '未上课' || c.status === '已取消') && c.note
+    ? `<div class="m-row"><span class="k">${c.status === '已取消' ? '取消原因' : '备注'}</span><span style="text-align:right;max-width:180px">${esc(c.note)}</span></div>`
+    : '';
+  document.getElementById('detailDrawer').innerHTML = `
+    <div class="modal-head">
+      <div class="modal-title">课程详情</div>
+      <button class="modal-close" onclick="Proto.closeDrawer('detailDrawer')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="m-row"><span class="k detail-k">课程日期</span><span>${esc(c.date)}</span></div>
+      <div class="m-row"><span class="k detail-k">计划时间</span><span>${esc(c.start)} — ${esc(c.end)}</span></div>
+      ${c.actualStart ? `<div class="m-row"><span class="k detail-k">实际上课</span><span>${esc(c.actualStart)} — ${esc(c.actualEnd || '—')}</span></div>` : ''}
+      <div class="m-row"><span class="k detail-k">授课教师</span><span>${esc(c.teacherName)}</span></div>
+      <div class="m-row"><span class="k detail-k">课程主题</span><span style="text-align:right;max-width:180px">${esc(c.topic || '—')}</span></div>
+      <div class="m-row"><span class="k detail-k">课程状态</span><span><span class="tag ${CTAG[c.status] || 'tag-slate'} nodot">${c.status}</span></span></div>
+      <div class="m-row"><span class="k detail-k">报告状态</span><span><span class="tag ${RTAG[c.reportStatus] || 'tag-slate'} nodot">${RTXT[c.reportStatus] || c.reportStatus}</span></span></div>
+      <div class="m-row"><span class="k detail-k">课时</span><span>${c.status === '已完成' ? '已扣课时' : c.status === '未上课' || c.status === '已取消' ? '不扣课时' : '未扣课时'}</span></div>
+      ${reason}
+      <div class="divider" style="margin:12px 0"></div>
+      <div class="small muted" style="line-height:1.7">家长端仅可查看课程记录，不能修改课程状态与课时。</div>
+      ${reportLink ? `<div style="margin-top:10px">${reportLink}</div>` : ''}
+    </div>`;
+  Proto.openDrawer('detailDrawer');
+}
+
 document.getElementById('seg').addEventListener('click', e => {
-  const f = e.target.dataset.f;
+  const f = e.target.closest('[data-f]');
   if (!f) return;
-  filter = f;
-  Array.from(document.getElementById('seg').children).forEach(x => x.classList.toggle('on', x.dataset.f === f));
+  filter = f.dataset.f;
+  Array.from(document.getElementById('seg').children).forEach(x => x.classList.toggle('on', x.dataset.f === f.dataset.f));
   render();
 });
 
+initKid();
 render();
 </script>
 </body>

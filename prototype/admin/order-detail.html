@@ -48,7 +48,7 @@ S.setSession({ role: 'admin' });
 Proto.shell({ role: 'admin', active: 'order-list' });
 
 const ID = new URLSearchParams(location.search).get('id') || '';
-document.getElementById('p_method').innerHTML = S.PAY_METHODS.map(m => `<option>${m}</option>`).join('');
+document.getElementById('p_method').innerHTML = S.dictionaryOptions('pay_method').map(m => `<option>${m}</option>`).join('');
 
 function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 

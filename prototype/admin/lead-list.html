@@ -76,7 +76,7 @@ Proto.shell({ role: 'admin', active: 'lead-list' });
 document.getElementById('st').innerHTML = '<option value="">全部</option>' +
   S.LEAD_STATUS.map(s => `<option>${s}</option>`).join('');
 document.getElementById('ch').innerHTML = '<option value="">全部</option>' +
-  S.LEAD_CHANNELS.map(c => `<option>${c}</option>`).join('');
+  Store.dictionaryOptions('lead_channel').map(c => `<option>${c}</option>`).join('');
 document.getElementById('ag').innerHTML = '<option value="">全部</option><option value="__none">无（机构直营）</option>' +
   S.agents().map(a => `<option value="${a.id}">${a.name}（${a.id}）</option>`).join('');
 

@@ -6,6 +6,13 @@ function ok(name, cond, extra) {
   if (cond) { pass++; console.log('  ✓ ' + name); }
   else { fail++; console.log('  ✗ ' + name + (extra !== undefined ? ' → ' + JSON.stringify(extra) : '')); }
 }
+/* 统一账号后身份只能来自真实账号：按角色显式登录，不再依赖旧 ?as= 演示兜底 */
+async function loginAs(p, role) {
+  return p.eval(`var a=Store.roleAccounts(${JSON.stringify(role)}).filter(x=>x.available)[0];
+    if(!a) return false;
+    Store.setSession({role:${JSON.stringify(role)},accountId:a.accountId,operatorName:a.name,
+      operatorId:a.profileId,teacherId:'',agentId:'',parentId:''});return true;`);
+}
 
 (async () => {
   const proc = await launch();
@@ -13,6 +20,7 @@ function ok(name, cond, extra) {
   try {
     /* ================= 场景 7：正常词库申请（教师申请 → 管理员审核 → 授权 → 教师可用） ================= */
     await p.goto(ROOT + 'admin/wordbook-request.html?tab=pending&as=ops');
+    await loginAs(p, 'ops');
     let r = await p.eval(`
       var st = Store.wordbookRequestStat();
       var gs = Store.wordbookGrantStat();
@@ -51,6 +59,7 @@ function ok(name, cond, extra) {
         reason:'11 月开始 Unit 2 之后加练', plan:'先初筛再按错词建莱特纳' });
       Store.setSession({role:'ops', operatorName:'王敏'});`);
     await p.goto(ROOT + 'admin/wordbook-request.html?tab=pending&as=ops');
+    await loginAs(p, 'ops');
     r = await p.eval(`return Store.wordbookRequestStat();`);
     ok('教师提交两条后待审核变 3', r.pending === 3, r.pending);
 
@@ -104,6 +113,7 @@ function ok(name, cond, extra) {
       Store.createWordbookRequests({ studentId:'S2026001', wordbookIds:['WB005'], reason:'六年级衔接词汇' });
       Store.setSession({role:'ops', operatorName:'王敏'});`);
     await p.goto(ROOT + 'admin/wordbook-request.html?tab=pending&as=ops');
+    await loginAs(p, 'ops');
     r = await p.eval(`
       var boxes = [...document.querySelectorAll('#reqRows input[type=checkbox]')];
       var target = boxes.find(b => b.dataset.id && Store.wordbookRequestOf(b.dataset.id).wordbookId === 'WB005');
@@ -116,6 +126,7 @@ function ok(name, cond, extra) {
 
     /* ================= 授权记录：停用 / 启用 / 历史保留 ================= */
     await p.goto(ROOT + 'admin/wordbook-request.html?tab=grant&as=ops');
+    await loginAs(p, 'ops');
     r = await p.eval(`
       var g = Store.wordbookGrants({ studentId:'S2026001', wordbookId:'WB002' })[0];
       var out = {};
