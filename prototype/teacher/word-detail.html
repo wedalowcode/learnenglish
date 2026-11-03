@@ -233,7 +233,7 @@ function switchWord(id) {
 }
 
 function initSelect() {
-  const mine = Store.students().filter(s => s.teacher === 'T001');
+  const mine = Store.currentStudentsOf(Proto.teacherId()).map(x => x.student).filter(Boolean);
   document.getElementById('stuSel').innerHTML = mine
     .map(s => `<option value="${s.id}" ${s.id === studentId ? 'selected' : ''}>${s.name} · ${s.grade}</option>`).join('');
   const b = 'student-profile.html?student=' + studentId;
@@ -505,7 +505,7 @@ function joinGreen() {
   const w = Store.word(wordId);
   const ls = Store.leitnerState(studentId, wordId);
   reasonAction = function (note) {
-    Store.addToGreen(studentId, wordId, note, '李婉');
+    Store.addToGreen(studentId, wordId, note, Proto.teacherName());
     Proto.toast('已加入绿盒', 'ok');
     renderAll();
   };
@@ -521,7 +521,7 @@ function moveTo(box) {
   const w = Store.word(wordId);
   const ls = Store.leitnerState(studentId, wordId);
   reasonAction = function (note) {
-    Store.moveBox(studentId, wordId, box, note, '李婉');
+    Store.moveBox(studentId, wordId, box, note, Proto.teacherName());
     Proto.toast('已移动到 ' + Store.boxName(box), 'ok');
     renderAll();
   };

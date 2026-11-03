@@ -186,7 +186,7 @@ function switchPlan(id) { location.href = 'memory21.html?student=' + studentId +
 function en(id) { return (Store.word(id) || {}).en || id; }
 
 function init() {
-  const mine = Store.students().filter(s => s.teacher === 'T001');
+  const mine = Store.currentStudentsOf(Proto.teacherId()).map(x => x.student).filter(Boolean);
   document.getElementById('stuSel').innerHTML = mine
     .map(s => `<option value="${s.id}" ${s.id === studentId ? 'selected' : ''}>${s.name} · ${s.grade}</option>`).join('');
   document.getElementById('npStudent').innerHTML = mine
@@ -216,7 +216,7 @@ function renderNoPlan() {
 function render() {
   const p = Store.plan21Progress(plan);
   const st = Store.stats(studentId);
-  const teacher = (Store.teacher('T001') || {}).name || '李婉';
+  const teacher = (Store.teacher(Proto.teacherId()) || {}).name || '';
 
   document.getElementById('statCards').innerHTML = `
     <div class="card stat"><div class="stat-label">计划状态</div>
@@ -418,7 +418,7 @@ function createPlan() {
     p = Store.create21Plan({
       studentId: sid, name, startDate: start, wordIds: ids,
       strategy: document.getElementById('npStrategy').value,
-      note: document.getElementById('npNote').value.trim(), by: '李婉'
+      note: document.getElementById('npNote').value.trim(), by: Proto.teacherName()
     });
   } catch (e) {
     Proto.toast(e.message, 'err');

@@ -262,6 +262,28 @@
     };
   })();
 
+  /* ---------------- 会话身份持久化 ----------------
+     教师端每个页面的「我是谁」只能来自登录会话，不能从 URL 的学员编号反推。
+     会话在同标签页内跨页面延续，保证「接单 → 词库申请 → 开始教学」identity 不变。 */
+  var SESSION_KEY = 'ee_proto_session_v7';
+  /* 只持久化「当前登录教师」这一个身份事实，不持久化角色：
+     角色由各页面调用 setSession 显式声明，避免教师会话污染管理端权限判断。 */
+  function saveSession() {
+    try { SS.setItem(SESSION_KEY, JSON.stringify({ teacherId: session.teacherId || '' })); } catch (e) { /* 静默 */ }
+  }
+  function restoreSession() {
+    try {
+      var raw = SS.getItem(SESSION_KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (!o || typeof o !== 'object') return;
+      if (o.teacherId) {
+        session.teacherId = o.teacherId;
+        session.operatorName = session.operatorName || '';
+      }
+    } catch (e) { /* 损坏则用默认会话 */ }
+  }
+
   /* ---------------- 小工具 ---------------- */
   function pad(n, len) { n = String(n); while (n.length < len) n = '0' + n; return n; }
 
@@ -1431,7 +1453,58 @@
   /* ---------------- 载入 / 保存 ---------------- */
   var db = null;
 
+  /**
+   * v6 → v7 一次性迁移。
+   * v7 只新增了接单域 5 张表，旧集合结构未变，因此按「同名字段原样搬运、
+   * 缺失集合用种子补齐」的方式迁移，历史演示数据（学员/教师/词库/课程/训练）全部保留。
+   * 无论迁移是否成功，都不删除 ee_proto_store_v6 —— 它同时充当原始备份。
+   * 返回 null 表示没有可迁移的旧数据。
+   */
+  var LEGACY_KEY = 'ee_proto_store_v6';
+  var MIGRATABLE_KEYS = ['students', 'teachers', 'users', 'teacherStudents', 'teacherCooperations',
+    'teacherChanges', 'parents', 'words', 'wordbooks', 'wordbookWords', 'importBatches', 'importJobs',
+    'prescreens', 'trainTasks', 'trainDetails', 'studentWordStates', 'leitnerStates', 'leitnerConfig',
+    'leitnerTasks', 'leitnerRecords', 'leitnerOps', 'plans21', 'plan21Tasks', 'plan21Records',
+    'articleTasks', 'articleTaskDetails', 'courses', 'courseRecords', 'reports', 'flows', 'accounts',
+    'flowReversals', 'familyChecks'];
+
+  function loadLegacyV6() {
+    var raw = null;
+    try { raw = SS.getItem(LEGACY_KEY); } catch (e) { return null; }
+    if (!raw) return null;
+    var old;
+    try { old = JSON.parse(raw); } catch (e) { old = null; }
+    if (!old || typeof old !== 'object') {
+      /* 旧数据损坏：保留原 key 不动，退回种子并明确提示 */
+      try { console.warn('[Store] ' + LEGACY_KEY + ' 无法解析，已保留原始数据作为备份，演示数据重置为 v7 种子'); } catch (e) { }
+      return null;
+    }
+    var seed = buildSeed();
+    var out = normalizeDb(seed);
+    var moved = [], reset = [];
+    MIGRATABLE_KEYS.forEach(function (k) {
+      if (!Array.isArray(old[k])) { reset.push(k); return; }
+      /* 只搬运结构一致的数组：两侧都存在该集合才覆盖，避免把 v6 的未知结构塞进 v7 */
+      if (!Array.isArray(seed[k])) { reset.push(k); return; }
+      out[k] = clone(old[k]);
+      moved.push(k);
+    });
+    out.version = VERSION;
+    out.meta = out.meta || {};
+    out.meta.migration = {
+      from: 'v6', to: 'v7', at: stamp(),
+      strategy: '按集合搬运 + 缺失集合用种子补齐；v6 原始数据保留在 ' + LEGACY_KEY,
+      carried: moved, seeded: reset
+    };
+    try {
+      console.info('[Store] 已从 v6 迁移本地演示数据：保留 ' + moved.length + ' 个集合，' +
+        reset.length + ' 个集合用种子补齐；' + LEGACY_KEY + ' 已保留为备份');
+    } catch (e) { }
+    return normalizeDb(out);
+  }
+
   function load() {
+    restoreSession();
     try {
       var raw = SS.getItem(KEY);
       if (raw) {
@@ -1442,6 +1515,8 @@
         }
       }
     } catch (e) { /* 损坏则重建 */ }
+    var legacy = loadLegacyV6();
+    if (legacy) { db = legacy; save(); return db; }
     db = normalizeDb(buildSeed());
     save();
     return db;
@@ -1591,7 +1666,7 @@
     var t = {
       id: 'TR' + TODAY.replace(/-/g, '') + seq('TR', 2),
       studentId: opt.studentId,
-      teacherId: opt.teacherId || 'T001',
+      teacherId: opt.teacherId || sessionTeacherId(),
       courseId: opt.courseId || '',
       wordbookId: bk.id,
       wordbookName: bk.name,
@@ -2883,7 +2958,7 @@
     var t = {
       id: 'AT' + TODAY.replace(/-/g, '') + seq('AT', 3),
       studentId: opt.studentId,
-      teacherId: opt.teacherId || 'T001',
+      teacherId: opt.teacherId || sessionTeacherId(),
       articleId: opt.articleId,
       articleName: opt.articleName || opt.articleId,
       courseId: opt.courseId || '',
@@ -4545,6 +4620,7 @@
     if (s.operatorId) session.operatorId = s.operatorId;
     /* 教师身份单独记：教师端所有「我的 / 自己的」判断都靠它，不靠姓名猜 */
     if ('teacherId' in s) session.teacherId = s.teacherId || '';
+    saveSession();
     return clone(session);
   }
   function currentSession() { return clone(session); }
@@ -5645,6 +5721,12 @@
     var t = db.teachers.filter(function (x) { return x.name === session.operatorName; })[0];
     return t ? t.id : '';
   }
+  /** 演示环境没有真实登录页：未设置会话教师时，用第一位「可授课」教师作为默认身份 */
+  function defaultTeacherId() {
+    var t = db.teachers.filter(function (x) { return x.cooperationStatus === COOP.READY; })[0] ||
+      db.teachers[0];
+    return t ? t.id : '';
+  }
   /** 教师角色只能操作自己的数据：把越权挡在 Store 里，而不是靠页面隐藏按钮 */
   function assertSelfTeacher(teacherId) {
     if (session.role !== 'teacher') return teacherId;
@@ -5709,8 +5791,9 @@
       parent: input.parent || '', parentName: String(input.parentName || '').trim(),
       phone: phone,
       teacher: '', teacherName: '未分配',
-      product: input.product || '30 课时包',
-      remain: Number(input.remain) || 30,
+      /* 建档不赠送课时：课时只能来自订单生效或有权限的课时调整流水 */
+      product: input.product || '',
+      remain: Number(input.remain) || 0,
       status: '在读', created: TODAY,
       book: input.book || '', school: String(input.school || '').trim(),
       source: input.source || '其他',
@@ -5840,8 +5923,40 @@
   }
 
   /**
+   * 教师视角的需求投影（最小信息集）。
+   * 只返回：需求本体（去掉内部确认/分配字段）+ 学员 name/grade/book 等必要字段 + 响应人数。
+   * 不返回：家长手机号、其他教师的响应备注、内部操作流水、当前负责教师。
+   * 注意：原型阶段这个过滤在前端做；真实上线必须把该投影落在服务端接口，
+   * 教师端 API 不应下发完整需求对象，否则前端过滤只是一层可被绕过的展示逻辑。
+   */
+  function teacherDemandView(demandId) {
+    var x = typeof demandId === 'string' ? demandOf(demandId) : demandId;
+    if (!x) return null;
+    var st = student(x.studentId);
+    var resp = db.teacherResponses.filter(function (r) { return r.demandId === x.id; });
+    var demand = {
+      id: x.id, code: x.code, studentId: x.studentId,
+      grade: x.grade, textbook: x.textbook, learningNeeds: x.learningNeeds,
+      currentLevel: x.currentLevel, expectedSchedule: x.expectedSchedule,
+      expectedStartAt: x.expectedStartAt, specialRequirements: x.specialRequirements,
+      remark: x.remark, status: x.status,
+      publishedAt: x.publishedAt, createdAt: x.createdAt, updatedAt: x.updatedAt
+    };
+    return {
+      demand: demand,
+      student: st ? { id: st.id, name: st.name, grade: st.grade, book: st.book } : null,
+      responseCount: resp.length,
+      respondedCount: resp.filter(function (r) {
+        return r.status === RESP.YES || r.status === RESP.SELECTED || r.status === RESP.NOT_SELECTED;
+      }).length,
+      validCount: resp.filter(function (r) { return RESP_VALID.indexOf(r.status) >= 0; }).length
+    };
+  }
+
+  /**
    * 教师可见的开放需求：只有已发布、还没被教务确认掉的。
    * 暂停 / 已退出 / 待启用 的教师看不到待接单需求（业务上也不允许响应）。
+   * 返回的是 teacherDemandView 投影，不是教务用的完整 demandView。
    */
   function openDemandsFor(teacherId) {
     teacherId = assertSelfTeacher(teacherId);
@@ -5850,7 +5965,7 @@
     if (t.cooperationStatus !== COOP.READY) return [];
     return db.studentDemands
       .filter(function (x) { return DEMAND_OPEN_STATUS.indexOf(x.status) >= 0; })
-      .map(function (x) { return demandView(x); })
+      .map(function (x) { return teacherDemandView(x); })
       .sort(function (a, b) {
         /* 与我能力匹配的排前面：年级 → 教材 → 响应时间 */
         var sa = 0, sb = 0;
@@ -5964,9 +6079,61 @@
     return x;
   }
 
+  /**
+   * 建档 + 发布需求：一次事务。
+   * 先把需求表单完整校验一遍（学习需求 / 年级 / 教材 / 期望时间都是必填），
+   * 全部通过后再写学员与需求；任一步失败整体回滚，绝不留下「只有档案、没有需求」的孤立学员。
+   * 课时同样不赠送：新学员 remain = 0，必须等订单或调整流水产生课时。
+   */
+  function createStudentWithDemand(payload) {
+    assertCan('student.create');
+    payload = payload || {};
+    var stu = payload.student || {};
+    var demand = payload.demand || {};
+    var name = String(stu.name || payload.name || '').trim();
+    var stuGrade = String(stu.grade || '').trim();
+    var needs = toList(demand.learningNeeds);
+    var grade = String(demand.grade || stuGrade || '').trim();
+    var textbook = String(demand.textbook || '').trim();
+    var sch = demand.expectedSchedule || {};
+    var weekday = toList(sch.weekday);
+    var periods = toList(sch.periods);
+
+    /* 前置校验：与 createDemand 同口径，且在建档之前完成 */
+    if (!name) throw bizError('NAME_REQUIRED', '请填写学员姓名');
+    if (!stuGrade) throw bizError('GRADE_REQUIRED', '请选择年级');
+    if (!needs.length) throw bizError('NEEDS_REQUIRED', '请至少选择一项学习需求');
+    if (!grade) throw bizError('GRADE_REQUIRED', '请填写需求年级');
+    if (!textbook) throw bizError('TEXTBOOK_REQUIRED', '请填写教材');
+    if (!weekday.length || !periods.length) {
+      throw bizError('SCHEDULE_REQUIRED', '请填写期望上课时间（至少一个星期与一个时段）');
+    }
+
+    var snap = JSON.stringify(db);
+    try {
+      var s = createStudent({
+        name: name, gender: stu.gender || '男', grade: stuGrade,
+        phone: stu.phone || payload.phone || '',
+        parent: stu.parent || '', parentName: stu.parentName || '',
+        book: textbook, school: stu.school || '', source: stu.source || '其他',
+        /* 建档不赠送课时 */
+        product: '', remain: 0
+      });
+      var x = createDemand(Object.assign({ studentId: s.id }, demand, {
+        grade: grade, textbook: textbook,
+        learningNeeds: needs, expectedSchedule: sch
+      }), { publish: payload.publish !== false });
+      return { student: s, demand: x };
+    } catch (e) {
+      db = JSON.parse(snap);
+      save();
+      throw bizError(e.code || 'CREATE_FAILED',
+        '建档与需求创建未完成，已整体回滚：' + e.message, e.data);
+    }
+  }
+
   var DEMAND_EDITABLE = ['grade', 'textbook', 'learningNeeds', 'currentLevel', 'expectedSchedule',
     'expectedStartAt', 'specialRequirements', 'remark'];
-
   function updateDemand(id, patch) {
     assertCan('demand.edit');
     var x = demandOf(id);
@@ -6112,8 +6279,8 @@
       { key: 'coop', label: '教师处于可授课状态', ok: t.cooperationStatus === COOP.READY,
         value: t.cooperationStatus, blocking: true,
         hint: t.cooperationStatus === COOP.READY ? '' : '暂停合作 / 已退出 / 待启用的教师不能确认为最终人选' },
-      { key: 'account', label: '教师登录账号正常', ok: acc === ACCOUNT.OK, value: acc, blocking: false,
-        hint: acc === ACCOUNT.OK ? '' : '账号「' + acc + '」时教师无法登录教学端，建议先恢复账号' },
+      { key: 'account', label: '教师登录账号正常', ok: acc === ACCOUNT.OK, value: acc, blocking: true,
+        hint: acc === ACCOUNT.OK ? '' : '账号「' + acc + '」时教师无法登录教学端，必须先恢复账号才能确认' },
       { key: 'students', label: '当前学员数量合理', ok: (v && teacherStat(t.id).currentStudents < maxStu),
         value: teacherStat(t.id).currentStudents + ' / ' + maxStu, blocking: false,
         hint: '超过 ' + maxStu + ' 人时排课压力较大，请确认能保证课时' },
@@ -6156,7 +6323,8 @@
     if (!chk) throw bizError('NOT_FOUND', '教师不存在');
     if (!chk.can) {
       throw bizError('TEACHER_NOT_READY',
-        '「' + chk.teacher.name + '」当前为「' + chk.teacher.cooperationStatus + '」，不能确认为最终人选',
+        '「' + chk.teacher.name + '」当前不满足确认条件：' +
+        chk.blocking.map(function (i) { return i.label + '（' + i.value + '）'; }).join('；'),
         { check: chk });
     }
     var reason = String(opt.reason || '').trim();
@@ -6894,8 +7062,9 @@
     reassignCourse: reassignCourse, cancelCourse: cancelCourse,
     cooperationsOf: cooperationsOf, changeLogsOf: changeLogsOf, pendingRecordsOf: pendingRecordsOf,
     /* ---------- 学员接单与教学资源分配 ---------- */
-    createStudent: createStudent,
+    createStudent: createStudent, createStudentWithDemand: createStudentWithDemand,
     demandOf: demandOf, demands: demands, demandView: demandView, demandStat: demandStat,
+    teacherDemandView: teacherDemandView,
     demandOfStudent: demandOfStudent, demandLogsOf: demandLogsOf,
     responsesOfDemand: responsesOfDemand, responsesOfTeacher: responsesOfTeacher,
     responseOf: responseOf, openDemandsFor: openDemandsFor, demandMatchFor: demandMatchFor,
@@ -6921,6 +7090,7 @@
     SWB: SWB, SWB_STATUS: SWB_STATUS, SWB_TONE: SWB_TONE,
     /* 教师资源池：权限 */
     setSession: setSession, currentSession: currentSession, can: can, assertCan: assertCan,
+    sessionTeacherId: sessionTeacherId, defaultTeacherId: defaultTeacherId,
     PERMS: PERMS, ROLE_LABEL: ROLE_LABEL,
     COOP: COOP, COOP_STATUS: COOP_STATUS, COOP_TONE: COOP_TONE, COOP_ACTION: COOP_ACTION,
     COOP_ACTION_LABEL: COOP_ACTION_LABEL, ACCOUNT: ACCOUNT, ACCOUNT_STATUS: ACCOUNT_STATUS,

@@ -106,10 +106,18 @@ let selected = null;
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
-/* 以学员的负责教师身份进入页面：词库授权只对自己的学员开放 */
-(function initSession() {
-  const stu = Store.student(studentId);
-  if (stu) Store.setSession({ role: 'teacher', operatorName: stu.teacherName || '李婉', teacherId: stu.teacher || 'T001' });
+/* 教师身份只取登录会话（Proto.teacherId 会写回会话）；不从 URL 学员编号反推 */
+const TEACHER = Proto.teacherId();
+if (TEACHER) {
+  const t = Store.teacher(TEACHER);
+  Store.setSession({ role: 'teacher', teacherId: TEACHER, operatorName: t ? t.name : '' });
+}
+/* 只能给自己当前负责的学员开训练：URL 带来的学员不在名单内时，退回我的第一位学员 */
+(function normalizeStudent() {
+  const mine = Store.currentStudentsOf(TEACHER).map(x => x.student).filter(Boolean);
+  const hit = mine.filter(s => s.id === studentId)[0];
+  if (hit) return;
+  if (mine.length) studentId = mine[0].id;
 })();
 
 const STATUS_TAG = {
@@ -120,7 +128,7 @@ const qs = (extra) => '?' + [extra, courseId ? 'course=' + courseId : ''].filter
 function switchStudent(id) { location.href = 'word-training-setup.html' + qs('student=' + id); }
 
 function initStudentSelect() {
-  const mine = Store.students().filter(s => s.teacher === 'T001');
+  const mine = Store.currentStudentsOf(TEACHER).map(x => x.student).filter(Boolean);
   document.getElementById('stuSel').innerHTML = mine
     .map(s => `<option value="${s.id}" ${s.id === studentId ? 'selected' : ''}>${s.name} · ${s.grade}</option>`).join('');
   const stu = Store.student(studentId);
@@ -286,7 +294,7 @@ function countReview(t) {
 function start() {
   if (!selected) return;
   try {
-    const t = Store.startTrainTask({ studentId, teacherId: 'T001', wordbookId: selected, courseId });
+    const t = Store.startTrainTask({ studentId, teacherId: TEACHER, wordbookId: selected, courseId });
     if (courseId) Store.linkTask(courseId, 'train', t.id);
     location.href = 'word-training-prescreen.html' + qs('task=' + t.id);
   } catch (e) {

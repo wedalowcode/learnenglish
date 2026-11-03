@@ -235,7 +235,7 @@ function w(id) { return Store.word(id); }
 function en(id) { return (Store.word(id) || {}).en || id; }
 
 function initSelect() {
-  const mine = Store.students().filter(s => s.teacher === 'T001');
+  const mine = Store.currentStudentsOf(Proto.teacherId()).map(x => x.student).filter(Boolean);
   document.getElementById('stuSel').innerHTML = mine
     .map(s => `<option value="${s.id}" ${s.id === studentId ? 'selected' : ''}>${s.name} · ${s.grade}</option>`).join('');
 }
@@ -552,7 +552,7 @@ function openTaskDetail(taskId) {
 /* ---------- 绿盒 / 移动 ---------- */
 function joinGreen(wordId) {
   reasonAction = function (note) {
-    Store.addToGreen(studentId, wordId, note, '李婉');
+    Store.addToGreen(studentId, wordId, note, Proto.teacherName());
     Proto.toast(en(wordId) + ' 已移入绿盒', 'ok');
     openWords(Store.leitnerState(studentId, wordId).box === 'green' ? 'green' : 'red');
     render();
@@ -568,7 +568,7 @@ function joinGreen(wordId) {
 
 function removeGreen(wordId) {
   reasonAction = function (note) {
-    Store.removeFromGreen(studentId, wordId, note, '李婉', 'red');
+    Store.removeFromGreen(studentId, wordId, note, Proto.teacherName(), 'red');
     Proto.toast(en(wordId) + ' 已移出绿盒，回到红盒', 'ok');
     openWords('green');
     render();
@@ -583,7 +583,7 @@ function removeGreen(wordId) {
 function moveWord(wordId) {
   reasonAction = function (note) {
     const target = document.getElementById('mvTarget').value;
-    Store.moveBox(studentId, wordId, target, note, '李婉');
+    Store.moveBox(studentId, wordId, target, note, Proto.teacherName());
     Proto.toast(en(wordId) + ' 已移动到 ' + Store.boxName(target), 'ok');
     Proto.closeModal('wordsModal');
     render();

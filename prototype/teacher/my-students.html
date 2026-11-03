@@ -59,12 +59,16 @@
 <script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'teacher', active: 'my-students' });
+const TEACHER = Proto.teacherId();
 
 function render(kw = '') {
-  const mine = DB.students.filter(s => s.teacherName === '李婉' && (!kw || s.name.includes(kw)));
+  /* 我的学员只来自「当前有效师生关系」，不按姓名猜身份 */
+  const mine = Store.currentStudentsOf(TEACHER)
+    .map(x => x.student)
+    .filter(s => s && (!kw || s.name.includes(kw)));
   document.getElementById('total').textContent = mine.length;
   const mc = document.getElementById('mineCount');
-  if (mc) mc.textContent = DB.students.filter(x => x.teacherName === '李婉').length;
+  if (mc) mc.textContent = Store.currentStudentsOf(TEACHER).length;
 
   Proto.renderRows('rows', mine, s => `
     <tr>

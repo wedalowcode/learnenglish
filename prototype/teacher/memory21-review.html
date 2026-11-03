@@ -181,7 +181,7 @@ function next() { if (i < list.length - 1) { i++; revealed = false; render(); } 
 function ans(v) {
   const id = list[i];
   try {
-    Store.plan21Judge(task.id, id, v, 'T001', courseId);
+    Store.plan21Judge(task.id, id, v, Proto.teacherId(), courseId);
   } catch (e) {
     Proto.toast(e.message, 'err');
     refresh();
@@ -212,7 +212,7 @@ function doFix() {
   if (!picked) { Proto.toast('请选择修正后的结果', 'err'); return; }
   if (!note) { Proto.toast('修正必须填写原因', 'err'); return; }
   try {
-    const r = Store.plan21Correct(task.id, fixTarget, picked.value, note, 'T001', courseId);
+    const r = Store.plan21Correct(task.id, fixTarget, picked.value, note, Proto.teacherId(), courseId);
     Proto.closeModal('fixModal');
     Proto.toast(`已修正：${RESULT_LABEL[r.from]} → ${RESULT_LABEL[r.to]}（已追加修正记录）`, 'ok');
     fixTarget = null;
@@ -232,7 +232,7 @@ function finishEarly() {
 function finishNow() {
   const s = stat();
   if (s.complete) { renderDone(); return; }
-  const r = Store.finish21Task(task.id, { reason: '教师提前结束', by: 'T001' });
+  const r = Store.finish21Task(task.id, { reason: '教师提前结束', by: Proto.teacherId() });
   if (!r.ok) Proto.toast(r.reason, 'warn');
   renderDone();
 }

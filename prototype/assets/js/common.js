@@ -311,9 +311,32 @@ const Proto = (() => {
     if (el) el.textContent = txt;
   }
 
+  /**
+   * 教师端身份：一律取当前登录会话里的 teacherId，绝不从 URL 的学员编号反推。
+   * 演示环境没有登录页，会话为空时才用第一位「可授课」教师兜底，并写回会话，
+   * 保证后续页面（我的学员 / 训练 / 报告）读到的是同一个教师身份。
+   */
+  function teacherId() {
+    const s = Store.currentSession();
+    if (s.teacherId) return s.teacherId;
+    const id = Store.defaultTeacherId();
+    Store.setSession({
+      role: 'teacher', teacherId: id,
+      operatorName: (Store.teacher(id) || {}).name || ''
+    });
+    return id;
+  }
+
+  /** 当前登录教师姓名（用于操作记录 by 字段），与学生档案的「当前教师」同源 */
+  function teacherName() {
+    const id = teacherId();
+    return (Store.teacher(id) || {}).name || '';
+  }
+
   return {
     shell, $, $$, money, int, toast, openModal, closeModal, openDrawer, closeDrawer,
     confirmBox, initTabs, switchTab, renderRows, speak, playAudio, isPhone, markInvalid, setText,
+    teacherId, teacherName,
     MENUS, roleName,
   };
 })();

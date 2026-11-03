@@ -214,7 +214,7 @@ function switchStudent(id) { location.href = 'student-profile.html?student=' + i
 function en(id) { return (Store.word(id) || {}).en || id; }
 
 function init() {
-  const mine = Store.students().filter(s => s.teacher === 'T001');
+  const mine = Store.currentStudentsOf(Proto.teacherId()).map(x => x.student).filter(Boolean);
   document.getElementById('stuSel').innerHTML = mine
     .map(s => `<option value="${s.id}" ${s.id === studentId ? 'selected' : ''}>${s.name} · ${s.grade}</option>`).join('');
   const stu = Store.student(studentId);
@@ -312,7 +312,7 @@ function renderOverview() {
     const pass = ids.filter(id => t.finalResults[id] && t.finalResults[id].result === 'yes').length;
     items.push({
       at: t.finishedAt, type: '单词训练', text: `${t.wordbookName} · ${t.id}`,
-      n: ids.length + ' 词', tag: `通过 ${pass}`, tag2: `待复习 ${ids.length - pass}`, teacher: '李婉'
+      n: ids.length + ' 词', tag: `通过 ${pass}`, tag2: `待复习 ${ids.length - pass}`, teacher: Proto.teacherName()
     });
   });
   Store.leitnerTasksOf(studentId).forEach(t => {
@@ -320,7 +320,7 @@ function renderOverview() {
     const ls = Store.leitnerTaskStat(t.id);
     items.push({
       at: t.completedAt, type: '莱特纳复习', text: t.source,
-      n: ls.total + ' 词', tag: `认识 ${ls.yes}`, tag2: `待复习 ${ls.no + ls.mid}`, teacher: '李婉'
+      n: ls.total + ' 词', tag: `认识 ${ls.yes}`, tag2: `待复习 ${ls.no + ls.mid}`, teacher: Proto.teacherName()
     });
   });
   Store.plansOf(studentId).forEach(p => {
@@ -330,7 +330,7 @@ function renderOverview() {
       const lastAt = (Store.plan21TaskRecords(t.id).slice(-1)[0] || {}).at;
       items.push({
         at: lastAt, type: '21 天复习', text: `${p.name} · 第 ${t.day} 天`,
-        n: st.done + ' 词', tag: `认识 ${st.yes}`, tag2: `不认识 ${st.no + st.mid}`, teacher: '李婉'
+        n: st.done + ' 词', tag: `认识 ${st.yes}`, tag2: `不认识 ${st.no + st.mid}`, teacher: Proto.teacherName()
       });
     });
   });
@@ -395,7 +395,7 @@ function addGreen(wordId) {
   Proto.confirmBox('加入绿盒子',
     `将 <b>${en(wordId)}</b> 加入绿盒子，由教师自主复习。加入会记录操作人、时间与实际原因。`,
     '确认加入', () => {
-      Store.addToGreen(studentId, wordId, '学员档案手动加入', '李婉');
+      Store.addToGreen(studentId, wordId, '学员档案手动加入', Proto.teacherName());
       Proto.toast('已加入绿盒', 'ok');
       renderAll();
     });

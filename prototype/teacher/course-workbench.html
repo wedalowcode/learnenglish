@@ -201,7 +201,7 @@
 Proto.shell({ role: 'teacher', active: 'course-workbench' });
 
 const Q = new URLSearchParams(location.search);
-const TEACHER = 'T001';
+const TEACHER = Proto.teacherId();
 const CTAG = { '待上课': 'tag-slate', '授课中': 'tag-blue', '已完成': 'tag-green', '未上课': 'tag-amber', '已取消': 'tag-red' };
 const RTAG = { '未生成': 'tag-slate', '编辑中': 'tag-amber', '已提交': 'tag-blue', '已发布': 'tag-green' };
 

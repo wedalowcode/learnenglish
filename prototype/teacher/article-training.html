@@ -136,9 +136,9 @@ function startWith(a) {
   }
   try {
     task = Store.startArticleTask({
-      studentId: studentId, teacherId: 'T001',
+      studentId: studentId, teacherId: Proto.teacherId(),
       articleId: a.id, articleName: a.name, courseId: courseId,
-      sentences: sents, by: '李婉'
+      sentences: sents, by: Proto.teacherName()
     });
     if (courseId) Store.linkTask(courseId, 'article', task.id);
   } catch (e) {
@@ -469,7 +469,7 @@ function saveAll() {
   const nt = (document.getElementById('noteBox') || {}).value || '';
   let r;
   try {
-    r = Store.finishArticleTask(task.id, { evaluation: ev, note: nt, by: 'T001' });
+    r = Store.finishArticleTask(task.id, { evaluation: ev, note: nt, by: Proto.teacherId() });
   } catch (e) {
     // 未完成且未填原因时，自动按「提前结束」处理，要求教师确认
     Proto.toast(e.message + '，请使用「提前结束」填写原因', 'err');
@@ -496,7 +496,7 @@ function doEnd() {
   const ev = document.getElementById('endEval').value.trim();
   let r;
   try {
-    r = Store.finishArticleTask(task.id, { endReason: reason, evaluation: ev, by: 'T001' });
+    r = Store.finishArticleTask(task.id, { endReason: reason, evaluation: ev, by: Proto.teacherId() });
   } catch (e) { Proto.toast(e.message, 'err'); return; }
   Proto.closeModal('endModal');
   Proto.toast(`已结束并保存：${r.done} / ${r.total} 句，状态「${r.task.status}」`, 'warn');

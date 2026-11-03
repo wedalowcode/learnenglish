@@ -576,7 +576,7 @@ function submitAll() {
       joinLeitner: document.getElementById('cb_leitner').checked,
       joinPlan21: document.getElementById('cb_21').checked,
       joinGreen: document.getElementById('cb_green').checked,
-      by: '李婉'
+      by: Proto.teacherName()
     });
   } catch (e) {
     submitting = false;

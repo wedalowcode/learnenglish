@@ -16,7 +16,7 @@
       <div class="page-head">
         <div>
           <div class="crumb">教学工作台<span class="sep">/</span>今日工作台</div>
-          <h1 class="page-title">早上好，李婉</h1>
+          <h1 class="page-title">早上好，<span id="greetName">老师</span></h1>
           <div class="page-sub" id="subLine">—</div>
         </div>
         <div class="page-actions">
@@ -94,7 +94,8 @@
 <script>
 Proto.shell({ role: 'teacher', active: 'workbench' });
 
-const TEACHER = 'T001';
+const TEACHER = Proto.teacherId();
+document.getElementById('greetName').textContent = Proto.teacherName();
 const CTAG = { '待上课': 'tag-slate', '授课中': 'tag-blue', '已完成': 'tag-green', '未上课': 'tag-amber', '已取消': 'tag-red' };
 const RTAG = { '未生成': 'tag-slate', '编辑中': 'tag-amber', '已提交': 'tag-blue', '已发布': 'tag-green' };
 

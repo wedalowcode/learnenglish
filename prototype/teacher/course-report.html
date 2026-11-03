@@ -215,7 +215,7 @@ function collect() {
 
 function saveDraft() {
   try {
-    Store.saveReportDraft(rp.id, collect(), 'T001');
+    Store.saveReportDraft(rp.id, collect(), Proto.teacherId());
     Proto.toast('草稿已保存');
     render();
   } catch (e) { Proto.toast(e.message, 'err'); }
@@ -223,8 +223,8 @@ function saveDraft() {
 
 function doSubmit() {
   try {
-    Store.saveReportDraft(rp.id, collect(), 'T001');
-    const r = Store.submitReport(rp.id, 'T001');
+    Store.saveReportDraft(rp.id, collect(), Proto.teacherId());
+    const r = Store.submitReport(rp.id, Proto.teacherId());
     if (!r.ok) { Proto.toast(r.reason, 'err'); return; }
     Proto.toast('报告已提交，确认无误后可以发布给家长');
     render();
@@ -236,7 +236,7 @@ function doPublish() {
     '发布后家长端立即可见本节课报告与待复习单词，且不能再修改内容。<br><br>确认发布吗？',
     '确认发布', () => {
       try {
-        const r = Store.publishReport(rp.id, 'T001');
+        const r = Store.publishReport(rp.id, Proto.teacherId());
         if (!r.ok) { Proto.toast(r.reason, 'err'); return; }
         Proto.toast('已发布，家长现在可以看到本节课报告');
         render();

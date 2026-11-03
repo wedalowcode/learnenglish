@@ -186,7 +186,7 @@
 <script>
 const Q = new URLSearchParams(location.search);
 let TAB = Q.get('tab') || 'open';
-let TID = Q.get('t') || 'T001';
+let TID = Q.get('t') || Proto.teacherId();
 
 const S = Store;
 let ME = S.teacher(TID);
@@ -195,7 +195,7 @@ Proto.shell({ role: 'teacher', active: TAB === 'open' ? 'demand-open' : TAB === 
 
 function applySession() {
   ME = S.teacher(TID);
-  S.setSession({ role: 'teacher', operatorName: ME ? ME.name : '李婉', teacherId: TID });
+  S.setSession({ role: 'teacher', operatorName: ME ? ME.name : '', teacherId: TID });
 }
 applySession();
 
@@ -378,7 +378,7 @@ function renderWbReq() {
 let curDemandId = '';
 function openRespond(demandId) {
   curDemandId = demandId;
-  const v = S.demandView(demandId);
+  const v = S.teacherDemandView(demandId);
   const m = S.demandMatchFor(demandId, TID);
   document.getElementById('rsTitle').textContent = '响应需求：' + (v.student ? v.student.name : '');
   document.getElementById('rsInfo').innerHTML = `<div class="card" style="box-shadow:none"><div class="card-body">

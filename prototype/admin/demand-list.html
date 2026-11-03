@@ -129,8 +129,8 @@
 
       <div id="pickNew" class="hidden">
         <div class="alert alert-warn mb12"><span class="ico">!</span>
-          <div>新学员必须先建立<b>学员档案</b>，再发布需求。建档按「姓名 + 年级」查重，
-            不会因为发布需求而重复创建同一个学员。</div></div>
+          <div>新学员建档<b>不赠送课时</b>（课时余额为 0），需求与档案一次性提交，
+            需求校验不通过则整体回滚，不会留下孤立档案。</div></div>
         <div class="grid g2">
           <div class="field"><label>学员姓名 <span class="req">*</span></label>
             <input class="input" id="n_name" placeholder="如 唐语彤"></div>
@@ -476,14 +476,25 @@ function submitCreate() {
     }
     let studentId = document.getElementById('c_student').value;
     if (mode === 'new') {
-      const s = S.createStudent({
-        name: document.getElementById('n_name').value,
-        grade: document.getElementById('n_grade').value,
-        phone: document.getElementById('n_phone').value,
-        book: document.getElementById('n_book').value
+      /* 建档 + 需求一次事务：需求表单校验通过才写库，失败整体回滚，不留孤立学员档案 */
+      const publish = document.getElementById('c_publish').value === '1';
+      const r = S.createStudentWithDemand({
+        student: {
+          name: document.getElementById('n_name').value,
+          grade: document.getElementById('n_grade').value,
+          phone: document.getElementById('n_phone').value,
+          book: document.getElementById('n_book').value
+        },
+        demand: payload,
+        publish: publish
       });
-      studentId = s.id;
-      Proto.toast('已建立学员档案 ' + s.id, 'ok');
+      Proto.closeModal('createModal');
+      Proto.toast('已建立学员档案 ' + r.student.id + (publish ? '，需求已发布' : '，需求已存为草稿'), 'ok');
+      render();
+      renderQuick();
+      fillStudentOptions();
+      if (publish) location.href = 'demand-detail.html?id=' + r.demand.id + '&as=' + ROLE;
+      return;
     }
     if (!studentId) throw new Error('请选择学员，或先为新学员建档');
     const publish = document.getElementById('c_publish').value === '1';

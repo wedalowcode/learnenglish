@@ -130,7 +130,7 @@ function boot() {
     list = s.words;
     if (!list.length) { renderEmpty(s.label); return; }
     try {
-      task = Store.createLeitnerTask(studentId, list, 'T001', s.label, courseId);
+      task = Store.createLeitnerTask(studentId, list, Proto.teacherId(), s.label, courseId);
       if (courseId) Store.linkTask(courseId, 'leitner', task.id);
     } catch (e) {
       renderEmpty(e.message); return;
@@ -152,7 +152,7 @@ function stat() { return Store.leitnerTaskStat(task.id); }
 function refresh() {
   task = Store.leitnerTask(task.id);
   const s = stat();
-  if (s.complete) { if (task.status === '进行中') Store.finishLeitnerTask(task.id, 'T001'); task = Store.leitnerTask(task.id); renderDone(); return; }
+  if (s.complete) { if (task.status === '进行中') Store.finishLeitnerTask(task.id, Proto.teacherId()); task = Store.leitnerTask(task.id); renderDone(); return; }
   const first = list.findIndex(id => !Store.leitnerFirstRecord(task.id, id));
   if (first >= 0) i = first;
   render();
@@ -237,7 +237,7 @@ function next() { if (i < list.length - 1) { i++; revealed = false; render(); } 
 function judge(v) {
   const id = list[i];
   try {
-    const r = Store.leitnerJudge(task.id, id, v, 'T001', courseId);
+    const r = Store.leitnerJudge(task.id, id, v, Proto.teacherId(), courseId);
     Proto.toast(`${w(id).en}：${RESULT_LABEL[v]} · ${Store.boxName(r.from)} → ${Store.boxName(r.to)}` +
       (r.nextDue ? ' · 下次 ' + r.nextDue : ''), v === 'yes' ? 'ok' : 'warn');
   } catch (e) {
@@ -285,7 +285,7 @@ function doFix() {
   if (!picked) { Proto.toast('请选择修正后的结果', 'err'); return; }
   if (!note) { Proto.toast('修正必须填写原因', 'err'); return; }
   try {
-    const r = Store.leitnerCorrect(task.id, fixTarget, picked.value, note, 'T001', courseId);
+    const r = Store.leitnerCorrect(task.id, fixTarget, picked.value, note, Proto.teacherId(), courseId);
     Proto.closeModal('fixModal');
     Proto.toast(`已修正：${RESULT_LABEL[r.result]} · ${Store.boxName(r.from)} → ${Store.boxName(r.to)}（未重复推进）`, 'ok');
     fixTarget = null;
@@ -311,7 +311,7 @@ function doEnd() {
   const reason = document.getElementById('em_reason').value.trim();
   if (!reason) { Proto.toast('结束本轮复习必须填写原因', 'err'); return; }
   try {
-    const r = Store.finishLeitnerTask(task.id, 'T001', { reason: reason });
+    const r = Store.finishLeitnerTask(task.id, Proto.teacherId(), { reason: reason });
     Proto.closeModal('endModal');
     Proto.toast('本轮已结束，状态：' + r.task.status + '（剩余 ' + r.stat.remain + ' 个单词）', r.complete ? '' : 'warn');
     task = Store.leitnerTask(task.id);
@@ -320,7 +320,7 @@ function doEnd() {
 }
 
 function finishAndShow() {
-  if (task.status === '进行中' && stat().complete) Store.finishLeitnerTask(task.id, 'T001');
+  if (task.status === '进行中' && stat().complete) Store.finishLeitnerTask(task.id, Proto.teacherId());
   task = Store.leitnerTask(task.id);
   renderDone();
 }
