@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>排课设置</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .split { display:grid; grid-template-columns:260px minmax(0,1fr); gap:16px; align-items:start; }
+  .tch-item { padding:10px 12px; border-bottom:1px solid var(--border); cursor:pointer; }
+  .tch-item:last-child { border-bottom:none; }
+  .tch-item.on { background:var(--primary-soft); }
+  .tch-item b { display:block; font-size:13px; }
+  .tch-item span { font-size:11px; color:var(--text-3); }
+  .avail-grid { display:grid; grid-template-columns:46px repeat(7,minmax(0,1fr)); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .avail-grid .gh { background:#f8fafc; text-align:center; font-size:11px; color:var(--text-2); padding:6px 2px; border-bottom:1px solid var(--border); border-right:1px solid var(--border); }
+  .avail-grid .gh:last-child { border-right:none; }
+  .avail-grid .gt { font-size:10px; color:var(--text-3); text-align:right; padding:2px 4px 0 0; border-right:1px solid var(--border); height:26px; }
+  .avail-grid .cell { height:26px; border-right:1px solid #eef2f7; border-bottom:1px solid #eef2f7; cursor:pointer; }
+  .avail-grid .cell:hover { background:#eff6ff; }
+  .avail-grid .cell.on { background:#bfdbfe; }
+  .avail-grid .cell.pending { outline:2px solid #2563eb; outline-offset:-2px; }
+  .chip-row { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border:1px solid var(--border); border-radius:14px; font-size:12px; cursor:pointer; background:#fff; }
+  .chip.on { background:var(--primary-soft); border-color:var(--primary); color:var(--primary-dark); }
+  .range-tag { display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border-radius:6px; background:#eff6ff; font-size:12px; margin:0 6px 6px 0; }
+  .range-tag button { border:none; background:none; color:#dc2626; cursor:pointer; padding:0; font-size:13px; }
+  .tier-title { font-size:13px; font-weight:600; margin:12px 0 6px; }
+  .slot-hint { font-size:12px; color:var(--text-3); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+      <div class="page-head">
+        <div>
+          <div class="crumb">排课管理<span class="sep">/</span>排课设置</div>
+          <h1 class="page-title">教师可用时间与学员偏好</h1>
+          <div class="page-sub">固定周期区间 + 日期例外（例外优先）· 负荷策略 · 学员首选 / 可用 / 禁止三档</div>
+        </div>
+        <div class="page-actions">
+          <a class="btn" href="schedule-workbench.html">返回排课总览</a>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-weight:600;font-size:13px">教师（可授课）</div>
+          <div id="teacherList"></div>
+        </div>
+
+        <div>
+          <div class="card mb16">
+            <div class="flex jcb aic mb12">
+              <div>
+                <div class="section-title" id="tchTitle" style="margin:0">可用时间</div>
+                <div class="small muted" id="tchMeta"></div>
+              </div>
+              <div class="flex gap8">
+                <button class="btn btn-sm" onclick="clearPending()">清除选择</button>
+                <button class="btn btn-sm btn-primary" onclick="saveAvailability()">保存可用时间</button>
+              </div>
+            </div>
+            <div id="legacyNote"></div>
+            <div class="flex jcb aic mb8">
+              <div class="slot-hint" id="slotHint">点击时段：第一次选开始，第二次选结束（同一天，至少 30 分钟）</div>
+              <div class="small muted">按 30 分钟网格</div>
+            </div>
+            <div class="avail-grid" id="availGrid"></div>
+            <div class="mt12" id="rangeList"></div>
+            <div class="mt12 flex aic gap8 wrap">
+              <span class="small">批量复制本日区间到：</span>
+              <div class="chip-row" id="copyDays"></div>
+              <button class="btn btn-sm" onclick="copyRanges()">复制</button>
+            </div>
+          </div>
+
+          <div class="card mb16">
+            <div class="section-title">日期例外（优先级高于固定周期）</div>
+            <div class="small muted mb12">请假用「不可用」；临时加课用「可加班」；某天只能某时段用「限定时段」。已用课程不会被自动取消，只会影响后续排课。</div>
+            <div class="form-grid g3">
+              <div class="field"><label>日期</label><input class="input" type="date" id="x_date"></div>
+              <div class="field"><label>类型</label><select class="select" id="x_type">
+                <option value="不可用">不可用（请假）</option>
+                <option value="可加班">可加班</option>
+                <option value="限定时段">限定时段</option></select></div>
+              <div class="field"><label>开始（限定时段用）</label><input class="input" type="time" id="x_start"></div>
+              <div class="field"><label>结束（限定时段用）</label><input class="input" type="time" id="x_end"></div>
+              <div class="field"><label>原因</label><input class="input" id="x_reason" placeholder="如：学校考试 / 临时加课"></div>
+              <div class="field" style="justify-content:end"><button class="btn btn-primary" onclick="addException()">新增例外</button></div>
+            </div>
+            <div class="table-wrap mt12"><table class="table compact">
+              <thead><tr><th>日期</th><th>类型</th><th>时段</th><th>原因</th><th>操作人</th><th class="right">操作</th></tr></thead>
+              <tbody id="exceptionTbody"></tbody></table></div>
+          </div>
+
+          <div class="card mb16">
+            <div class="section-title">负荷策略</div>
+            <div class="small muted mb12">软上限只提醒；勾选「硬上限」后，计划校验会把超限作为硬冲突阻断。默认按设计稿建议值。</div>
+            <div class="form-grid g3">
+              <div class="field"><label>每日最多课节</label><input class="input" type="number" id="p_day" min="0"></div>
+              <div class="field"><label>每周最多课节</label><input class="input" type="number" id="p_week" min="0"></div>
+              <div class="field"><label>每日最多分钟</label><input class="input" type="number" id="p_min" min="0" step="30"></div>
+              <div class="field"><label>课间休息（分钟）</label><input class="input" type="number" id="p_break" min="0"></div>
+              <div class="field"><label class="check" style="margin-top:24px"><input type="checkbox" id="p_cont"> 允许连续排课</label></div>
+              <div class="field"><label class="check" style="margin-top:24px"><input type="checkbox" id="p_hard"> 超限视为硬冲突</label></div>
+            </div>
+            <div class="mt12"><button class="btn btn-primary" onclick="savePolicy()">保存负荷策略</button>
+              <span class="small muted" style="margin-left:8px" id="policyMeta"></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="flex jcb aic mb12">
+          <div>
+            <div class="section-title" style="margin:0">学员排课偏好</div>
+            <div class="small muted" id="prefMeta">首选 / 可用 / 禁止三档，禁止时间会硬阻断排课</div>
+          </div>
+          <div class="flex gap8 aic">
+            <select class="select" id="prefStudent" style="width:220px" onchange="loadPreference()"></select>
+            <button class="btn btn-primary" onclick="savePreference()">保存学员偏好</button>
+          </div>
+        </div>
+        <div class="form-grid g3 mb12">
+          <div class="field"><label>单节时长（分钟）</label><input class="input" type="number" id="pf_duration" min="30" step="15"></div>
+          <div class="field"><label>每周课时数</label><input class="input" type="number" id="pf_weekly" min="0"></div>
+          <div class="field"><label>首选教师</label><select class="select" id="pf_teacher"></select></div>
+          <div class="field"><label>生效开始</label><input class="input" type="date" id="pf_from"></div>
+          <div class="field"><label>生效结束</label><input class="input" type="date" id="pf_to"></div>
+          <div class="field"><label>备注</label><input class="input" id="pf_remark" placeholder="如：家长要求周末为主"></div>
+        </div>
+        <div class="tier-title">首选项（越符合越优先推荐）</div>
+        <div class="small muted mb8">星期</div><div class="chip-row mb12" id="prefWeekdays"></div>
+        <div class="small muted mb8">时段</div><div class="chip-row mb12" id="prefPeriods"></div>
+
+        <div class="tier-title">可用范围（超出只提醒，不阻断）</div>
+        <div class="small muted mb8">星期</div><div class="chip-row mb12" id="availWeekdays"></div>
+        <div class="small muted mb8">时段</div><div class="chip-row mb12" id="availPeriods"></div>
+
+        <div class="tier-title">禁止时间（硬阻断）</div>
+        <div class="flex gap8 aic wrap mb8">
+          <select class="select" id="u_weekday" style="width:110px"><option value="">星期</option></select>
+          <select class="select" id="u_period" style="width:110px"><option value="">时段</option></select>
+          <input class="input" type="date" id="u_date" style="width:150px" title="也可只禁具体日期">
+          <input class="input" type="time" id="u_start" style="width:120px">
+          <input class="input" type="time" id="u_end" style="width:120px">
+          <button class="btn btn-sm" onclick="addUnavailable()">添加禁止</button>
+        </div>
+        <div id="unavailableList" class="mb12"></div>
+        <div class="alert alert-info"><span class="ico">i</span>
+          <div>偏好只影响排课建议与校验，不会自动改动师生长期关系；旧学员需求里的期望时间已一次性迁移为「可用星期 / 时段」并标记来源。</div></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'schedule-settings' });
+Store.setSession({ role: 'admin' });
+const S = Store;
+const WEEKDAYS = S.WEEKDAYS;
+const PERIODS = S.PERIODS;
+const SLOT_MIN = 30;
+const GRID_START = 8 * 60, GRID_END = 21 * 60;
+
+const state = {
+  teacherId: '', ranges: [], exceptions: [],
+  pending: null,
+  copyDays: {},
+  unavailable: []
+};
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function minToTime(m) { return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
+function timeToMin(t) { const p = String(t || '').split(':'); return p.length === 2 ? Number(p[0]) * 60 + Number(p[1]) : -1; }
+
+/* ---------- 教师列表 ---------- */
+function renderTeachers() {
+  const list = S.teachers().filter(t => t.cooperationStatus === '可授课');
+  document.getElementById('teacherList').innerHTML = list.map(t => `
+    <div class="tch-item ${t.id === state.teacherId ? 'on' : ''}" onclick="selectTeacher('${esc(t.id)}')">
+      <b>${esc(t.name)} <span style="font-weight:400;color:var(--text-3)">${esc(t.id)}</span></b>
+      <span>${esc(S.availabilityTextOf(t.id))}</span></div>`).join('');
+  if (!state.teacherId && list.length) selectTeacher(list[0].id);
+}
+function selectTeacher(id) {
+  state.teacherId = id;
+  state.pending = null;
+  loadTeacher();
+  renderTeachers();
+}
+function loadTeacher() {
+  const info = S.availabilityOfTeacher(state.teacherId);
+  state.ranges = info.ranges.map(r => ({ weekday: r.weekday, start: r.start, end: r.end }));
+  state.exceptions = info.exceptions;
+  const t = S.teacher(state.teacherId);
+  document.getElementById('tchTitle').textContent = (t ? t.name : '') + ' · 固定可用时间';
+  document.getElementById('tchMeta').textContent = '来源：' + info.source + ' · 已配置 ' + state.ranges.length + ' 个区间';
+  document.getElementById('legacyNote').innerHTML = (!info.configured && info.legacy.length)
+    ? `<div class="alert alert-warn mb12"><span class="ico">!</span><div>该教师仍使用旧版「星期 + 时段」字段：${esc(info.legacy.map(x => x.weekday + ' ' + x.period).join('、'))}。
+        保存一次新区间后以新表为准；旧字段不删除，用于历史兼容。</div></div>`
+    : '';
+  document.getElementById('x_date').value = state.x_date || S.TODAY;
+  renderGrid();
+  renderRanges();
+  renderExceptions();
+  renderPolicy();
+}
+
+/* ---------- 周历网格 ---------- */
+function renderGrid() {
+  const slots = [];
+  for (let m = GRID_START; m < GRID_END; m += SLOT_MIN) {
+    slots.push({ start: minToTime(m), end: minToTime(m + SLOT_MIN), sm: m, em: m + SLOT_MIN });
+  }
+  let html = '<div class="gh">时间</div>' + WEEKDAYS.map(w => `<div class="gh">${w}</div>`).join('');
+  slots.forEach(sl => {
+    html += `<div class="gt">${sl.start}</div>`;
+    WEEKDAYS.forEach(w => {
+      const on = state.ranges.some(r => r.weekday === w &&
+        timeToMin(r.start) <= sl.sm && timeToMin(r.end) >= sl.em);
+      const pend = state.pending && state.pending.weekday === w && state.pending.start === sl.start;
+      html += `<div class="cell ${on ? 'on' : ''} ${pend ? 'pending' : ''}"
+        data-w="${w}" data-t="${sl.start}" onclick="clickSlot('${w}','${sl.start}')" title="${w} ${sl.start}"></div>`;
+    });
+  });
+  document.getElementById('availGrid').innerHTML = html;
+}
+function clickSlot(w, start) {
+  if (state.pending && state.pending.weekday === w && timeToMin(start) > timeToMin(state.pending.start)) {
+    state.ranges.push({ weekday: w, start: state.pending.start, end: minToTime(Math.min(timeToMin(start) + SLOT_MIN, GRID_END)) });
+    state.pending = null;
+  } else {
+    state.pending = { weekday: w, start: start };
+  }
+  renderGrid();
+  renderRanges();
+}
+function clearPending() { state.pending = null; renderGrid(); }
+function renderRanges() {
+  const box = document.getElementById('rangeList');
+  if (!state.ranges.length) { box.innerHTML = '<span class="small muted">尚未配置固定可用时间。</span>'; return; }
+  const sorted = state.ranges.slice().sort((a, b) =>
+    WEEKDAYS.indexOf(a.weekday) - WEEKDAYS.indexOf(b.weekday) || timeToMin(a.start) - timeToMin(b.start));
+  box.innerHTML = '<div class="small muted mb8">当前区间（保存后生效）</div>' + sorted.map((r, i) => `
+    <span class="range-tag">${esc(r.weekday)} ${esc(r.start)}—${esc(r.end)}
+      <button onclick="removeRange(${i})" title="移除">×</button></span>`).join('');
+}
+function removeRange(i) {
+  const sorted = state.ranges.slice().sort((a, b) =>
+    WEEKDAYS.indexOf(a.weekday) - WEEKDAYS.indexOf(b.weekday) || timeToMin(a.start) - timeToMin(b.start));
+  const target = sorted[i];
+  state.ranges = state.ranges.filter(r => r !== target);
+  renderGrid(); renderRanges();
+}
+function saveAvailability() {
+  try {
+    S.saveTeacherAvailability(state.teacherId, state.ranges, { reason: '排课设置页保存固定可用时间' });
+    Proto.toast('可用时间已保存（保存时同星期重叠区间会自动合并）', 'ok');
+    loadTeacher();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+/* ---------- 批量复制 ---------- */
+function renderCopyDays() {
+  document.getElementById('copyDays').innerHTML = WEEKDAYS.map(w =>
+    `<span class="chip ${state.copyDays[w] ? 'on' : ''}" onclick="toggleCopyDay('${w}')">${w}</span>`).join('');
+}
+function toggleCopyDay(w) { state.copyDays[w] = !state.copyDays[w]; renderCopyDays(); }
+/* 复制本日区间到选中的其他星期（保存前只在页面上合并，保存时 Store 会再合并重叠） */
+function copyRanges() {
+  const targets = WEEKDAYS.filter(w => state.copyDays[w]);
+  if (!targets.length) { Proto.toast('请先选择要复制到的星期', 'warn'); return; }
+  if (!state.ranges.length) { Proto.toast('当前没有可复制的区间', 'warn'); return; }
+  const sources = WEEKDAYS.filter(w => state.ranges.some(r => r.weekday === w));
+  const before = state.ranges.length;
+  sources.forEach(src => {
+    if (targets.indexOf(src) >= 0) return;
+    state.ranges.filter(r => r.weekday === src).forEach(r => {
+      targets.forEach(t => state.ranges.push({ weekday: t, start: r.start, end: r.end }));
+    });
+  });
+  renderGrid(); renderRanges();
+  Proto.toast('已复制到 ' + targets.join('、') + '，请保存生效（区间 ' + before + ' → ' + state.ranges.length + '）', 'ok');
+}
+
+/* ---------- 例外 ---------- */
+function renderExceptions() {
+  const tb = document.getElementById('exceptionTbody');
+  if (!state.exceptions.length) {
+    tb.innerHTML = '<tr><td colspan="6"><span class="small muted">暂无生效中的例外</span></td></tr>';
+    return;
+  }
+  tb.innerHTML = state.exceptions.map(x => `<tr>
+    <td class="mono">${esc(x.date)}</td>
+    <td><span class="tag ${x.type === '不可用' ? 'tag-red' : x.type === '可加班' ? 'tag-green' : 'tag-amber'}">${esc(x.type)}</span></td>
+    <td>${x.start ? esc(x.start) + '—' + esc(x.end) : '全天'}</td>
+    <td>${esc(x.reason || '—')}</td>
+    <td>${esc(x.createdBy || '—')}</td>
+    <td class="ops right"><button class="btn-link" onclick="revokeException('${esc(x.id)}')">撤销</button></td>
+  </tr>`).join('');
+}
+function addException() {
+  const type = document.getElementById('x_type').value;
+  const input = {
+    date: document.getElementById('x_date').value,
+    type: type,
+    start: document.getElementById('x_start').value,
+    end: document.getElementById('x_end').value,
+    reason: document.getElementById('x_reason').value.trim()
+  };
+  if (!input.date) { Proto.toast('请选择例外日期', 'err'); return; }
+  if (type === '限定时段' && (!input.start || !input.end)) { Proto.toast('限定时段必须填写起止时间', 'err'); return; }
+  try {
+    S.addAvailabilityException(state.teacherId, input);
+    Proto.toast('例外已新增，立即参与排课校验', 'ok');
+    document.getElementById('x_reason').value = '';
+    loadTeacher();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function revokeException(id) {
+  Proto.confirmBox('撤销例外', '撤销后该日期恢复固定周期可用时间，确定继续？', '撤销', () => {
+    try {
+      S.revokeAvailabilityException(id, '排课设置页撤销');
+      Proto.toast('例外已撤销（记录保留，不物理删除）', 'ok');
+      loadTeacher();
+    } catch (e) { Proto.toast(e.message, 'err'); }
+  });
+}
+
+/* ---------- 负荷策略 ---------- */
+function renderPolicy() {
+  const p = S.loadPolicyOf(state.teacherId);
+  document.getElementById('p_day').value = p.maxPerDay;
+  document.getElementById('p_week').value = p.maxPerWeek;
+  document.getElementById('p_min').value = p.maxMinutesPerDay;
+  document.getElementById('p_break').value = p.breakMinutes;
+  document.getElementById('p_cont').checked = !!p.allowContinuous;
+  document.getElementById('p_hard').checked = !!p.hard;
+  document.getElementById('policyMeta').textContent = p.updatedBy
+    ? '上次由 ' + p.updatedBy + ' 于 ' + p.updatedAt + ' 保存' : '使用默认策略';
+}
+function savePolicy() {
+  try {
+    S.saveLoadPolicy(state.teacherId, {
+      maxPerDay: document.getElementById('p_day').value,
+      maxPerWeek: document.getElementById('p_week').value,
+      maxMinutesPerDay: document.getElementById('p_min').value,
+      breakMinutes: document.getElementById('p_break').value,
+      allowContinuous: document.getElementById('p_cont').checked,
+      hard: document.getElementById('p_hard').checked,
+      reason: '排课设置页保存负荷策略'
+    });
+    Proto.toast('负荷策略已保存', 'ok');
+    renderPolicy();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+/* ---------- 学员偏好 ---------- */
+(function initPrefStudents() {
+  const list = S.students().slice().sort((a, b) => a.name.localeCompare(b.name));
+  document.getElementById('prefStudent').innerHTML = list.map(s =>
+    `<option value="${esc(s.id)}">${esc(s.name)} · ${esc(s.grade || '—')}</option>`).join('');
+  document.getElementById('u_weekday').innerHTML = '<option value="">星期</option>' +
+    WEEKDAYS.map(w => `<option>${w}</option>`).join('');
+  document.getElementById('u_period').innerHTML = '<option value="">时段</option>' +
+    PERIODS.map(p => `<option>${p}</option>`).join('');
+})();
+function chipSet(container, values, selected, onclickName) {
+  document.getElementById(container).innerHTML = values.map(v =>
+    `<span class="chip ${selected.indexOf(v) >= 0 ? 'on' : ''}" onclick="${onclickName}('${v}')">${v}</span>`).join('');
+}
+state.pref = { preferredWeekdays: [], preferredPeriods: [], availableWeekdays: [], availablePeriods: [] };
+function loadPreference() {
+  const sid = document.getElementById('prefStudent').value;
+  const p = S.studentPreferenceOf(sid);
+  state.pref = {
+    preferredWeekdays: p ? p.preferredWeekdays.slice() : [],
+    preferredPeriods: p ? p.preferredPeriods.slice() : [],
+    availableWeekdays: p ? p.availableWeekdays.slice() : [],
+    availablePeriods: p ? p.availablePeriods.slice() : []
+  };
+  state.unavailable = p ? p.unavailablePeriods.slice() : [];
+  document.getElementById('pf_duration').value = p ? p.lessonDuration : 60;
+  document.getElementById('pf_weekly').value = p ? p.weeklyLessonCount : 0;
+  document.getElementById('pf_from').value = p ? p.effectiveStartDate : '';
+  document.getElementById('pf_to').value = p ? p.effectiveEndDate : '';
+  document.getElementById('pf_remark').value = p ? p.remark : '';
+  document.getElementById('prefMeta').textContent = p
+    ? '当前偏好来源：' + p.source + ' · 更新于 ' + p.updatedAt
+    : '该学员暂无偏好（保存后生效）';
+  /* 首选教师：只列当前负责该学员的教师，避免把长期关系当作可随意改动的字段 */
+  const rels = S.relationsOfStudent(sid).filter(r => r.status === '当前有效' || r.status === '进行中');
+  const ids = Array.from(new Set(rels.map(r => r.teacherId)));
+  const opts = (ids.length ? ids.map(id => S.teacher(id)).filter(Boolean) : S.teachers().filter(t => t.cooperationStatus === '可授课'));
+  document.getElementById('pf_teacher').innerHTML = '<option value="">不指定</option>' +
+    opts.map(t => `<option value="${esc(t.id)}" ${p && p.preferredTeacherId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+  chipSet('prefWeekdays', WEEKDAYS, state.pref.preferredWeekdays, 'togglePrefWeekday');
+  chipSet('prefPeriods', PERIODS, state.pref.preferredPeriods, 'togglePrefPeriod');
+  chipSet('availWeekdays', WEEKDAYS, state.pref.availableWeekdays, 'toggleAvailWeekday');
+  chipSet('availPeriods', PERIODS, state.pref.availablePeriods, 'toggleAvailPeriod');
+  renderUnavailable();
+}
+function toggleIn(arr, v) { const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); }
+function togglePrefWeekday(v) { toggleIn(state.pref.preferredWeekdays, v); loadChips(); }
+function togglePrefPeriod(v) { toggleIn(state.pref.preferredPeriods, v); loadChips(); }
+function toggleAvailWeekday(v) { toggleIn(state.pref.availableWeekdays, v); loadChips(); }
+function toggleAvailPeriod(v) { toggleIn(state.pref.availablePeriods, v); loadChips(); }
+function loadChips() {
+  chipSet('prefWeekdays', WEEKDAYS, state.pref.preferredWeekdays, 'togglePrefWeekday');
+  chipSet('prefPeriods', PERIODS, state.pref.preferredPeriods, 'togglePrefPeriod');
+  chipSet('availWeekdays', WEEKDAYS, state.pref.availableWeekdays, 'toggleAvailWeekday');
+  chipSet('availPeriods', PERIODS, state.pref.availablePeriods, 'toggleAvailPeriod');
+}
+function addUnavailable() {
+  const u = {
+    weekday: document.getElementById('u_weekday').value,
+    period: document.getElementById('u_period').value,
+    date: document.getElementById('u_date').value,
+    start: document.getElementById('u_start').value,
+    end: document.getElementById('u_end').value,
+    reason: ''
+  };
+  if (!u.weekday && !u.date) { Proto.toast('请选择星期或具体日期', 'err'); return; }
+  if (u.date && ((u.start && !u.end) || (!u.start && u.end))) { Proto.toast('具体日期的起止时间需成对填写', 'err'); return; }
+  state.unavailable.push(u);
+  renderUnavailable();
+  document.getElementById('u_date').value = '';
+  document.getElementById('u_start').value = '';
+  document.getElementById('u_end').value = '';
+}
+function unavailableText(u) {
+  if (u.date) return u.date + (u.start ? ' ' + u.start + '—' + u.end : ' 全天');
+  return u.weekday + (u.period ? ' ' + u.period : ' 全天');
+}
+function renderUnavailable() {
+  const box = document.getElementById('unavailableList');
+  if (!state.unavailable.length) { box.innerHTML = '<span class="small muted">暂无禁止时间。</span>'; return; }
+  box.innerHTML = state.unavailable.map((u, i) => `<span class="range-tag" style="background:#fef2f2">
+    ${esc(unavailableText(u))}<button onclick="removeUnavailable(${i})">×</button></span>`).join('');
+}
+function removeUnavailable(i) { state.unavailable.splice(i, 1); renderUnavailable(); }
+function savePreference() {
+  const sid = document.getElementById('prefStudent').value;
+  try {
+    S.saveStudentPreference(sid, {
+      preferredWeekdays: state.pref.preferredWeekdays,
+      preferredPeriods: state.pref.preferredPeriods,
+      availableWeekdays: state.pref.availableWeekdays,
+      availablePeriods: state.pref.availablePeriods,
+      unavailablePeriods: state.unavailable,
+      lessonDuration: document.getElementById('pf_duration').value,
+      weeklyLessonCount: document.getElementById('pf_weekly').value,
+      effectiveStartDate: document.getElementById('pf_from').value,
+      effectiveEndDate: document.getElementById('pf_to').value,
+      preferredTeacherId: document.getElementById('pf_teacher').value,
+      remark: document.getElementById('pf_remark').value,
+      reason: '排课设置页保存学员偏好'
+    });
+    Proto.toast('学员排课偏好已保存，旧版本转为历史', 'ok');
+    loadPreference();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+/* ---------- 启动 ---------- */
+renderCopyDays();
+renderTeachers();
+loadPreference();
+</script>
+</body>
+</html>
