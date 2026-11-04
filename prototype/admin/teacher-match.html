@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>教师匹配与推荐</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .rank { width:34px; height:34px; border-radius:50%; background:#e2e8f0; display:inline-flex; align-items:center;
+    justify-content:center; font-weight:700; color:var(--text-2); }
+  .rank.top { background:var(--primary-soft); color:var(--primary-dark); }
+  .reason-list { margin:4px 0 0; padding-left:16px; font-size:12px; color:var(--text-2); }
+  .reason-list li { margin-bottom:2px; }
+  .warn-list { color:#b45309; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+      <div class="page-head">
+        <div>
+          <div class="crumb">排课管理<span class="sep">/</span>教师匹配</div>
+          <h1 class="page-title">教师匹配与推荐</h1>
+          <div class="page-sub">硬条件过滤后按可解释规则评分：负责教师、学员首选、年级、教材、可用时间、当前负荷、周均衡</div>
+        </div>
+        <div class="page-actions"><a class="btn" href="batch-schedule.html">去批量排课</a></div>
+      </div>
+
+      <div class="card mb16">
+        <div class="form-grid g3">
+          <div class="field"><label>学员 <span class="req">*</span></label><select class="select" id="m_student"></select></div>
+          <div class="field"><label>日期 <span class="req">*</span></label><input class="input" type="date" id="m_date"></div>
+          <div class="field"><label>开始时间 <span class="req">*</span></label><input class="input" type="time" id="m_start" value="19:00"></div>
+          <div class="field"><label>时长（分钟）</label><input class="input" type="number" id="m_duration" value="60" min="30" step="15"></div>
+          <div class="field"><label>排除教师（可选）</label><select class="select" id="m_exclude"><option value="">不排除</option></select></div>
+          <div class="field"><label>返回数量</label><select class="select" id="m_limit">
+            <option>5</option><option selected>10</option><option>20</option></select></div>
+        </div>
+        <div class="flex gap8 aic mt12">
+          <button class="btn btn-primary" onclick="recommend()">计算推荐</button>
+          <span class="small muted" id="matchMeta">推荐只作建议，不会自动修改师生长期关系。</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap"><table class="table compact">
+          <thead><tr>
+            <th style="width:52px">排名</th><th>教师</th><th>推荐分</th><th>推荐理由</th>
+            <th>提醒</th><th>当日 / 本周</th><th>可用时间</th>
+          </tr></thead>
+          <tbody id="candTbody"><tr><td colspan="7"><span class="small muted">选择学员与时间后点「计算推荐」。</span></td></tr></tbody>
+        </table></div>
+        <div class="alert alert-info mt12"><span class="ico">i</span>
+          <div>硬条件：合作状态可授课、排除指定教师、日期例外不可用 / 限定时段外、学员禁止时间、同时段教师或学员冲突、超硬负荷。
+            软评分：负责教师 +30、学员首选教师 +20、年级 +10、教材 +6、时段可用 +2、当日低负荷 +6、本周低负荷 +6、周均衡 +4。</div></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'teacher-match' });
+Store.setSession({ role: 'admin' });
+const S = Store;
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function addDays(date, n) {
+  const d = new Date(date + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+(function init() {
+  const stus = S.students().slice().sort((a, b) => a.name.localeCompare(b.name));
+  document.getElementById('m_student').innerHTML = stus.map(s =>
+    `<option value="${esc(s.id)}">${esc(s.name)} · ${esc(s.grade || '—')}</option>`).join('');
+  document.getElementById('m_date').value = addDays(S.TODAY, 1);
+  document.getElementById('m_exclude').innerHTML = '<option value="">不排除</option>' +
+    S.teacherPool().map(p => `<option value="${esc(p.teacher.id)}">${esc(p.teacher.name)}</option>`).join('');
+})();
+function recommend() {
+  const s = document.getElementById('m_student').value;
+  const date = document.getElementById('m_date').value;
+  const start = document.getElementById('m_start').value;
+  const dur = Number(document.getElementById('m_duration').value) || 60;
+  if (!s || !date || !start) { Proto.toast('请选择学员、日期与开始时间', 'err'); return; }
+  const p = start.split(':');
+  const m = Number(p[0]) * 60 + Number(p[1]) + dur;
+  const end = String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  const exclude = document.getElementById('m_exclude').value;
+  const cand = S.teacherCandidatesFor({
+    studentId: s, date: date, start: start, end: end,
+    teacherId: exclude, limit: Number(document.getElementById('m_limit').value)
+  });
+  document.getElementById('matchMeta').textContent =
+    `${S.student(s).name} · ${date} ${start}—${end} · 通过硬条件 ${cand.length} 人（仅建议，不改长期关系）`;
+  document.getElementById('candTbody').innerHTML = cand.length ? cand.map((c, i) => `
+    <tr>
+      <td><span class="rank ${i === 0 ? 'top' : ''}">${i + 1}</span></td>
+      <td><b>${esc(c.name)}</b><div class="small muted">${esc(c.code || c.teacherId)} · 当前学员 ${c.currentStudents}</div></td>
+      <td><b>${c.score}</b> 分 ${c.isResponsible ? '<div class="tag tag-green nodot">负责教师</div>' : ''}</td>
+      <td>${c.reasons.length ? '<ul class="reason-list">' + c.reasons.map(r => `<li>${esc(r)}</li>`).join('') + '</ul>'
+        : '<span class="small muted">暂无加分项</span>'}</td>
+      <td>${c.warnings.length ? '<ul class="reason-list warn-list">' + c.warnings.map(r => `<li>${esc(r)}</li>`).join('') + '</ul>'
+        : '<span class="small muted">—</span>'}</td>
+      <td>${c.dayCount} / ${c.weekCount} 节</td>
+      <td class="small">${esc(S.availabilityTextOf(c.teacherId))}</td>
+    </tr>`).join('') : '<tr><td colspan="7"><span class="small muted">该时段没有通过硬条件的教师，请调整时间或先维护可用时间。</span></td></tr>';
+}
+</script>
+</body>
+</html>

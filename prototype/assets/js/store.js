@@ -9449,6 +9449,7 @@
     var out = list.map(function (t) {
       var score = 0, reasons = [], warns = [];
       if (rel && rel.teacherId === t.id) { score += 30; reasons.push('当前负责教师'); }
+      else if (rel) warns.push('不是学员当前负责教师');
       if (pref && pref.preferredTeacherId && pref.preferredTeacherId === t.id) { score += 20; reasons.push('学员首选教师'); }
       if (stu && stu.grade && (t.grades || []).indexOf(stu.grade) >= 0) { score += 10; reasons.push('年级匹配（' + stu.grade + '）'); }
       else if (stu && stu.grade) warns.push('年级方向不含 ' + stu.grade);

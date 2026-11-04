@@ -29,6 +29,7 @@ const Proto = (() => {
       ]},
       { group: '排课管理', items: [
         { id: 'schedule-workbench', label: '排课总览', href: 'admin/schedule-workbench.html' },
+        { id: 'teacher-match', label: '教师匹配', href: 'admin/teacher-match.html' },
         { id: 'schedule-series', label: '周期排课', href: 'admin/schedule-series.html' },
         { id: 'batch-schedule', label: '批量排课', href: 'admin/batch-schedule.html' },
         { id: 'schedule-settings', label: '排课设置', href: 'admin/schedule-settings.html' },
@@ -155,6 +156,7 @@ const Proto = (() => {
     'teacher-list': ['teacher.view'],
     'schedule-calendar': ['lesson.view.all', 'demand.confirm'],
     'schedule-workbench': ['lesson.view.all'],
+    'teacher-match': ['lesson.view.all'],
     'schedule-series': ['lesson.view.all'],
     'batch-schedule': ['lesson.view.all'],
     'schedule-settings': ['lesson.view.all'],
