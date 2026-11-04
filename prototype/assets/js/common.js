@@ -69,7 +69,6 @@ const Proto = (() => {
       ]},
       { group: '教学管理', items: [
         { id: 'student-profile', label: '学员学习档案', href: 'teacher/student-profile.html' },
-        { id: 'word-setup', label: '单词训练', href: 'teacher/word-training-setup.html' },
         { id: 'article-training', label: '文章训练', href: 'teacher/article-training.html' },
         { id: 'leitner', label: '莱特纳复习', href: 'teacher/leitner.html' },
         { id: 'memory21', label: '21 天记忆复习', href: 'teacher/memory21.html' },

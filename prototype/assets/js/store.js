@@ -124,8 +124,11 @@
   var DISPLAY_STEP = { NONE: 0, EN: 1, CN: 2, DONE: 3 };
   var DISPLAY_LABEL = { 0: '未开始', 1: '显示英文', 2: '显示中文', 3: '本轮完成' };
   var TRAIN_GROUP_SIZE = 5;
-  /** 单次训练目标数量：默认 45，教师可调，本轮将上限收口固定为 45（超出直接拒绝） */
-  var TARGET_RANGE = { min: 5, max: 45, def: 45 };
+  /** 单次训练固定业务规则：最低 5 个、最多 45 个，不接受前端配置（第十轮收口） */
+  var TRAIN_WORD_MIN = 5;
+  var TRAIN_WORD_MAX = 45;
+  /** TARGET_RANGE 仅兼容历史数据与旧接口，不再作为可配置目标 */
+  var TARGET_RANGE = { min: TRAIN_WORD_MIN, max: TRAIN_WORD_MAX, def: TRAIN_WORD_MAX };
   /* 复习检测最终结果语义：底层存储沿用全量三态（历史 yes/mid/no），对外统一为 mastery 三态。
      只做映射，不重写历史值。 */
   var MASTERY = { MASTERED: 'mastered', NEEDS_PRACTICE: 'needs_practice', NOT_MASTERED: 'not_mastered' };
@@ -2673,6 +2676,10 @@
     /* 课程 */
     d.courses.forEach(function (c) {
       c.studentId = c.studentId || stuByName[c.student] || '';
+      if (!c.grade) {
+        var gs = d.students.filter(function (x) { return x.id === c.studentId; })[0];
+        c.grade = gs ? (gs.grade || '') : '';
+      }
       c.teacherId = c.teacherId || teaByName[c.teacher] || '';
       /* 课程必须自带教师快照：教师改名/换号后，历史课仍然显示当时的授课教师 */
       if (!c.teacherName) c.teacherName = c.teacher || '';
@@ -2691,6 +2698,13 @@
       if (c.status === '未上课') c.deductState = '未扣课';
       if (c.status === '已取消') c.deductState = '未扣课';
       c.recordId = c.recordId || '';
+      /* 会议链接：meetingUrl 是唯一真实地址；历史数据只有 meeting 状态时一律补空值，
+         绝不把「已生成」当成真实链接展示。 */
+      c.meetingUrl = String(c.meetingUrl || '').trim();
+      if (!c.meetingUrl && /^https?:\/\//i.test(String(c.meeting || ''))) c.meetingUrl = String(c.meeting).trim();
+      c.meeting = c.meetingUrl ? '已生成' : '未生成';
+      c.createdBy = c.createdBy || '';
+      c.createdAt = c.createdAt || '';
     });
 
     /* 训练任务 */
@@ -3311,15 +3325,23 @@
     var teacherId = opt.teacherId || sessionTeacherId();
     if (session.role === 'teacher') {
       if (!teacherId) throw bizError('FORBIDDEN', '教师训练任务必须绑定当前登录教师');
-      assertMyStudent(opt.studentId);
+      /* 带课程上下文时以课程归属为准（课程已校验授课教师）；无课程才退回师生关系校验 */
+      if (!opt.courseId) assertMyStudent(opt.studentId);
+    }
+    /* 带课程上下文创建时，课程、学员、教师三方必须一致（不能只信 URL 参数） */
+    if (opt.courseId) {
+      var cc = assertCourseOfTeacher(opt.courseId, opt.studentId);
+      if (opt.teacherId && (opt.teacherId || '') !== (cc.teacherId || '')) {
+        throw bizError('COURSE_TEACHER_MISMATCH', '训练任务的授课教师与课程不一致');
+      }
+      teacherId = teacherId || cc.teacherId;
+      if ((teacherId || '') !== (cc.teacherId || '')) {
+        throw bizError('COURSE_TEACHER_MISMATCH', '训练任务的授课教师与课程不一致');
+      }
     }
 
-    var target = Number(opt.targetCount);
-    if (!target) target = TARGET_RANGE.def;
-    if (target < TARGET_RANGE.min || target > TARGET_RANGE.max) {
-      throw bizError('TARGET_OUT_OF_RANGE',
-        '训练目标数量需在 ' + TARGET_RANGE.min + ' – ' + TARGET_RANGE.max + ' 之间');
-    }
+    /* 新任务固定按 45 上限创建；targetCount 只是历史字段，不允许前端配置 */
+    var target = TRAIN_WORD_MAX;
 
     var open = db.trainTasks.filter(function (t) {
       return t.studentId === opt.studentId && isOpen(t.status);
@@ -3328,7 +3350,17 @@
       if (session.role === 'teacher' && (open.teacherId || '') !== (opt.teacherId || sessionTeacherId())) {
         throw bizError('FORBIDDEN', '该学员已有其他教师创建的未完成任务，不能复用');
       }
-      return { ok: true, reused: true, task: open };
+      /* 同一课程：直接继续；不同课程：把「上次未完成任务」交给教师选择，
+         不覆盖原 courseId，也不悄悄把历史归到新课程。 */
+      if (opt.courseId && (open.courseId || '') && open.courseId !== opt.courseId) {
+        return { ok: true, reused: true, otherCourse: true, task: open };
+      }
+      if (opt.courseId && !open.courseId) {
+        open.courseId = opt.courseId;
+        open.updatedAt = stamp();
+        save();
+      }
+      return { ok: true, reused: true, otherCourse: false, task: open };
     }
 
     var t = {
@@ -3394,7 +3426,8 @@
     return { ok: true, task: t, stat: prescreenTaskStat(taskId) };
   }
 
-  function addWordbooksToTask(taskId, bookIds) {
+  function addWordbooksToTask(taskId, bookIds, opt) {
+    opt = opt || {};
     assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
@@ -3402,6 +3435,13 @@
     if (t.status === STATUS.CANCELLED) throw bizError('TASK_CANCELLED', '任务已取消，不能继续添加词库');
     if (t.phase !== PHASE.PRESCREEN) {
       throw bizError('PHASE_LOCKED', '已经进入「' + t.phase + '」，不能再添加词库或修改初筛范围');
+    }
+    /* 追加词库同样必须带正确课程上下文：课程学员 / 授课教师与任务一致 */
+    if (opt.courseId) {
+      var c = assertCourseOfTeacher(opt.courseId, t.studentId);
+      if ((t.teacherId || '') !== (c.teacherId || '')) {
+        throw bizError('COURSE_TEACHER_MISMATCH', '训练任务的授课教师与课程不一致');
+      }
     }
     var added = [], skipped = [];
     (bookIds || []).forEach(function (bid) {
@@ -3428,6 +3468,69 @@
     }
     save();
     return { ok: added.length > 0, added: added, skipped: skipped, task: t, pool: (t.wordIds || []).length };
+  }
+
+  /** 把任务关联到本次课程的教学记录（不修改任务原始 courseId，不掩盖历史归属） */
+  function linkTrainTaskToCourse(taskId, courseId) {
+    var t = assertMyTask(taskId);
+    if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    var c = assertCourseOfTeacher(courseId, t.studentId);
+    if ((t.teacherId || '') !== (c.teacherId || '')) {
+      throw bizError('COURSE_TEACHER_MISMATCH', '训练任务的授课教师与课程不一致');
+    }
+    var r = recordOfCourse(courseId);
+    if (!r) r = openCourse(courseId).record;
+    linkTask(courseId, 'train', taskId);
+    t.lastCourseId = courseId;
+    t.updatedAt = stamp();
+    save();
+    return { task: t, course: c, record: r };
+  }
+
+  /**
+   * 从某节具体课程创建训练任务（新入口唯一允许的创建方式）
+   * · 课程必须存在，且当前教师就是该课程授课教师
+   * · 任务 studentId / teacherId / courseId 与课程一致
+   * · 多选词库一次性追加，不允许加一个跳一次
+   */
+  function createCourseTrainTask(courseId, bookIds, opt) {
+    opt = opt || {};
+    var c = assertCourseOfTeacher(courseId, opt.studentId);
+    if (c.status === COURSE_STATUS.CANCELLED) throw bizError('COURSE_CANCELLED', '该课程已取消，不能开始训练');
+    if (c.status === COURSE_STATUS.MISSED) throw bizError('COURSE_MISSED', '该课程标记为未上课，不能开始训练');
+    if (c.status === COURSE_STATUS.DONE) throw bizError('COURSE_DONE', '该课程已完成，只能查看历史记录');
+    var created = createTrainTask({ studentId: c.studentId, teacherId: c.teacherId, courseId: c.id });
+    var t = created.task;
+    var added = [], skipped = [];
+    if (t.phase !== PHASE.PRESCREEN) {
+      throw bizError('PHASE_LOCKED', '该任务已进入「' + t.phase + '」，不能再从本课新增词库');
+    }
+    var append = addWordbooksToTask(t.id, bookIds || [], { courseId: c.id });
+    added = append.added;
+    skipped = append.skipped;
+    if (!t.wordbookIds.length) {
+      throw bizError('NO_BOOK_ADDED',
+        '没有成功加入任何词库：' + (skipped.map(function (x) { return x.name + '（' + x.reason + '）'; }).join('；') || '请选择学员已开通的词库'));
+    }
+    linkTrainTaskToCourse(t.id, c.id);
+    return {
+      ok: true, reused: !!created.reused, otherCourse: !!created.otherCourse,
+      task: t, course: c, added: added, skipped: skipped,
+      pool: (t.wordIds || []).length
+    };
+  }
+
+  /** 筛查阶段从当前课程追加词库（批量，服务端再查授权） */
+  function appendBooksToCourseTask(taskId, courseId, bookIds) {
+    var t = assertMyTask(taskId);
+    if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    var c = assertCourseOfTeacher(courseId, t.studentId);
+    if ((t.teacherId || '') !== (c.teacherId || '')) {
+      throw bizError('COURSE_TEACHER_MISMATCH', '训练任务的授课教师与课程不一致');
+    }
+    var append = addWordbooksToTask(taskId, bookIds, { courseId: courseId });
+    if (append.added.length) linkTrainTaskToCourse(taskId, courseId);
+    return append;
   }
 
   /**
@@ -3490,6 +3593,7 @@
       unscreened.push(id);
     });
     var target = t.targetCount || TARGET_RANGE.def;
+    var unknownCount = unknown.length;
     var byBook = {};
     wordbooksOfTask(t).forEach(function (b) {
       byBook[b.id] = { id: b.id, name: b.name, total: 0, known: 0, unknown: 0, screened: 0, unscreened: 0, excluded: 0 };
@@ -3510,8 +3614,13 @@
       known: known.length, unknown: unknown.length,
       unscreened: unscreened.length, excluded: excluded.length,
       screened: known.length + unknown.length,
-      needMore: Math.max(0, target - unknown.length),
-      reached: unknown.length >= target,
+      /* 固定业务规则：最低 5、最多 45，不再把 target 当成必须完成的目标 */
+      minRequired: TRAIN_WORD_MIN, maxAllowed: TRAIN_WORD_MAX,
+      needMore: Math.max(0, TRAIN_WORD_MIN - unknownCount),
+      remainingCapacity: Math.max(0, TRAIN_WORD_MAX - unknownCount),
+      canStart: unknownCount >= TRAIN_WORD_MIN && t.phase === PHASE.PRESCREEN && isOpen(t.status),
+      reachedMaximum: unknownCount >= TRAIN_WORD_MAX,
+      reached: unknownCount >= TRAIN_WORD_MAX,
       byBook: byBook
     };
   }
@@ -3585,11 +3694,22 @@
     var bid = bookOfWordInTask(t, wordId);
     t.prescreen[wordId] = { known: known, at: at, by: by, wordbookId: bid };
 
+    /* 跨课程继续任务时，判断记录必须归到「本次上课的课程」，而不是永远归到任务原课程 */
+    var recordCourseId = t.courseId || '';
+    if (opt.courseId) {
+      var pc = assertCourseOfTeacher(opt.courseId, t.studentId);
+      if ((t.teacherId || '') !== (pc.teacherId || '')) {
+        throw bizError('COURSE_TEACHER_MISMATCH', '训练任务的授课教师与课程不一致');
+      }
+      recordCourseId = pc.id;
+      t.lastCourseId = pc.id;
+    }
+
     db.prescreens.push({
       id: 'PS' + seq('PR', 4),
       taskId: taskId, studentId: t.studentId, wordbookId: bid,
       wordId: wordId, known: known, at: at, teacherId: by,
-      courseId: t.courseId || '',
+      courseId: recordCourseId,
       correction: !!prev, correctionFrom: prev ? prev.known : null,
       correctionNote: prev ? reason : ''
     });
@@ -3653,26 +3773,22 @@
     /* 队列永远按 Word ID 去重：同一单词属于多个词库时只训练一次 */
     var cand = cleanWordIds(unknown);
 
-    if (!cand.length) {
+    /* 固定规则：不足 5 个不允许开始，confirmShort 不能绕过 */
+    if (cand.length < TRAIN_WORD_MIN) {
       return {
-        ok: false, reason: 'NO_CANDIDATE',
-        message: '本次还没有筛选出任何「不认识」的单词，无法生成训练队列',
-        candidate: 0, target: t.targetCount || TARGET_RANGE.def
+        ok: false, reason: 'MIN_WORDS_REQUIRED',
+        message: '当前筛出 ' + cand.length + ' 个不认识的单词，还差 ' +
+          (TRAIN_WORD_MIN - cand.length) + ' 个才能开始训练。请继续筛查或添加该学员已开通的其他词库。',
+        candidate: cand.length, unknown: cand.length,
+        minRequired: TRAIN_WORD_MIN, maxAllowed: TRAIN_WORD_MAX,
+        needMore: TRAIN_WORD_MIN - cand.length, canConfirm: false
       };
     }
 
-    var cap = t.displayFlow ? (t.targetCount || TARGET_RANGE.def) : db.config.trainCap;
+    /* 本次训练最多 45 个；超出的保留在待后续处理集合，不删除、不误标已训练 */
+    var cap = TRAIN_WORD_MAX;
     var queue = cand.slice(0, cap);
     var remain = cand.slice(cap);
-    /* 未达到目标数量时，必须由教师明确确认后才可以按实际数量开始 */
-    if (t.displayFlow && queue.length < cap && !opt.confirmShort) {
-      return {
-        ok: false, reason: 'SHORT_OF_TARGET',
-        message: '当前只筛出 ' + cand.length + ' 个不认识的单词，距离目标 ' + cap + ' 个还差 ' + (cap - cand.length) + ' 个。' +
-          '可以继续添加词库补足，也可以按实际数量开始训练。',
-        candidate: cand.length, target: cap, short: cap - cand.length, canConfirm: true
-      };
-    }
 
     t.knownWordIds = known;
     t.queueWordIds = queue;
@@ -3705,6 +3821,8 @@
       queue: queue,
       remain: remain,
       target: cap,
+      minRequired: TRAIN_WORD_MIN,
+      maxAllowed: TRAIN_WORD_MAX,
       short: Math.max(0, cap - queue.length),
       groups: groupsOf(queue, t.groupSize || TRAIN_GROUP_SIZE)
     };
@@ -5640,6 +5758,8 @@
     opt = opt || {};
     var c = course(courseId);
     if (!c) fail('课程不存在');
+    /* 教师只能进入自己授课的课程：不能通过改 URL 的 course 参数进入他人课堂 */
+    if (session.role === 'teacher') assertSelfTeacher(c.teacherId);
     if (c.status === COURSE_STATUS.CANCELLED) fail('该课程已取消，不能进入');
     if (c.status === COURSE_STATUS.MISSED) fail('该课程标记为未上课，不能进入授课');
     if (c.status === COURSE_STATUS.DONE && !opt.allowDone) {
@@ -8268,6 +8388,172 @@
     return c;
   }
 
+  /* ---------------- 教务排课：真实落库 + 服务端冲突校验 ---------------- */
+  function timeToMin(hhmm) {
+    var m = /^(\d{2}):(\d{2})$/.exec(String(hhmm || ''));
+    if (!m) return -1;
+    return Number(m[1]) * 60 + Number(m[2]);
+  }
+  /** 服务端冲突检查：同一教师 / 同一学员在同一天的重叠时段都算冲突 */
+  function courseConflicts(input) {
+    input = input || {};
+    var s = timeToMin(input.start), e = timeToMin(input.end);
+    if (s < 0 || e < 0 || e <= s) throw bizError('TIME_INVALID', '请填写正确的开始与结束时间');
+    return db.courses.filter(function (c) {
+      if (c.date !== input.date) return false;
+      if (input.excludeId && c.id === input.excludeId) return false;
+      if (c.status === COURSE_STATUS.CANCELLED || c.status === COURSE_STATUS.MISSED) return false;
+      var cs = timeToMin(c.start), ce = timeToMin(c.end);
+      if (cs < 0 || ce <= 0) return false;
+      if (Math.max(s, cs) >= Math.min(e, ce)) return false;
+      return (input.teacherId && c.teacherId === input.teacherId) ||
+        (input.studentId && c.studentId === input.studentId);
+    }).map(function (c) {
+      return {
+        id: c.id, date: c.date, start: c.start, end: c.end,
+        studentId: c.studentId, student: c.student,
+        teacherId: c.teacherId, teacher: c.teacher,
+        teacherConflict: !!(input.teacherId && c.teacherId === input.teacherId),
+        studentConflict: !!(input.studentId && c.studentId === input.studentId)
+      };
+    });
+  }
+
+  function nextCourseId(date) {
+    var prefix = 'C' + String(date || TODAY).replace(/-/g, '');
+    var max = 0;
+    db.courses.forEach(function (c) {
+      var m = new RegExp('^' + prefix + '(\\d+)$').exec(c.id || '');
+      if (m) max = Math.max(max, Number(m[1]));
+    });
+    return prefix + pad(max + 1, 3);
+  }
+
+  /** 教务新建课程：写入真实学员 / 教师 / 日期 / 起止时间 / 会议链接 */
+  function createCourse(input) {
+    assertPermission('lesson.view.all');
+    input = input || {};
+    var stu = student(input.studentId);
+    if (!stu) throw bizError('STUDENT_NOT_FOUND', '请选择有效的学员');
+    var tch = teacher(input.teacherId);
+    if (!tch) throw bizError('TEACHER_NOT_FOUND', '请选择有效的授课教师');
+    if (tch.cooperationStatus !== COOP.READY) {
+      throw bizError('TEACHER_NOT_READY', '教师「' + tch.name + '」当前为「' + (tch.cooperationStatus || '未知') + '」，不可排课');
+    }
+    var date = String(input.date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw bizError('DATE_INVALID', '请选择上课日期');
+    var start = String(input.start || '').trim(), end = String(input.end || '').trim();
+    if (timeToMin(start) < 0 || timeToMin(end) < 0 || timeToMin(end) <= timeToMin(start)) {
+      throw bizError('TIME_INVALID', '请填写正确的开始与结束时间');
+    }
+    var meetingUrl = String(input.meetingUrl || '').trim();
+    if (meetingUrl && !/^https?:\/\//i.test(meetingUrl)) {
+      throw bizError('MEETING_URL_INVALID', '腾讯会议链接需以 http:// 或 https:// 开头');
+    }
+    var conflict = courseConflicts({ date: date, start: start, end: end,
+      teacherId: tch.id, studentId: stu.id });
+    if (conflict.length) {
+      throw bizError('COURSE_CONFLICT',
+        '排课冲突：' + conflict.map(function (x) {
+          return x.date + ' ' + x.start + '—' + x.end + '（' +
+            (x.teacherConflict ? '教师 ' + x.teacher + ' ' : '') +
+            (x.studentConflict ? '学员 ' + x.student + ' ' : '') + '已有课程）';
+        }).join('；'));
+    }
+    var c = {
+      id: nextCourseId(date), date: date, start: start, end: end,
+      studentId: stu.id, student: stu.name, grade: stu.grade || '',
+      teacherId: tch.id, teacher: tch.name, teacherName: tch.name, teacherCode: tch.code || '',
+      type: input.type || '一对一',
+      status: COURSE_STATUS.PENDING,
+      deduct: '未扣课', deductState: '未扣课',
+      meetingUrl: meetingUrl, meeting: meetingUrl ? '已生成' : '未生成',
+      note: String(input.note || '').trim(),
+      creator: session.operatorName || '',
+      createdBy: session.operatorName || '', createdAt: stamp(),
+      actualStart: '', actualEnd: '', recordId: ''
+    };
+    db.courses.push(c);
+    recordAudit({
+      module: '教学', action: '教务新建课程', resourceType: 'course', resourceId: c.id,
+      resourceName: c.student + ' · ' + c.date + ' ' + c.start + '—' + c.end,
+      beforeData: null, afterData: { student: c.student, teacher: c.teacher, date: c.date,
+        start: c.start, end: c.end, meetingUrl: c.meetingUrl, status: c.status },
+      reason: input.reason || ''
+    });
+    save();
+    return c;
+  }
+
+  /** 教务维护课程（教师端只读）：改教师 / 学员 / 时间 / 会议链接，均重新校验冲突 */
+  function updateCourse(courseId, patch) {
+    assertPermission('lesson.view.all');
+    patch = patch || {};
+    var c = course(courseId);
+    if (!c) throw bizError('COURSE_NOT_FOUND', '课程不存在');
+    if (c.status === COURSE_STATUS.DONE) throw bizError('COURSE_DONE', '已完成课程不能修改排课信息');
+    if (c.status === COURSE_STATUS.CANCELLED) throw bizError('COURSE_CANCELLED', '已取消课程不能修改');
+    var before = { student: c.student, teacher: c.teacher, date: c.date,
+      start: c.start, end: c.end, meetingUrl: c.meetingUrl };
+    var stu = patch.studentId ? student(patch.studentId) : student(c.studentId);
+    if (!stu) throw bizError('STUDENT_NOT_FOUND', '学员不存在');
+    var tch = patch.teacherId ? teacher(patch.teacherId) : teacher(c.teacherId);
+    if (!tch) throw bizError('TEACHER_NOT_FOUND', '授课教师不存在');
+    if (tch.cooperationStatus !== COOP.READY) {
+      throw bizError('TEACHER_NOT_READY', '教师「' + tch.name + '」当前为「' + (tch.cooperationStatus || '未知') + '」，不可排课');
+    }
+    var date = patch.date === undefined ? c.date : String(patch.date || '').trim();
+    var start = patch.start === undefined ? c.start : String(patch.start || '').trim();
+    var end = patch.end === undefined ? c.end : String(patch.end || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw bizError('DATE_INVALID', '请选择正确的上课日期');
+    if (timeToMin(start) < 0 || timeToMin(end) < 0 || timeToMin(end) <= timeToMin(start)) {
+      throw bizError('TIME_INVALID', '请填写正确的开始与结束时间');
+    }
+    var meetingUrl = patch.meetingUrl === undefined ? c.meetingUrl : String(patch.meetingUrl || '').trim();
+    if (meetingUrl && !/^https?:\/\//i.test(meetingUrl)) {
+      throw bizError('MEETING_URL_INVALID', '腾讯会议链接需以 http:// 或 https:// 开头');
+    }
+    var conflict = courseConflicts({ date: date, start: start, end: end,
+      teacherId: tch.id, studentId: stu.id, excludeId: c.id });
+    if (conflict.length) {
+      throw bizError('COURSE_CONFLICT', '排课冲突：该时段教师或学员已有其他课程');
+    }
+    c.studentId = stu.id; c.student = stu.name; c.grade = stu.grade || '';
+    c.teacherId = tch.id; c.teacher = tch.name; c.teacherName = tch.name; c.teacherCode = tch.code || '';
+    c.date = date; c.start = start; c.end = end;
+    c.meetingUrl = meetingUrl; c.meeting = meetingUrl ? '已生成' : '未生成';
+    if (patch.note !== undefined) c.note = String(patch.note || '').trim();
+    c.updatedAt = stamp();
+    recordAudit({
+      module: '教学', action: '教务调整课程', resourceType: 'course', resourceId: c.id,
+      resourceName: c.student + ' · ' + c.date + ' ' + c.start + '—' + c.end,
+      beforeData: before, afterData: { student: c.student, teacher: c.teacher, date: c.date,
+        start: c.start, end: c.end, meetingUrl: c.meetingUrl },
+      reason: patch.reason || ''
+    });
+    save();
+    return c;
+  }
+
+  /** 课程当前未完成的训练任务（同一课程复用、刷新不重复创建） */
+  function openTrainTaskOfCourse(courseId) {
+    var c = course(courseId);
+    if (!c) return null;
+    var list = db.trainTasks.filter(function (t) {
+      return t.courseId === courseId && t.studentId === c.studentId && isOpen(t.status);
+    }).sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+    return list[0] || null;
+  }
+  /** 学员在其他课程遗留的未完成任务（进入新课程时提示教师选择是否继续） */
+  function legacyOpenTaskOfStudent(studentId, courseId) {
+    var list = db.trainTasks.filter(function (t) {
+      return t.studentId === studentId && isOpen(t.status) &&
+        (!courseId || (t.courseId || '') !== courseId);
+    }).sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+    return list[0] || null;
+  }
+
+
   /* ---------- 历史查询 ---------- */
   function cooperationsOf(id) {
     return db.teacherCooperations.filter(function (c) { return c.teacherId === id; })
@@ -8340,6 +8626,27 @@
       throw bizError('FORBIDDEN', '该训练任务不属于当前教师，无法操作');
     }
     return t;
+  }
+
+  /**
+   * 课程归属校验：教师只能操作自己授课的课程；同时校验课程与学员一致。
+   * 页面 URL 的 course / student 参数不能作为授权依据，必须回到 Store 校验。
+   */
+  function assertCourseOfTeacher(courseId, studentId) {
+    var c = course(courseId);
+    if (!c) throw bizError('COURSE_NOT_FOUND', '课程不存在');
+    if (studentId && c.studentId !== studentId) {
+      throw bizError('COURSE_STUDENT_MISMATCH', '课程对应的学员与本次操作的学员不一致');
+    }
+    if (session.role === 'teacher') {
+      var self = assertSelfTeacher();
+      if ((c.teacherId || '') !== self) {
+        throw bizError('FORBIDDEN', '该课程不是当前教师的授课课程');
+      }
+    } else if (session.role === 'agent' || session.role === 'parent') {
+      throw bizError('FORBIDDEN', '当前身份无权操作课程');
+    }
+    return c;
   }
 
   /* ---------- 新学员建档（发布需求的前置步骤，不重复建同一个学员） ---------- */
@@ -9554,9 +9861,24 @@
         return d !== 0 ? d : (a.auth.approvedAt < b.auth.approvedAt ? 1 : -1);
       });
   }
+  /** 教师端学员范围：师生关系优先；课程已绑定该教师与该学员时也放行（代课/临时课程） */
+  function teacherCoversStudent(studentId) {
+    if (session.role !== 'teacher') return true;
+    try {
+      assertMyStudent(studentId);
+      return true;
+    } catch (e) {
+      var hasCourse = db.courses.some(function (c) {
+        return c.studentId === studentId && (c.teacherId || '') === sessionTeacherId() &&
+          c.status !== COURSE_STATUS.CANCELLED;
+      });
+      if (hasCourse) return true;
+      throw e;
+    }
+  }
   /** 教师教学端唯一可用的词库来源：只有「已授权」的 */
   function authorizedWordbooksOf(studentId) {
-    if (session.role === 'teacher') assertMyStudent(studentId);
+    teacherCoversStudent(studentId);
     return db.studentWordbooks
       .filter(function (w) { return w.studentId === studentId && w.status === SWB.ACTIVE; })
       .map(function (w) {
@@ -9673,10 +9995,28 @@
 
   /** 教师在教学中能选的词库（按学员授权过滤），没有授权时给出去申请的引导 */
   function teachingWordbooks(studentId) {
+    teacherCoversStudent(studentId);
     var list = authorizedWordbooksOf(studentId)
       .filter(function (x) { return x.wordbook.status === '启用'; })
       .map(function (x) { return x.wordbook; });
     return list;
+  }
+
+  /** 词库选择页需要的数据：总数 / 历史初筛认识 / 当前可筛选 */
+  function teachingWordbookStats(studentId) {
+    return teachingWordbooks(studentId).map(function (b) {
+      var words = wordsOfBook(b.id);
+      var known = words.filter(function (w) { return isScreenedKnown(studentId, w.id); }).length;
+      return {
+        id: b.id, name: b.name, version: b.version || '', grade: b.grade || '',
+        term: b.term || '', chapter: b.chapter || '',
+        total: words.length, words: words.length,
+        screenedKnown: known, known: known,
+        available: Math.max(0, words.length - known),
+        conflict: 0,
+        status: b.status
+      };
+    });
   }
 
   /* ---------- 跨域统计：给首页/工作台用 ---------- */
@@ -13189,7 +13529,8 @@
     isAuthorized: isAuthorized, grantWordbook: grantWordbook,
     disableStudentWordbook: disableStudentWordbook, enableStudentWordbook: enableStudentWordbook,
     wordbookGrants: wordbookGrants, wordbookGrantStat: wordbookGrantStat,
-    teachingWordbooks: teachingWordbooks, demandPipeline: demandPipeline,
+    teachingWordbooks: teachingWordbooks, teachingWordbookStats: teachingWordbookStats,
+    demandPipeline: demandPipeline,
     DEMAND: DEMAND, DEMAND_STATUS: DEMAND_STATUS, DEMAND_TONE: DEMAND_TONE,
     DEMAND_OPEN_STATUS: DEMAND_OPEN_STATUS, DEMAND_ACTION: DEMAND_ACTION,
     DEMAND_ACTION_LABEL: DEMAND_ACTION_LABEL, DECLINE_REASONS: DECLINE_REASONS,
@@ -13227,6 +13568,9 @@
     trainTask: trainTask, tasksOf: tasksOf, activeTask: activeTask, startTrainTask: startTrainTask,
     /* 训练（第九轮：多词库动态选词 + 展示循环） */
     createTrainTask: createTrainTask, addWordbooksToTask: addWordbooksToTask,
+    createCourseTrainTask: createCourseTrainTask, appendBooksToCourseTask: appendBooksToCourseTask,
+    linkTrainTaskToCourse: linkTrainTaskToCourse, openTrainTaskOfCourse: openTrainTaskOfCourse,
+    legacyOpenTaskOfStudent: legacyOpenTaskOfStudent,
     setTrainTarget: setTrainTarget,
     wordbooksOfTask: wordbooksOfTask, bookOfWordInTask: bookOfWordInTask, bookLabel: bookLabel,
     isScreenedKnown: isScreenedKnown, openTaskOfWord: openTaskOfWord,
@@ -13270,6 +13614,7 @@
     finishArticleTask: finishArticleTask, articleTaskStat: articleTaskStat,
     /* 课程与报告 */
     courses: courses, course: course, coursesOf: coursesOf, coursesOfTeacher: coursesOfTeacher,
+    createCourse: createCourse, updateCourse: updateCourse, courseConflicts: courseConflicts,
     courseStat: courseStat, courseRecord: courseRecord, recordOfCourse: recordOfCourse,
     recordsOfTeacher: recordsOfTeacher, openCourse: openCourse, linkTask: linkTask,
     recordSummary: recordSummary, recordView: recordView, courseUnfinished: courseUnfinished,
@@ -13396,6 +13741,7 @@
     SCREEN: SCREEN, SCREEN_TONE: SCREEN_TONE, SCREEN_SOURCE: SCREEN_SOURCE,
     DISPLAY_STEP: DISPLAY_STEP, DISPLAY_LABEL: DISPLAY_LABEL,
     PHASE: PHASE, TRAIN_GROUP_SIZE: TRAIN_GROUP_SIZE, TARGET_RANGE: TARGET_RANGE,
+    TRAIN_WORD_MIN: TRAIN_WORD_MIN, TRAIN_WORD_MAX: TRAIN_WORD_MAX,
     statusTone: statusTone, isOpen: isOpen, isDone: isDone, isActive: isActive,
     /* 统计 */
     stats: stats,

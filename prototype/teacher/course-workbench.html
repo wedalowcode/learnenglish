@@ -74,6 +74,8 @@
               </div>
               <div class="divider" style="margin:14px 0"></div>
               <div class="flow" id="flow"></div>
+              <div class="divider" style="margin:14px 0"></div>
+              <div class="m-row"><span class="k">腾讯会议</span><span id="meetingBox">—</span></div>
             </div>
           </div>
 
@@ -212,8 +214,20 @@ let rec = null;          // 课程教学记录
 boot();
 
 function boot() {
+  /* 课程归属校验：URL 的 course 参数不能作为授权依据 */
+  if (courseId) {
+    try {
+      const c0 = Store.course(courseId);
+      if (!c0 || (c0.teacherId || '') !== (TEACHER || '')) throw new Error('该课程不是当前教师的授课课程');
+    } catch (e) {
+      document.getElementById('entries').innerHTML =
+        '<div class="empty" style="grid-column:1/-1">' + Proto.escHtml(e.message) + '</div>';
+      document.getElementById('unfBox').innerHTML = '';
+      return;
+    }
+  }
   const today = Store.coursesOfTeacher(TEACHER, Store.TODAY);
-  if (!today.length) {
+  if (!today.length && !courseId) {
     document.getElementById('entries').innerHTML =
       '<div class="empty" style="grid-column:1/-1">今天没有排课</div>';
     return;
@@ -223,11 +237,13 @@ function boot() {
       || today.filter(c => c.status === '待上课')[0] || today[0];
     courseId = prefer.id;
   }
-  const r = Store.openCourse(courseId);
-  if (!r.ok) {                       // 已完成课程：只读回看
+  try {
+    const r = Store.openCourse(courseId, { allowDone: true });
     cur = r.course; rec = r.record;
-  } else {
-    cur = r.course; rec = r.record;
+  } catch (e) {
+    document.getElementById('entries').innerHTML =
+      '<div class="empty" style="grid-column:1/-1">' + Proto.escHtml(e.message) + '</div>';
+    return;
   }
   render();
 }
@@ -239,22 +255,37 @@ function render() {
   const nth = acc ? acc.used + 1 : 0;
 
   document.getElementById('ttl').textContent = (stu ? stu.name : '—') + ' · ' + (stu ? stu.grade : '') + ' 的这节课';
+  const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   document.getElementById('sub').textContent =
-    Store.TODAY + '（周一）· ' + cur.start + '—' + cur.end + ' · 一对一'
+    '课程编号 ' + cur.id + ' · ' + cur.date + '（' + (WEEK[new Date(cur.date + 'T00:00:00').getDay()] || '') + '）· '
+    + cur.start + '—' + cur.end + ' · 授课教师 ' + cur.teacher + ' · ' + cur.status
     + (order ? ' · 第 ' + nth + ' / ' + order + ' 课时' : '');
   document.getElementById('profileBtn').href = 'student-profile.html?student=' + cur.studentId;
 
   document.getElementById('stuName').textContent = stu ? stu.name : cur.student;
+  const books = Store.teachingWordbooks(cur.studentId);
   document.getElementById('stuMeta').innerHTML = [
     stu ? stu.grade : '', '教师 ' + cur.teacher, '学员编号 ' + cur.studentId,
     acc ? ('剩余 ' + acc.remain + ' 课时') : '无课时账户',
-    cur.meeting === '已生成' ? '腾讯会议已生成' : '会议未生成'
+    '已开通词库 ' + books.length + ' 个'
   ].filter(Boolean).map(t => `<span>${t}</span>`).join('');
 
   document.getElementById('cStatus').className = 'tag ' + (CTAG[cur.status] || 'tag-slate');
   document.getElementById('cStatus').textContent = cur.status;
   document.getElementById('cTime').textContent =
     (cur.actualStart ? '实际开始 ' + cur.actualStart : '计划 ' + cur.date + ' ' + cur.start);
+
+  document.getElementById('meetingBox').innerHTML = cur.meetingUrl
+    ? `<a class="btn-link" href="${Proto.escHtml(cur.meetingUrl)}" target="_blank" rel="noopener">进入腾讯会议</a>
+       <button class="btn-link" id="copyMeeting">复制链接</button>
+       <span class="small muted mono" style="margin-left:8px">${Proto.escHtml(cur.meetingUrl)}</span>`
+    : '<span class="small muted">会议链接待教务补充（教师端只读，不能自行修改排课信息）</span>';
+  const cm = document.getElementById('copyMeeting');
+  if (cm) cm.addEventListener('click', () => {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(cur.meetingUrl);
+    cm.textContent = '已复制';
+    setTimeout(() => { cm.textContent = '复制链接'; }, 1200);
+  });
 
   /* 状态流转 */
   const steps = ['待上课', '授课中', '已完成'];
@@ -284,33 +315,51 @@ function renderEntries() {
   const done = cur.status === '已完成';
   const dueD = Store.leitnerDueDetail(sid);
   const p21 = Store.plan21TodaySummary(sid);
-  const task = Store.activeTask(sid);
+  const courseTask = Store.openTrainTaskOfCourse(cid);
+  const legacyTask = courseTask ? null : Store.legacyOpenTaskOfStudent(sid, cid);
   const arts = Store.articleTasksOf(sid).filter(t => Store.isOpen(t.status));
-  const tStat = task ? Store.trainTaskStat(task.id) : null;
-  const hasWords = Store.wordbooks().filter(b => b.wordCount > 0 && b.status === '启用').length > 0;
+  const tStat = courseTask ? Store.trainTaskStat(courseTask.id) : null;
+  /* 只认学员已开通的词库，不把全机构词库当成可用资源 */
+  const books = Store.teachingWordbooks(sid);
+  const bookStats = Store.teachingWordbookStats(sid);
 
   const cards = [];
 
-  /* 1 单词训练 */
-  if (task && task.phase === '预筛选') {
+  /* 1 单词训练：必须从本节课程进入 */
+  if (courseTask && courseTask.phase === '预筛选') {
     cards.push(card('单词训练', '进行中 · 预筛选',
-      `${task.wordbookName}<br>已预筛 ${Object.keys(task.prescreen || {}).length} / ${task.wordIds.length} 个单词`,
-      done ? '' : `继续预筛 →`, `word-training-prescreen.html?task=${task.id}&course=${cid}`));
-  } else if (task && tStat) {
-    const label = task.status === '已中断' ? '已中断（可恢复）' : '进行中 · ' + task.phase;
+      `${courseTask.wordbookName}<br>已预筛 ${Object.keys(courseTask.prescreen || {}).length} / ${courseTask.wordIds.length} 个单词`,
+      done ? '查看记录 →' : '继续预筛 →', `word-training-prescreen.html?task=${courseTask.id}&course=${cid}`));
+  } else if (courseTask && tStat) {
+    const label = courseTask.status === '已中断' ? '已中断（可恢复）' : '进行中 · ' + courseTask.phase;
     cards.push(card('单词训练', label,
-      `${task.wordbookName}<br>队列 ${tStat.queue} 个 · 强化 ${tStat.trained} · 最后复习 ${tStat.finaled}`,
-      done ? '' : '继续训练 →', `word-training.html?task=${task.id}&course=${cid}`));
+      `${courseTask.wordbookName}<br>队列 ${tStat.queue} 个 · 强化 ${tStat.trained} · 最后复习 ${tStat.finaled}`,
+      done ? '查看记录 →' : '继续训练 →', `word-training.html?task=${courseTask.id}&course=${cid}`));
+  } else if (legacyTask) {
+    const st = Store.trainTaskStat(legacyTask.id);
+    cards.push(`<div class="entry">
+      <div class="e-top"><span class="e-name">单词训练</span><span class="tag tag-amber nodot">上次未完成任务</span></div>
+      <div class="e-sub">${legacyTask.wordbookName || '未命名词库'} · 队列 ${st.queue} 个 · 原课程 ${legacyTask.courseId || '未关联课程'}
+        <br>继续后将把本次教学行为记到本节课程，不改变原任务的历史归属</div>
+      <div class="e-foot"><a class="btn btn-sm btn-primary" href="javascript:void(0)" onclick="continueLegacy('${legacyTask.id}')">继续上次任务</a>
+        <a class="btn btn-sm" href="word-training-setup.html?course=${cid}">从本节课重新选择词库</a></div>
+    </div>`);
+  } else if (!books.length) {
+    cards.push(card('单词训练', '未开始',
+      '该学员暂未开通可用词库<br>请联系管理员完成词库申请与审核授权，教师不能直接把全机构词库当作可用词库',
+      '', ''));
   } else {
-    cards.push(card('单词训练', '未开始', '选择词库，开始新一轮单词训练' + (hasWords ? '' : '（无可用词库）'),
-      done ? '' : '开始 →', `word-training-setup.html?student=${sid}&course=${cid}`));
+    const avail = bookStats.reduce((n, b) => n + b.available, 0);
+    cards.push(card('单词训练', '未开始',
+      `该学员已开通 ${books.length} 个词库 · 当前可筛选 ${avail} 个单词<br>可一次选择多个词库开始筛查`,
+      done ? '' : '选择词库 →', `word-training-setup.html?course=${cid}`));
   }
 
   /* 2 莱特纳复习 */
   cards.push(card('莱特纳复习',
     dueD.total ? `今日推荐 ${dueD.total} 个` : '今日无到期',
     `红盒到期 ${dueD.red.length} · 黄盒到期 ${dueD.yellow.length} · 教师指定 ${dueD.manual.length}`,
-    done ? '' : (dueD.total ? '去复习 →' : '查看 →'),
+    done ? '查看记录 →' : (dueD.total ? '去复习 →' : '查看 →'),
     `leitner.html?student=${sid}&course=${cid}`));
 
   /* 3 21 天复习 */
@@ -320,20 +369,32 @@ function renderEntries() {
       ? `今日应复习 ${p21.due} 个 · 已完成 ${p21.done} · 剩余 ${p21.remain}`
         + (p21.overdueTasks ? `<br><span style="color:var(--warning)">逾期 ${p21.overdueTasks} 个节点 / ${p21.overdueWords} 个单词</span>` : '')
       : '需要先创建记忆计划',
-    done ? '' : '去复习 →', `memory21.html?student=${sid}&course=${cid}`));
+    done ? '查看记录 →' : '去复习 →', `memory21.html?student=${sid}&course=${cid}`));
 
   /* 4 文章训练 */
   if (arts.length) {
     const a = arts[0], st = Store.articleTaskStat(a.id);
     cards.push(card('文章训练', '进行中',
       `《${a.articleName}》<br>${st.done} / ${st.total} 句 · 掌握 ${st.mastered} · 待加强 ${st.weak}`,
-      done ? '' : '继续 →', `article-training.html?task=${a.id}&course=${cid}`));
+      done ? '查看记录 →' : '继续 →', `article-training.html?task=${a.id}&course=${cid}`));
   } else {
     cards.push(card('文章训练', '未开始', '选择文章，逐句听读与教师判定',
-      done ? '' : '开始 →', `article-training.html?student=${sid}&course=${cid}`));
+      done ? '' : '选择文章 →', `article-training.html?student=${sid}&course=${cid}`));
   }
 
   document.getElementById('entries').innerHTML = cards.join('');
+}
+
+/* 跨课程继续：把任务关联到本节课程记录，任务原 courseId 保持不变 */
+function continueLegacy(taskId) {
+  try {
+    Store.linkTrainTaskToCourse(taskId, courseId);
+    const t = Store.trainTask(taskId);
+    const next = t && t.phase !== '预筛选' ? 'word-training.html' : 'word-training-prescreen.html';
+    location.href = next + '?task=' + taskId + '&course=' + courseId;
+  } catch (e) {
+    Proto.toast(e.message || '继续任务失败', 'err');
+  }
 }
 
 function card(name, state, sub, action, href) {

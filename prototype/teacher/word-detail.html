@@ -22,7 +22,7 @@
         <div class="page-actions">
           <select class="select" style="width:170px" id="stuSel" onchange="switchStudent(this.value)"></select>
           <a class="btn" href="student-profile.html" id="backBtn">返回学习档案</a>
-          <a class="btn btn-primary" href="word-training-setup.html" id="trainBtn">开始单词训练</a>
+          <a class="btn btn-primary" href="workbench.html" id="trainBtn">从今日课程开始训练</a>
         </div>
       </div>
 
@@ -239,7 +239,7 @@ function initSelect() {
   const b = 'student-profile.html?student=' + studentId;
   document.getElementById('backBtn').href = b;
   document.getElementById('crumbStu').href = b;
-  document.getElementById('trainBtn').href = 'word-training-setup.html?student=' + studentId;
+  document.getElementById('trainBtn').href = 'workbench.html';
 }
 
 function wordSeq(w) {

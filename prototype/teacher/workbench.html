@@ -32,11 +32,11 @@
         <div>
           <div class="card">
             <div class="card-head"><div class="card-title">今日课程</div>
-              <span class="small muted">从课程工作台进入，所有教学行为归属本节课；完成课程才扣课时</span></div>
+              <span class="small muted">单词训练必须从具体课程进入；教务排课信息教师端只读</span></div>
             <div class="card-body tight">
               <div class="table-wrap">
                 <table class="table">
-                  <thead><tr><th>时间</th><th>学员</th><th>年级</th><th>课程状态</th><th>报告</th><th style="width:180px">操作</th></tr></thead>
+                  <thead><tr><th>时间</th><th>学员</th><th>年级</th><th>课程状态</th><th>腾讯会议</th><th>报告</th><th style="width:150px">操作</th></tr></thead>
                   <tbody id="todayCourses"></tbody>
                 </table>
               </div>
@@ -54,31 +54,18 @@
 
         <div>
           <div class="card">
-            <div class="card-head"><div class="card-title">今日待复习</div>
-              <span class="tag tag-amber nodot" id="dueBadge">0</span></div>
+            <div class="card-head"><div class="card-title">待填写教学报告</div>
+              <span class="tag tag-amber nodot" id="reportBadge">0</span></div>
+            <div class="card-body" id="pendingReports"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">今日课程说明</div></div>
             <div class="card-body">
-              <div id="dueBox"><div class="small muted">加载中…</div></div>
-              <div class="divider"></div>
-              <div class="small muted">两套体系任务<b>独立生成、独立记录</b>，复习结果互不覆盖。</div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-head"><div class="card-title">我的学员</div>
-              <a class="btn btn-sm" href="my-students.html">全部</a></div>
-            <div class="card-body tight">
-              <table class="table compact"><tbody id="recentStudents"></tbody></table>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-head"><div class="card-title">快捷入口</div></div>
-            <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
-              <a class="btn btn-block btn-primary" href="course-workbench.html">课程工作台</a>
-              <a class="btn btn-block" href="word-training-setup.html">开始单词训练</a>
-              <a class="btn btn-block" href="article-training.html">开始文章训练</a>
-              <a class="btn btn-block" href="leitner.html">莱特纳复习</a>
-              <a class="btn btn-block" href="memory21.html">21 天记忆复习</a>
+              <div class="small muted" style="line-height:1.9">
+                排课、授课教师、上课时间与腾讯会议链接由教务维护，教师端只读。<br>
+                待上课 / 授课中可进入课堂；已完成只能回看历史；未上课 / 已取消不能进入正常教学流程。
+              </div>
             </div>
           </div>
         </div>
@@ -95,62 +82,93 @@
 Proto.shell({ role: 'teacher', active: 'workbench' });
 
 const TEACHER = Proto.teacherId();
+const TODAY = Store.TODAY;
 document.getElementById('greetName').textContent = Proto.teacherName();
-const CTAG = { '待上课': 'tag-slate', '授课中': 'tag-blue', '已完成': 'tag-green', '未上课': 'tag-amber', '已取消': 'tag-red' };
-const RTAG = { '未生成': 'tag-slate', '编辑中': 'tag-amber', '已提交': 'tag-blue', '已发布': 'tag-green' };
 
-const today = Store.coursesOfTeacher(TEACHER, Store.TODAY);
-const stat = Store.courseStat(TEACHER, Store.TODAY);
+const CTAG = { '待上课': 'tag-slate', '授课中': 'tag-blue', '已完成': 'tag-green', '未上课': 'tag-amber', '已取消': 'tag-red', '待处理': 'tag-amber' };
+const RTAG = { '未生成': 'tag-slate', '编辑中': 'tag-amber', '已提交': 'tag-blue', '已发布': 'tag-green' };
+const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+const today = Store.coursesOfTeacher(TEACHER, TODAY);
+const stat = Store.courseStat(TEACHER, TODAY);
 const rs = Store.reportStat(TEACHER);
-const stu = Store.student('S2026001');
-const due = Store.leitnerDueDetail('S2026001');
-const p21 = Store.plan21TodaySummary('S2026001');
+const openCourse = today.filter(c => c.status === '授课中')[0] || today.filter(c => c.status === '待上课')[0];
 
 document.getElementById('subLine').textContent =
-  Store.TODAY + '（周一）· 今天有 ' + stat.total + ' 节课 · 已完成 ' + stat.done
-  + ' · 待写报告 ' + rs.draft + ' 份';
+  TODAY + '（' + (WEEK[new Date(TODAY + 'T00:00:00').getDay()] || '') + '）· 今天 ' + stat.total +
+  ' 节课 · 待上课 ' + stat.pending + ' · 授课中 ' + stat.ongoing + ' · 已完成 ' + stat.done + ' · 待写报告 ' + rs.draft + ' 份';
 
-const first = today.filter(c => c.status === '授课中')[0] || today.filter(c => c.status === '待上课')[0];
-if (first) document.getElementById('goToday').href = 'course-workbench.html?course=' + first.id;
-else {
+if (openCourse) {
+  document.getElementById('goToday').href = 'course-workbench.html?course=' + openCourse.id;
+} else {
   document.getElementById('goToday').href = 'course-workbench.html';
   document.getElementById('goToday').textContent = '打开课程工作台';
 }
 
 document.getElementById('statCards').innerHTML = `
   <div class="card stat"><div class="stat-label">今日课程</div><div class="stat-value">${stat.total}<small>节</small></div>
-    <div class="stat-foot">${stat.done} 已完成 · ${stat.pending} 待上课${stat.ongoing ? ' · ' + stat.ongoing + ' 授课中' : ''}</div></div>
+    <div class="stat-foot">${TODAY}</div></div>
+  <div class="card stat"><div class="stat-label">待上课</div>
+    <div class="stat-value">${stat.pending}<small>节</small></div>
+    <div class="stat-foot">按开课时间排序</div></div>
+  <div class="card stat"><div class="stat-label">授课中</div>
+    <div class="stat-value" style="color:var(--info)">${stat.ongoing}<small>节</small></div>
+    <div class="stat-foot">可继续进入课堂</div></div>
+  <div class="card stat"><div class="stat-label">已完成</div>
+    <div class="stat-value" style="color:var(--success)">${stat.done}<small>节</small></div>
+    <div class="stat-foot">只能查看历史记录</div></div>
   <div class="card stat"><div class="stat-label">待写报告</div>
     <div class="stat-value" style="color:var(--warning)">${rs.draft}<small>份</small></div>
     <div class="stat-foot"><a href="teaching-record.html">去填写 →</a></div></div>
-  <div class="card stat"><div class="stat-label">待发布报告</div>
-    <div class="stat-value">${rs.submitted}<small>份</small></div>
-    <div class="stat-foot">已提交，家长还看不到</div></div>
-  <div class="card stat"><div class="stat-label">今日待复习单词</div>
-    <div class="stat-value">${due.total}<small>个</small></div>
-    <div class="stat-foot">红盒 ${due.red.length} + 黄盒到期 ${due.yellow.length} + 指定 ${due.manual.length}</div></div>
-  <div class="card stat"><div class="stat-label">21 天待复习</div>
-    <div class="stat-value">${p21.due}<small>个</small></div>
-    <div class="stat-foot">计划第 ${p21.day} / 21 天 · 已完成 ${p21.done}</div></div>
-  <div class="card stat"><div class="stat-label">当前负责学员</div>
-    <div class="stat-value">${Store.students().filter(s => s.teacher === TEACHER).length}<small>人</small></div>
-    <div class="stat-foot">${Store.students().filter(s => s.teacher === TEACHER).map(s => s.name).join(' · ')}</div></div>`;
+  <div class="card stat"><div class="stat-label">未上课 / 已取消</div>
+    <div class="stat-value">${(stat.by['未上课'] || 0) + (stat.by['已取消'] || 0)}<small>节</small></div>
+    <div class="stat-foot">不可进入正常教学流程</div></div>`;
+
+function meetingCell(c) {
+  if (c.meetingUrl) {
+    return `<a class="btn-link" href="${Proto.escHtml(c.meetingUrl)}" target="_blank" rel="noopener">进入腾讯会议</a>
+      <button class="btn-link" data-copy="${Proto.escHtml(c.meetingUrl)}">复制链接</button>`;
+  }
+  return '<span class="small muted">会议链接待教务补充</span>';
+}
+function enterCell(c) {
+  if (c.status === '待上课' || c.status === '授课中') {
+    return `<a class="btn-link" href="course-workbench.html?course=${c.id}">进入课堂</a>`;
+  }
+  if (c.status === '已完成') {
+    return `<a class="btn-link" href="course-workbench.html?course=${c.id}">回看</a>`;
+  }
+  return '<span class="small muted">不可进入</span>';
+}
 
 Proto.renderRows('todayCourses', today, c => {
   const s = Store.student(c.studentId);
   const rp = Store.reportOfCourse(c.id);
   return `<tr>
-    <td class="mono strong">${c.start}-${c.end}</td>
-    <td class="strong"><a href="student-profile.html?student=${c.studentId}">${s ? s.name : c.student}</a></td>
+    <td class="mono strong">${c.start}—${c.end}</td>
+    <td class="strong"><a href="course-workbench.html?course=${c.id}">${s ? s.name : Proto.escHtml(c.student)}</a></td>
     <td>${s ? s.grade : '—'}</td>
-    <td><span class="tag ${CTAG[c.status]} nodot">${c.status}</span></td>
-    <td>${rp ? `<span class="tag ${RTAG[rp.status]} nodot">${rp.status}</span>` : '<span class="tag tag-slate nodot">未生成</span>'}</td>
-    <td class="ops">
-      <a class="btn-link" href="course-workbench.html?course=${c.id}">${c.status === '已完成' ? '回看' : '进入课堂'}</a>
-      <a class="btn-link" href="student-profile.html?student=${c.studentId}">学习档案</a>
-    </td>
+    <td><span class="tag ${CTAG[c.status] || 'tag-slate'} nodot">${c.status}</span></td>
+    <td>${meetingCell(c)}</td>
+    <td>${rp ? `<span class="tag ${RTAG[rp.status] || 'tag-slate'} nodot">${rp.status}</span>` : '<span class="tag tag-slate nodot">未生成</span>'}</td>
+    <td class="ops">${enterCell(c)}</td>
   </tr>`;
-}, 6, '今天没有排课');
+}, 20, '今天没有排课');
+
+document.querySelectorAll('[data-copy]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const url = btn.getAttribute('data-copy');
+    const done = () => { btn.textContent = '已复制'; setTimeout(() => { btn.textContent = '复制链接'; }, 1200); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done, done);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = url; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta); done();
+    }
+  });
+});
 
 document.getElementById('recentRecords').innerHTML = (function () {
   const list = Store.recordsOfTeacher(TEACHER).slice(0, 4);
@@ -164,33 +182,26 @@ document.getElementById('recentRecords').innerHTML = (function () {
         <span class="tl-time">${(c ? c.date : '').slice(5)}</span></div>
       <div class="tl-body">单词 ${r.snapshot ? r.snapshot.trainWords : 0} 个 · 复习 ${r.snapshot ? (r.snapshot.leitnerWords + r.snapshot.plan21Words) : 0} 个
         · 文章 ${r.snapshot ? r.snapshot.articleSentences : 0} 句
-        ${rp ? `<span class="tag ${RTAG[rp.status]} nodot" style="margin-left:6px">${rp.status}</span>` : ''}</div>
+        ${rp ? `<span class="tag ${RTAG[rp.status] || 'tag-slate'} nodot" style="margin-left:6px">${rp.status}</span>` : ''}</div>
     </div>`;
   }).join('');
 })();
 
-document.getElementById('dueBadge').textContent = due.total + p21.due;
-document.getElementById('dueBox').innerHTML = `
-  <div class="m-row"><span class="k">莱特纳 · 红盒</span>
-    <span><b class="mono">${due.red.length}</b> <a class="btn-link" href="leitner.html?student=S2026001" style="margin-left:6px">复习</a></span></div>
-  <div class="m-row"><span class="k">莱特纳 · 黄盒到期</span>
-    <span><b class="mono">${due.yellow.length}</b> <a class="btn-link" href="leitner.html?student=S2026001" style="margin-left:6px">复习</a></span></div>
-  <div class="m-row"><span class="k">莱特纳 · 教师指定</span><span><b class="mono">${due.manual.length}</b></span></div>
-  <div class="m-row"><span class="k">21 天计划今日任务</span>
-    <span><b class="mono">${p21.due}</b> <a class="btn-link" href="memory21.html?student=S2026001" style="margin-left:6px">复习</a></span></div>
-  ${p21.overdueTasks ? `<div class="m-row"><span class="k">21 天历史逾期</span>
-    <span><b class="mono" style="color:var(--danger)">${p21.overdueWords}</b> 个单词 / ${p21.overdueTasks} 个节点</span></div>` : ''}`;
-
-Proto.renderRows('recentStudents', Store.students().filter(s => s.teacher === TEACHER), s => {
-  const d = Store.leitnerDueDetail(s.id);
-  const p = Store.plan21TodaySummary(s.id);
-  return `<tr>
-    <td class="strong"><a href="student-profile.html?student=${s.id}">${s.name}</a></td>
-    <td class="small muted">${s.lastCourse}</td>
-    <td class="right mono" style="color:var(--warning)">${d.total + p.due}</td>
-    <td class="ops"><a class="btn-link" href="word-training-setup.html?student=${s.id}">训练</a></td>
-  </tr>`;
-}, 4, '暂无负责学员');
+(function renderPendingReports() {
+  const list = (Store.reports() || []).filter(r => (r.teacherId || '') === (TEACHER || '') && r.status === '编辑中');
+  document.getElementById('reportBadge').textContent = list.length;
+  const box = document.getElementById('pendingReports');
+  if (!list.length) {
+    box.innerHTML = '<div class="small muted">没有待填写的教学报告</div>';
+    return;
+  }
+  box.innerHTML = list.slice(0, 5).map(r => {
+    const c = Store.course(r.courseId);
+    const s = Store.student(r.studentId);
+    return `<div class="m-row"><span class="k">${s ? s.name : ''} · ${r.title || '教学报告'}</span>
+      <span><a class="btn-link" href="teaching-record.html?course=${c ? c.id : ''}">去填写 →</a></span></div>`;
+  }).join('');
+})();
 </script>
 </body>
 </html>
