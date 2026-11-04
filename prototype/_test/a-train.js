@@ -11,37 +11,39 @@ function assert(name, cond, extra) {
   const page = await Page.open();
 
   try {
-    /* 1. 词库选择 → 创建任务 */
-    await page.goto(ROOT + 'teacher/word-training-setup.html');
+    /* 1. 课程上下文的词库选择 → 创建任务（第十轮：必须带 course，且需真实教师会话） */
+    await page.goto(ROOT + 'teacher/word-training-setup.html?course=C20261104001');
+    await page.eval(`Store.setSession({role:'teacher', teacherId:'T001', operatorName:'李婉'});`);
+    await page.goto(ROOT + 'teacher/word-training-setup.html?course=C20261104001');
     const rows = await page.eval(`return document.querySelectorAll('#rows tr').length;`);
     assert('词库列表有数据', rows > 0, rows);
 
-    await page.eval(`selected='WB001'; render(); start();`);
+    await page.eval(`selected={WB001:true}; startPrescreen();`);
     await sleep(600);
     const url1 = await page.eval(`return location.href;`);
-    assert('进入预筛选并带任务号', /word-training-prescreen\.html\?task=TR\d+/.test(url1), url1);
+    assert('进入预筛选并带任务号与课程', /word-training-prescreen\.html\?task=TR\d+&course=C20261104001/.test(url1), url1);
 
     const taskId = await page.eval(`return task.id;`);
     const taskStatus = await page.eval(`return Store.trainTask(${JSON.stringify(taskId)}).status;`);
     assert('任务状态=未开始（预筛选阶段）', taskStatus === '未开始', taskStatus);
 
-    /* 2. 逐词作答：前 9 认识，其余不认识 */
+    /* 2. 逐词作答：前 9 认识，其余不认识，然后生成队列 */
     await page.eval(`
-      for (let k=0;k<9;k++) answer(true);
-      for (let k=9;k<23;k++) answer(false);
+      cands.forEach(function(c, k){ answer(c.id, k < 9); });
+      generate();
     `);
     await sleep(400);
 
     const res = await page.eval(`return {
-      book: document.getElementById('rBook').textContent,
+      book: document.getElementById('rPool').textContent,
       known: document.getElementById('rKnown').textContent,
       queue: document.getElementById('rQueue').textContent,
       remain: document.getElementById('rRemain').textContent,
       groups: document.getElementById('groupPlan').textContent.replace(/\\s+/g,' ').trim(),
       foot: document.getElementById('groupFoot').textContent,
-      sumQueue: document.getElementById('sumQueue').textContent
+      sumQueue: document.getElementById('stats').textContent
     };`);
-    assert('页面显示本词库 23', res.book === '23', res.book);
+    assert('页面显示候选池 23', res.book === '23', res.book);
     assert('页面显示初筛认识 9', res.known === '9', res.known);
     assert('页面显示训练队列 14', res.queue === '14', res.queue);
     assert('页面显示剩余待训练 0', res.remain === '0', res.remain);
@@ -75,7 +77,7 @@ function assert(name, cond, extra) {
     assert('第 1 组完成后进入组完成页', v.view === 'groupDone', v.view);
 
     /* 6. 刷新页面验证恢复 */
-    await page.goto(ROOT + 'teacher/word-training.html?task=' + taskId);
+    await page.goto(ROOT + 'teacher/word-training.html?task=' + taskId + '&course=C20261104001');
     await sleep(500);
     const restored = await page.eval(`return {view: view, gi: gi, done: Object.keys(task.results).length, status: task.status, phase: task.phase};`);
     assert('刷新后仍在同一任务', restored.status === '进行中' && restored.phase === '强化训练', restored.status + '/' + restored.phase);
