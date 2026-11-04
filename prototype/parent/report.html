@@ -81,6 +81,38 @@ function bindKidSeg() {
 }
 
 /* ---------------- 列表 ---------------- */
+/* 家长只读：训练会话报告 + 复习计划（不改正式状态） */
+function trainBox() {
+  let trs = [], plans = [];
+  try {
+    trs = Store.parentTrainingReports(PID, curKid);
+    plans = Store.parentReviewPlan(PID, curKid);
+  } catch (e) { return ''; }
+  const planDue = plans.filter(p => p.due);
+  let html = '<div class="m-card"><div class="m-card-title">训练报告与复习</div>';
+  if (!trs.length && !plans.length) {
+    html += '<div class="small muted">暂无训练报告与复习计划。</div></div>';
+    return html;
+  }
+  if (trs.length) {
+    html += trs.slice(0, 3).map(r => `
+      <div class="m-row" style="align-items:flex-start;border-bottom:none">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600">${esc(r.sessionDate)} · 训练报告</div>
+          <div class="small muted" style="margin-top:2px">掌握 ${r.mastered} · 待加强 ${r.needsPractice} · 未掌握 ${r.notMastered} · 掌握率 ${r.masteredRate}%</div>
+          ${r.teacherOverall ? `<div class="small muted" style="margin-top:2px">${esc(r.teacherOverall)}</div>` : ''}
+        </div>
+      </div>`).join('');
+  }
+  if (plans.length) {
+    html += `<div class="small" style="margin-top:6px;color:${planDue.length ? 'var(--warning)' : 'var(--text-3)'}">
+      当前复习计划 ${plans.length} 条${planDue.length ? ` · <b>${planDue.length} 条待复习</b>` : ''}</div>
+      <div class="small muted" style="line-height:1.7">${planDue.slice(0, 6).map(p => `${esc(p.en)}（${p.mastery === 'not_mastered' ? '未掌握' : p.mastery === 'needs_practice' ? '待加强' : ''}，${esc(p.nextReviewAt)}）`).join('、')}</div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
 function renderList() {
   document.getElementById('headTitle').textContent = '学习报告';
   document.getElementById('headTag').textContent = '已发布';
@@ -102,6 +134,7 @@ function renderList() {
   if (!list.length) {
     document.getElementById('body').innerHTML = `
       ${kidSegHTML()}
+      ${trainBox()}
       <div class="m-card">
         <div class="m-card-title">还没有可查看的报告</div>
         <div class="small muted" style="line-height:1.8">
@@ -117,6 +150,7 @@ function renderList() {
 
   document.getElementById('body').innerHTML = `
     ${kidSegHTML()}
+    ${trainBox()}
     <div class="m-card">
       <div class="m-card-title">筛选
         <span class="small muted">共 ${list.length} 份已发布报告</span></div>

@@ -273,7 +273,7 @@ function renderStats() {
     { l: '已认识', n: st.known, tone: 'success', s: '已进绿盒' },
     { l: '不认识', n: st.unknown, tone: 'danger', s: '进入训练候选' },
     { l: '未筛选', n: st.unscreened, tone: 'text-2', s: '尚未判断' },
-    { l: '本次目标', n: st.target, tone: 'text', s: '可调 5 – 200' },
+    { l: '本次目标', n: st.target, tone: 'text', s: '可调 5 – 45' },
     { l: '还差', n: st.needMore, tone: 'primary', s: st.needMore ? '需继续筛或加词库' : '已达目标' }
   ];
   document.getElementById('stats').innerHTML = cards.map(c => `
@@ -357,6 +357,15 @@ function renderList() {
           <button class="sc-audio" title="播放发音" onclick="playAudio(this,'${esc(c.en)}')">🔊</button>
         </div>
         ${bookFilter ? '' : `<div class="small muted">${esc(c.wordbookName || '')}</div>`}
+        ${(() => {
+          let m;
+          try { m = Store.wordMastery(task.studentId, c.id); } catch (e) { return ''; }
+          if (!m) return '';
+          const tone = (m.key === 'not_mastered' || m.key === 'review_due') ? 'var(--danger)'
+            : m.key === 'needs_practice' ? 'var(--warning)'
+              : m.key === 'mastered' ? 'var(--success)' : 'var(--text-3)';
+          return `<div class="small" style="color:${tone}">掌握：${esc(m.label)}${m.dueReview ? ' · 到期复习' : ''}</div>`;
+        })()}
       </td>
       <td class="sc-ph">${esc(c.ph || '—')}</td>
       <td class="sc-cn">${cn}</td>

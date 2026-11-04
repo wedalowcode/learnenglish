@@ -67,14 +67,14 @@
       <div class="card mb16">
         <div class="card-head">
           <div class="card-title">训练目标</div>
-          <span class="small muted">默认 45 个，可按实际课堂时间调整（5 – 200）</span>
+          <span class="small muted">默认 45 个，可按实际课堂时间调整（5 – 45）</span>
         </div>
         <div class="card-body">
           <div class="goal-box">
             <div class="goal-item">
               <div class="small muted mb4">目标数量</div>
               <div class="flex aic gap8">
-                <input class="input goal-input" id="goalInput" type="number" min="5" max="200" value="45"
+                <input class="input goal-input" id="goalInput" type="number" min="5" max="45" value="45"
                   onchange="changeTarget(this.value)">
                 <span class="small muted">个</span>
               </div>
@@ -185,7 +185,7 @@ let studentId = Q.get('student') || 'S2026001';
 let courseId = Q.get('course') || '';        // 课程上下文：从课程工作台进入时携带
 let task = null;                              // 当前未完成的任务（可能为 null）
 let pendingTarget = Store.TARGET_RANGE.def;    // 还没建任务时先记住目标
-const QUICK = [30, 45, 60, 90];
+const QUICK = [30, 40, 45];
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 

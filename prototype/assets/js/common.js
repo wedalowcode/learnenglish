@@ -24,6 +24,7 @@ const Proto = (() => {
       { group: '教学管理', items: [
         { id: 'student-list', label: '学员管理', href: 'admin/student-list.html' },
         { id: 'parent-list', label: '家长管理', href: 'admin/parent-list.html' },
+        { id: 'parent-inquiry', label: '家长咨询', href: 'admin/parent-inquiry.html' },
         { id: 'teacher-list', label: '教师管理', href: 'admin/teacher-list.html' },
         { id: 'schedule-calendar', label: '课程排课', href: 'admin/schedule-calendar.html' },
         { id: 'course-list', label: '课程记录', href: 'admin/course-list.html' },
@@ -145,6 +146,7 @@ const Proto = (() => {
     'renewal-list': ['renewal.view.all', 'renewal.view.own'],
     'student-list': ['student.view'],
     'parent-list': ['parent.view'],
+    'parent-inquiry': ['parent.view'],
     'teacher-list': ['teacher.view'],
     'schedule-calendar': ['lesson.view.all', 'demand.confirm'],
     'course-list': ['lesson.view.all', 'lesson.view.own'],

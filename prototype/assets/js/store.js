@@ -124,8 +124,24 @@
   var DISPLAY_STEP = { NONE: 0, EN: 1, CN: 2, DONE: 3 };
   var DISPLAY_LABEL = { 0: '未开始', 1: '显示英文', 2: '显示中文', 3: '本轮完成' };
   var TRAIN_GROUP_SIZE = 5;
-  /** 单次训练目标数量：默认 45，教师可调，超出范围直接拒绝 */
-  var TARGET_RANGE = { min: 5, max: 200, def: 45 };
+  /** 单次训练目标数量：默认 45，教师可调，本轮将上限收口固定为 45（超出直接拒绝） */
+  var TARGET_RANGE = { min: 5, max: 45, def: 45 };
+  /* 复习检测最终结果语义：底层存储沿用全量三态（历史 yes/mid/no），对外统一为 mastery 三态。
+     只做映射，不重写历史值。 */
+  var MASTERY = { MASTERED: 'mastered', NEEDS_PRACTICE: 'needs_practice', NOT_MASTERED: 'not_mastered' };
+  var MASTERY_LABEL = { mastered: '已掌握', needs_practice: '待加强', not_mastered: '未掌握' };
+  function mapResult(r) {
+    return r === 'yes' ? MASTERY.MASTERED
+      : r === 'mid' ? MASTERY.NEEDS_PRACTICE
+        : r === 'no' ? MASTERY.NOT_MASTERED
+          : '';
+  }
+  function mapMasteryToResult(m) {
+    return m === MASTERY.MASTERED ? 'yes'
+      : m === MASTERY.NEEDS_PRACTICE ? 'mid'
+        : m === MASTERY.NOT_MASTERED ? 'no'
+          : '';
+  }
   var PHASE = { PRESCREEN: '预筛选', DISPLAY: '强化训练', FINAL: '最后复习', DONE: '已提交' };
 
   /* ============================================================
@@ -406,7 +422,8 @@
     'renewal.handle': 'renewal.follow', 'feedback.create': 'report.create',
     'feedback.viewSelf': 'report.view.own',
     'parent.view': 'parent.view', 'parent.create': 'parent.create', 'parent.edit': 'parent.edit',
-    'inquiry.handle': 'parent.view'
+    'inquiry.handle': 'parent.view',
+    'audit.view': 'audit.view'
   };
 
   /* 字典类型：业务表单的唯一选项来源 */
@@ -1686,7 +1703,7 @@
           }, 0),
           UA: users.length, TS: teacherStudents.length, TCH: coopSeq, TCL: 0,
           SD: demandSeq, TRS: respSeq, DL: dlogSeq, WBR: wbrSeq, SWB: swbSeq,
-          TR: 0, TD: 0, PR: 0, TDP: 0,
+          TR: 0, TD: 0, PR: 0, TDP: 0, TRPT: 0, RVP: 0, RVR: 0,
           AG: agents.length, LD: leadSeq, LF: followSeq, LLOG: leadLogSeq,
           ORD: ordSeq, PY: paySeq, OLOG: ordLogSeq,
           RN: renewalSeq, FB: fbSeq, ALOG: agentLogSeq,
@@ -2030,6 +2047,11 @@
     d.config.renewal = d.config.renewal || {
       lessonThreshold: LESSON_ALERT_THRESHOLD,
       expireDays: EXPIRE_ALERT_DAYS
+    };
+    /* 统一复习计划的间隔策略（可配置；训练检测与复习动作都从这里取间隔，不散落硬编码天数） */
+    d.config.reviewStrategy = d.config.reviewStrategy || {
+      interval: { not_mastered: 1, needs_practice: 3, mastered: 7 },
+      maxStage: 5, multiplier: 1.5
     };
 
     /* ---- 第七轮域：结构性默认值 ---- */
@@ -2736,6 +2758,14 @@
     });
     d.meta.seq.TDP = Math.max(d.meta.seq.TDP || 0, d.trainDisplays.length);
 
+    /* 统一训练会话报告 / 统一复习计划 / 统一复习记录（本轮新增，附加式默认，不改旧集合） */
+    d.trainingReports = d.trainingReports || [];
+    d.reviewPlans = d.reviewPlans || [];
+    d.reviewRecords = d.reviewRecords || [];
+    d.meta.seq.TRPT = Math.max(d.meta.seq.TRPT || 0, d.trainingReports.length);
+    d.meta.seq.RVP = Math.max(d.meta.seq.RVP || 0, d.reviewPlans.length);
+    d.meta.seq.RVR = Math.max(d.meta.seq.RVR || 0, d.reviewRecords.length);
+
     /* 学员单词档案：补上独立的初筛状态（不改变已有 state / prescreenKnown 语义） */
     d.studentWordStates = d.studentWordStates || [];
     d.studentWordStates.forEach(function (s) {
@@ -3294,7 +3324,12 @@
     var open = db.trainTasks.filter(function (t) {
       return t.studentId === opt.studentId && isOpen(t.status);
     }).sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; })[0];
-    if (open) return { ok: true, reused: true, task: open };
+    if (open) {
+      if (session.role === 'teacher' && (open.teacherId || '') !== (opt.teacherId || sessionTeacherId())) {
+        throw bizError('FORBIDDEN', '该学员已有其他教师创建的未完成任务，不能复用');
+      }
+      return { ok: true, reused: true, task: open };
+    }
 
     var t = {
       id: 'TR' + TODAY.replace(/-/g, '') + seq('TR', 2),
@@ -3360,6 +3395,7 @@
   }
 
   function addWordbooksToTask(taskId, bookIds) {
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
     if (isDone(t.status)) throw bizError('TASK_DONE', '任务已提交，不能再添加词库');
@@ -3402,27 +3438,40 @@
    */
   function prescreenCandidates(taskId, opt) {
     opt = opt || {};
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
     var bookId = opt.wordbookId || t.currentWordbookId || (t.wordbookIds || [])[0] || '';
     var books = opt.all ? wordbooksOfTask(t) : [wordbook(bookId)].filter(Boolean);
-    var out = [];
+    var out = [], seen = {};
     books.forEach(function (b) {
       wordsOfBook(b.id).forEach(function (w) {
         if ((t.wordIds || []).indexOf(w.id) < 0) return;
+        /* 按基础 Word.id 去重：同一基础单词属于多个词库时，只保留一个训练候选，
+           并在 sourceBooks 中汇总来源词库，便于追溯；不影响词库各自的单词关联与排序。 */
+        var hit = seen[w.id];
+        if (hit) {
+          if (!hit.sourceBooks.some(function (sb) { return sb.id === b.id; })) {
+            hit.sourceBooks.push({ id: b.id, name: b.name });
+          }
+          return;
+        }
         var p = t.prescreen[w.id] || null;
         var knownBefore = isScreenedKnown(t.studentId, w.id);
         var conflict = openTaskOfWord(t.studentId, w.id, t.id);
-        out.push({
+        hit = {
           id: w.id, en: w.en, ph: w.ph, mean: w.mean, pos: w.pos, audio: w.audio,
           wordbookId: b.id, wordbookName: b.name,
+          sourceBooks: [{ id: b.id, name: b.name }],
           screened: p,
           status: p ? (p.known ? SCREEN.KNOWN : SCREEN.UNKNOWN)
             : knownBefore ? SCREEN.KNOWN : SCREEN.NONE,
           knownBefore: knownBefore && !p,
           excluded: knownBefore && !p,          // 历史已初筛认识：本次直接排除，不再重复筛
           conflictTaskId: conflict ? conflict.id : ''
-        });
+        };
+        out.push(hit);
+        seen[w.id] = hit;
       });
     });
     return out;
@@ -3511,6 +3560,7 @@
    */
   function prescreenAnswer(taskId, wordId, known, opt) {
     opt = opt || {};
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
     if (t.phase !== PHASE.PRESCREEN) {
@@ -3582,6 +3632,7 @@
    */
   function finishPrescreen(taskId, opt) {
     opt = opt || {};
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
     if (t.phase !== PHASE.PRESCREEN) {
@@ -3697,7 +3748,8 @@
         return {
           id: id, step: d ? d.displayStep : 0,
           stepLabel: DISPLAY_LABEL[d ? d.displayStep : 0],
-          completed: !!(d && d.cycleCompleted)
+          completed: !!(d && d.cycleCompleted),
+          needsReinforce: !!(d && d.needsReinforce)
         };
       });
       var done = words.filter(function (w) { return w.completed; }).length;
@@ -3731,6 +3783,7 @@
    */
   function trainDisplayTap(taskId, wordId, opt) {
     opt = opt || {};
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
     if (isDone(t.status)) throw bizError('TASK_DONE', '任务已提交，不能再修改展示进度');
@@ -3773,6 +3826,7 @@
 
   /** 切换当前组：向前只能一组一组走，且当前组必须 5 个单词全部完成展示 */
   function setTrainGroup(taskId, index) {
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
     var st = displayStat(taskId);
@@ -3878,6 +3932,7 @@
    * 校验：任务处于「进行中 + 强化训练」、单词属于本次队列、同任务同词只能一条首次记录
    */
   function trainJudge(taskId, wordId, result, mode, groupIndex, courseId) {
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
     if (isDone(t.status)) fail('任务已提交，不能修改判断结果');
@@ -3916,6 +3971,7 @@
    * 校验：必须已提交过首次判断；必须填写原因；已提交任务禁止修改
    */
   function trainCorrect(taskId, wordId, result, note, groupIndex, courseId) {
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
     if (isDone(t.status)) fail('任务已提交，不能修改判断结果');
@@ -3957,6 +4013,7 @@
   }
 
   function setTaskPos(taskId, patch) {
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) return null;
     Object.keys(patch).forEach(function (k) { t[k] = patch[k]; });
@@ -3966,6 +4023,7 @@
 
   /** 暂停 / 保存退出：状态不变，仅记录暂停时间，可恢复 */
   function pauseTask(taskId) {
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) return null;
     t.pausedAt = stamp();
@@ -3975,6 +4033,7 @@
   }
 
   function resumeTask(taskId) {
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) return null;
     if (isDone(t.status)) fail('任务已提交，不能恢复');
@@ -3993,6 +4052,7 @@
    * 已产生的记录保留，未完成单词仍为待训练，剩余数量落到 remainWordIds。
    */
   function endTask(taskId, reason, note) {
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
     if (isDone(t.status)) fail('任务已提交，不能再改为中断');
@@ -4016,6 +4076,7 @@
   }
 
   function cancelTask(taskId) {
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
     if (isDone(t.status)) fail('任务已提交，不能取消');
@@ -4028,6 +4089,7 @@
 
   /** 进入最后一轮复习：必须所有队列单词都完成强化训练判断 */
   function toFinalStage(taskId) {
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
     if (t.status === STATUS.INTERRUPTED) return { ok: false, reason: '任务已中断，请先恢复训练', missing: [] };
@@ -4056,6 +4118,7 @@
    * 校验：阶段正确、单词属于本次队列、同词不可重复首次判断
    */
   function finalJudge(taskId, wordId, result, courseId) {
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
     if (t.status === STATUS.INTERRUPTED) fail('任务已中断，请先恢复训练后再操作');
@@ -4065,8 +4128,17 @@
     if ((t.queueWordIds || []).indexOf(wordId) < 0) fail('该单词不属于本次训练队列');
     if (!result || ['yes', 'no', 'mid'].indexOf(result) < 0) fail('判断结果不合法');
 
+    /* 提交前允许重判：尚未正式提交（未 DONE）时，直接以本次选择为最终结果，不追加修正记录。
+       提交后的纠错走 finalCorrect（保留原始记录 + 记录原因/操作人）。 */
     if (t.finalResults[wordId]) {
-      fail('该单词已完成最后复习判断，如需修改请使用「修正」');
+      var _old = t.finalResults[wordId];
+      if (_old.result === result) return t;
+      t.finalResults[wordId] = {
+        result: result, at: stamp(), correctedFrom: _old.result, corrections: (_old.corrections || 0) + 1,
+        courseId: courseId || ''
+      };
+      save();
+      return t;
     }
 
     // 最后一轮只能处理已完成强化训练的词（展示流看展示循环，历史任务看判断记录）
@@ -4084,6 +4156,7 @@
 
   /** 最后一轮复习修正：必填原因，保留原值 */
   function finalCorrect(taskId, wordId, result, note, courseId) {
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
     if (isDone(t.status)) fail('任务已提交，不能修改判断结果');
@@ -4845,8 +4918,283 @@
    * @param {string} taskId
    * @param {{joinLeitner:boolean, joinPlan21:boolean, joinGreen:boolean, by?:string}} opt
    */
+  /** 生成训练会话级报告：统计与掌握率全部来自本次最终检测（finalResults），不来自点击/历史。
+   *  幂等：task.reportId 回指，一个训练任务最多一份报告；重复生成返回既有报告。 */
+  function generateTrainingReport(taskId) {
+    assertTeachingAccess();
+    var t = trainTask(taskId);
+    if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    if (t.status !== STATUS.DONE) throw bizError('TASK_NOT_DONE', '训练任务尚未完成，不能生成报告');
+    if (t.reportId) {
+      var ex = db.trainingReports.filter(function (r) { return r.id === t.reportId; })[0];
+      if (ex) return ex;
+    }
+    var total = (t.queueWordIds || []).length;
+    var mastered = 0, needs = 0, notMastered = 0;
+    var words = (t.queueWordIds || []).map(function (id) {
+      var fr = t.finalResults[id] || {};
+      var m = mapResult(fr.result);
+      if (m === MASTERY.MASTERED) mastered++;
+      else if (m === MASTERY.NEEDS_PRACTICE) needs++;
+      else if (m === MASTERY.NOT_MASTERED) notMastered++;
+      var w = word(id);
+      return {
+        wordId: id, en: w ? w.en : id, ph: w ? w.ph : '', mean: w ? w.mean : [],
+        sourceBookIds: wordbookIdsOf(id), sourceBookNames: wordbookNamesOf(id),
+        finalResult: fr.result || '', mastery: m, masteryLabel: MASTERY_LABEL[m] || '',
+        teacherNote: fr.note || '', enteredReview: (m === MASTERY.NOT_MASTERED || m === MASTERY.NEEDS_PRACTICE)
+      };
+    });
+    var rep = {
+      id: 'TRPT' + seq('TRPT', 4),
+      taskId: taskId, studentId: t.studentId, teacherId: t.teacherId,
+      sessionDate: (t.finishedAt || TODAY).slice(0, 10),
+      sourceWordbookIds: (t.wordbookIds || []).slice(),
+      trainedCount: total,
+      masteredCount: mastered, needsPracticeCount: needs, notMasteredCount: notMastered,
+      masteredRate: total ? Math.round(mastered / total * 10000) / 100 : 0,
+      words: words,
+      teacherNote: t.reportNote || { overall: '', performance: '', problems: '', nextAdvice: '' },
+      createdAt: stamp(), updatedAt: stamp()
+    };
+    db.trainingReports.push(rep);
+    t.reportId = rep.id;
+    save();
+    return rep;
+  }
+
+  /* ================= 统一复习计划（第五阶段业务对象） =================
+     一个 (studentId, wordId) 同一时刻只允许一条有效计划（pending/in_progress）；
+     训练检测后待加强/未掌握才入计划，掌握不进入常规复习；历史计划版本化归档不删除。 */
+  function reviewStrategyOf(mastery) {
+    var c = (db.config && db.config.reviewStrategy) || {};
+    var interval = (c.interval) || {};
+    var map = { not_mastered: 1, needs_practice: 3, mastered: 7 };
+    return {
+      intervalDays: interval[mastery] ? Number(interval[mastery]) : map[mastery],
+      maxStage: c.maxStage || 5,
+      multiplier: typeof c.multiplier === 'number' ? Number(c.multiplier) : 1.5
+    };
+  }
+  function planStartDate(mastery) { return addDays(TODAY, reviewStrategyOf(mastery).intervalDays); }
+  function activeReviewPlanOf(studentId, wordId) {
+    return db.reviewPlans.filter(function (p) {
+      return p.studentId === studentId && p.wordId === wordId &&
+        (p.status === 'pending' || p.status === 'in_progress');
+    }).sort(function (a, b) { return (a.updatedAt || '') < (b.updatedAt || '') ? 1 : -1; })[0] || null;
+  }
+  /** 训练检测完成后为待加强 / 未掌握单词建立（或版本化）统一复习计划；掌握单词不入常规复习。
+   *  幂等：task.reviewPlanBuilt 回指，同一训练任务只建一次计划（防重复）；新训练再次判定时按新版本迭代。 */
+  function createReviewPlansFromTraining(taskId) {
+    assertTeachingAccess();
+    var t = trainTask(taskId);
+    if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    if (t.status !== STATUS.DONE) throw bizError('TASK_NOT_DONE', '训练任务尚未完成，不能生成复习计划');
+    if (t.reviewPlanBuilt) {
+      return db.reviewPlans.filter(function (p) { return p.sourceTaskId === taskId; });
+    }
+    var joins = t.joins || {};
+    // 策略落点：该词是否随本次训练进入莱特纳/21 天体系（作为复习策略）
+    function planRefFor(id) {
+      if ((joins.leitner || []).indexOf(id) >= 0) return { type: 'leitner', id: '' };
+      if ((joins.plan21 || []).indexOf(id) >= 0) {
+        return { type: 'plan21', id: (joins.planIds || [])[0] || '' };
+      }
+      return { type: 'unified', id: '' };
+    }
+    var made = [];
+    (t.queueWordIds || []).forEach(function (id) {
+      var fr = t.finalResults[id] || {};
+      var m = mapResult(fr.result);
+      if (m !== MASTERY.NOT_MASTERED && m !== MASTERY.NEEDS_PRACTICE) return;
+      var pid = 'RVP' + seq('RVP', 4);
+      var old = activeReviewPlanOf(t.studentId, id);
+      if (old) { old.status = 'removed'; old.archivedAt = stamp(); old.supersededBy = pid; }
+      var p = {
+        id: pid, studentId: t.studentId, wordId: id,
+        sourceTrainingSessionId: taskId, sourceTaskId: taskId,
+        status: 'in_progress', strategy: 'unified', currentStage: 1,
+        nextReviewAt: planStartDate(m), lastReviewAt: null,
+        lastResult: fr.result || '', mastery: m,
+        planRef: planRefFor(id),
+        createdAt: stamp(), updatedAt: stamp()
+      };
+      db.reviewPlans.push(p);
+      made.push(p);
+    });
+    t.reviewPlanBuilt = true;
+    save();
+    return made;
+  }
+
+  /* ---- 复习任务列表 / 发起复习 / 复习记录 ---- */
+  function dueReviewWords(studentId) {
+    return db.reviewPlans.filter(function (p) {
+      return p.studentId === studentId && (p.status === 'pending' || p.status === 'in_progress') &&
+        p.nextReviewAt && p.nextReviewAt <= TODAY;
+    }).sort(function (a, b) { return (a.nextReviewAt || '') < (b.nextReviewAt || '') ? -1 : 1; });
+  }
+  function reviewPlansOf(studentId, wordId) {
+    return db.reviewPlans.filter(function (p) {
+      return p.studentId === studentId && (!wordId || p.wordId === wordId);
+    }).sort(function (a, b) { return (a.createdAt || '') < (b.createdAt || '') ? 1 : -1; });
+  }
+  function activeReviewPlan(studentId, wordId) { return activeReviewPlanOf(studentId, wordId); }
+  function reviewPlanStat(studentId) {
+    var list = db.reviewPlans.filter(function (p) { return p.studentId === studentId; });
+    var active = list.filter(function (p) { return p.status === 'pending' || p.status === 'in_progress'; });
+    return {
+      total: list.length, active: active.length,
+      due: active.filter(function (p) { return p.nextReviewAt && p.nextReviewAt <= TODAY; }).length,
+      mastered: active.filter(function (p) { return p.lastResult === 'yes' || p.mastery === 'mastered'; }).length
+    };
+  }
+  /** 复习动作：追加一条复习记录 + 按结果动态调整计划的下次到期（间隔走策略，不硬编码）。 */
+  function recordReview(opt) {
+    assertTeachingAccess();
+    opt = opt || {};
+    if (!opt.studentId || !opt.wordId) throw bizError('REQUIRED', '缺少学员或单词');
+    var m = opt.result && [MASTERY.MASTERED, MASTERY.NEEDS_PRACTICE, MASTERY.NOT_MASTERED].indexOf(opt.result) >= 0
+      ? opt.result : mapResult(opt.resultRaw);
+    if (!m) throw bizError('BAD_RESULT', '复习结果不合法');
+    var plan = activeReviewPlanOf(opt.studentId, opt.wordId);
+    var strategy = reviewStrategyOf(m);
+    var rec = {
+      id: 'RVR' + seq('RVR', 4), studentId: opt.studentId, wordId: opt.wordId,
+      planId: plan ? plan.id : '', sourceTaskId: opt.sourceTaskId || '',
+      reviewedAt: stamp(), method: opt.method || 'unified',
+      result: m, mastery: m,
+      teacherId: opt.teacherId || (session.role === 'teacher' ? sessionTeacherId() : ''),
+      nextReviewAt: '', note: opt.note || ''
+    };
+    if (plan) {
+      plan.lastReviewAt = rec.reviewedAt;
+      plan.lastResult = m === MASTERY.MASTERED ? 'yes' : m === MASTERY.NEEDS_PRACTICE ? 'mid' : 'no';
+      plan.mastery = m;
+      plan.status = 'pending';
+      if (m === MASTERY.MASTERED) plan.currentStage = Math.min((plan.currentStage || 1) + 1, strategy.maxStage);
+      else plan.currentStage = 1;
+      var gap = strategy.intervalDays * (m === MASTERY.MASTERED ? plan.currentStage : 1);
+      plan.nextReviewAt = addDays(TODAY, gap);
+      plan.updatedAt = stamp();
+      rec.nextReviewAt = plan.nextReviewAt;
+    } else {
+      rec.nextReviewAt = addDays(TODAY, strategy.intervalDays);
+    }
+    db.reviewRecords.push(rec);
+    save();
+    return rec;
+  }
+  function reviewRecordsOf(studentId, wordId) {
+    return db.reviewRecords.filter(function (r) {
+      return r.studentId === studentId && (!wordId || r.wordId === wordId);
+    }).sort(function (a, b) { return (a.reviewedAt || '') < (b.reviewedAt || '') ? 1 : -1; });
+  }
+
+  /** 学员某词的当前掌握状态（训练内容确认清单 / 训练工作台 / 复习标注共用）。
+   *  仅作派生投影，不写历史；优先取统一复习计划的 mastery，其次取 wordState 兜底。 */
+  function wordMastery(studentId, wordId) {
+    var plan = activeReviewPlanOf(studentId, wordId);
+    if (plan) {
+      var due = !!(plan.nextReviewAt && plan.nextReviewAt <= TODAY);
+      if (plan.mastery === MASTERY.NOT_MASTERED) return { key: 'not_mastered', label: '未掌握', dueReview: due };
+      if (plan.mastery === MASTERY.NEEDS_PRACTICE) return { key: 'needs_practice', label: '待加强', dueReview: due };
+      if (plan.mastery === MASTERY.MASTERED) return { key: 'mastered', label: '已掌握', dueReview: due };
+      if (due) return { key: 'review_due', label: '待复习(到期)', dueReview: true };
+      return { key: 'review', label: '复习中', dueReview: false };
+    }
+    var st = wordState(studentId, wordId);
+    var state = st ? st.state : '未训练';
+    if (state === '本次通过') return { key: 'mastered', label: '已掌握', dueReview: false };
+    if (state === '初筛认识') return { key: 'mastered', label: '已有印象', dueReview: false };
+    if (state === '待复习' || state === '暂不确定') return { key: 'needs_practice', label: '待加强', dueReview: false };
+    if (state === '待最后复习' || state === '待强化训练') return { key: 'not_mastered', label: '未掌握(训练中)', dueReview: false };
+    return { key: 'not_trained', label: '未训练', dueReview: false };
+  }
+  /** 训练阶段标记「需要强化」（持久化到 trainDisplays.needsReinforce，不影响掌握判断）。 */
+  function markTrainReinforce(taskId, wordId, flag) {
+    assertTeachingAccess();
+    assertMyTask(taskId);
+    var t = trainTask(taskId);
+    if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    if ((t.queueWordIds || []).indexOf(wordId) < 0) throw bizError('WORD_NOT_IN_QUEUE', '该单词不属于本次训练队列');
+    var d = trainDisplayOf(taskId, wordId);
+    if (!d) {
+      d = {
+        id: 'TDP' + seq('TDP', 4), taskId: taskId, studentId: t.studentId, wordId: wordId,
+        groupIndex: Math.floor((t.queueWordIds || []).indexOf(wordId) / (t.groupSize || TRAIN_GROUP_SIZE)),
+        displayStep: 0, cycleCompleted: false, taps: 0,
+        updatedAt: stamp(), completedAt: null, teacherId: t.teacherId || ''
+      };
+      db.trainDisplays.push(d);
+    }
+    d.needsReinforce = flag ? true : false;
+    d.updatedAt = stamp();
+    save();
+    return d;
+  }
+
+  /** 训练报告读取（学员维，可按任务过滤；含逐词明细与掌握率） */
+  function trainingReportsOf(studentId, taskId) {
+    return db.trainingReports.filter(function (r) {
+      return r.studentId === studentId && (!taskId || r.taskId === taskId);
+    }).sort(function (a, b) { return (a.createdAt || '') < (b.createdAt || '') ? 1 : -1; });
+  }
+
+  /** 家长只读：训练会话级报告投影（assertParentChild 隔离；只给业务字段，不给可写/内部字段） */
+  function parentTrainingReports(parentId, studentId) {
+    var pid = assertParentChild(parentId, studentId);
+    return db.trainingReports.filter(function (r) { return r.studentId === studentId; })
+      .sort(function (a, b) { return (a.createdAt || '') < (b.createdAt || '') ? 1 : -1; })
+      .map(function (r) {
+        return {
+          id: r.id, taskId: r.taskId, sessionDate: r.sessionDate, teacherId: r.teacherId,
+          trainedCount: r.trainedCount, mastered: r.masteredCount,
+          needsPractice: r.needsPracticeCount, notMastered: r.notMasteredCount,
+          masteredRate: r.masteredRate,
+          words: (r.words || []).map(function (w) {
+            return {
+              wordId: w.wordId, en: w.en, ph: w.ph || '', mean: w.mean || [],
+              finalResult: w.finalResult, mastery: w.mastery || '',
+              masteryLabel: w.masteryLabel || '', enteredReview: !!w.enteredReview
+            };
+          }),
+          teacherOverall: (r.teacherNote && r.teacherNote.overall) || ''
+        };
+      });
+  }
+  /** 家长只读：学员当前有效复习计划投影（含每个词的到期与已完成复习次数）。 */
+  function parentReviewPlan(parentId, studentId, wordId) {
+    var pid = assertParentChild(parentId, studentId);
+    return db.reviewPlans.filter(function (p) {
+      return p.studentId === studentId && (!wordId || p.wordId === wordId) &&
+        (p.status === 'pending' || p.status === 'in_progress');
+    }).map(function (p) {
+      var w = word(p.wordId);
+      return {
+        wordId: p.wordId, en: w ? w.en : p.wordId, ph: w ? w.ph : '',
+        mastery: p.mastery || '', nextReviewAt: p.nextReviewAt,
+        due: !!(p.nextReviewAt && p.nextReviewAt <= TODAY),
+        sourceTrainingSessionId: p.sourceTrainingSessionId,
+        recordCount: db.reviewRecords.filter(function (r) {
+          return r.studentId === studentId && r.wordId === p.wordId;
+        }).length
+      };
+    });
+  }
+
+  /** 教学写入口角色守卫：代理/家长不能直接通过 Store 修改训练结果、报告、复习计划与复习记录。
+   *  教师需再经 assertMyTask 归属校验；admin/staff/ops 保留管理能力。 */
+  function assertTeachingAccess() {
+    if (session.role === 'parent' || session.role === 'agent') {
+      throw bizError('FORBIDDEN', '当前身份不能修改教学训练结果');
+    }
+  }
+
   function completeTask(taskId, opt) {
     opt = opt || {};
+    assertTeachingAccess();
+    assertMyTask(taskId);
     var t = trainTask(taskId);
     if (!t) fail('训练任务不存在');
     if (isDone(t.status)) {
@@ -4887,6 +5235,10 @@
     t.finishedAt = stamp();
 
     var warnings = [];
+
+    /* 统一副产物：训练会话报告 + 复习计划（幂等，均已用 task 回指防重复；生成失败不阻塞完成） */
+    try { generateTrainingReport(taskId); } catch (e) { warnings.push('训练报告生成失败：' + e.message); }
+    try { createReviewPlansFromTraining(taskId); } catch (e) { warnings.push('复习计划生成失败：' + e.message); }
 
     /* 空复习：本次全部通过，不创建任何空计划 / 空任务 / 含 undefined 的清单 */
     if (!need.length) {
@@ -7974,6 +8326,20 @@
     if (!rel || rel.teacherId !== self) {
       throw bizError('FORBIDDEN', '该学员不在你当前负责的学员名单中');
     }
+  }
+  /** 训练任务归属校验：教师只能操作自己创建的任务。
+   *  依据任务创建时的 teacherId 绑定，而非前端传入的学生/教师参数；
+   *  学员发生教师转移时，历史任务不自动转移给新教师（原教师仍可恢复/完成）。
+   *  非教师角色（admin/staff/ops）放行，保障管理端必要能力。 */
+  function assertMyTask(taskId) {
+    if (session.role !== 'teacher') return;
+    var t = trainTask(taskId);
+    if (!t) throw bizError('TASK_NOT_FOUND', '训练任务不存在');
+    var self = assertSelfTeacher();
+    if ((t.teacherId || '') !== self) {
+      throw bizError('FORBIDDEN', '该训练任务不属于当前教师，无法操作');
+    }
+    return t;
   }
 
   /* ---------- 新学员建档（发布需求的前置步骤，不重复建同一个学员） ---------- */
@@ -11739,6 +12105,23 @@
     save();
     return clone(q);
   }
+  /** 教务端全量咨询列表：合并家长/孩子姓名，同一权限校验（parent.view），只读投影 */
+  function allParentInquiries() {
+    assertCan('parent.view');
+    return db.parentInquiries.slice().sort(function (a, b) {
+      return a.createdAt < b.createdAt ? 1 : -1;
+    }).map(function (q) {
+      var p = parent(q.parentId);
+      var s = q.studentId ? student(q.studentId) : null;
+      return {
+        id: q.id, parentId: q.parentId, parentName: (p && p.name) || q.parentId,
+        studentId: q.studentId, studentName: (s && s.name) || '',
+        type: q.type, content: q.content, contact: q.contact,
+        status: q.status, assignedStaffId: q.assignedStaffId || '',
+        reply: q.reply || '', createdAt: q.createdAt, updatedAt: q.updatedAt, resolvedAt: q.resolvedAt || ''
+      };
+    });
+  }
 
   /* ---------------- 佣金：本轮只占位预估，不做结算 ---------------- */
   function agentCommissionPreview(agentId, ordersInput) {
@@ -12398,6 +12781,7 @@
     return row;
   }
   function auditRows(filters) {
+    assertCan('audit.view');
     filters = filters || {};
     var list = db.auditLogs.slice();
     if (filters.module) list = list.filter(function (x) { return x.module === filters.module; });
@@ -12414,9 +12798,11 @@
     return list.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
   }
   function auditOf(auditId) {
+    assertCan('audit.view');
     return db.auditLogs.filter(function (x) { return x.id === auditId; })[0] || null;
   }
   function auditStat() {
+    assertCan('audit.view');
     var rows = db.auditLogs;
     return {
       total: rows.length,
@@ -12958,8 +13344,18 @@
     setParentCurrentChild: setParentCurrentChild, parentCurrentChild: parentCurrentChild,
     createParentInquiry: createParentInquiry, parentInquiries: parentInquiries,
     parentInquiryDetail: parentInquiryDetail, handleParentInquiry: handleParentInquiry,
+    allParentInquiries: allParentInquiries,
     agentCommissionPreview: agentCommissionPreview, commissionSummary: commissionSummary,
     migrationInfo: migrationInfo,
+    MASTERY: MASTERY, MASTERY_LABEL: MASTERY_LABEL, mapResult: mapResult, mapMasteryToResult: mapMasteryToResult,
+    generateTrainingReport: generateTrainingReport,
+    createReviewPlansFromTraining: createReviewPlansFromTraining,
+    dueReviewWords: dueReviewWords, reviewPlansOf: reviewPlansOf,
+    activeReviewPlan: activeReviewPlan, reviewPlanStat: reviewPlanStat,
+    recordReview: recordReview, reviewRecordsOf: reviewRecordsOf,
+    wordMastery: wordMastery, markTrainReinforce: markTrainReinforce,
+    trainingReportsOf: trainingReportsOf,
+    parentTrainingReports: parentTrainingReports, parentReviewPlan: parentReviewPlan,
     LEAD_STATUS: LEAD_STATUS, LEAD: LEAD, LEAD_NEXT: LEAD_NEXT, LEAD_TONE: LEAD_TONE,
     LEAD_LEVELS: LEAD_LEVELS, LEAD_CHANNELS: LEAD_CHANNELS,
     LESSON_ALERT_THRESHOLD: LESSON_ALERT_THRESHOLD, EXPIRE_ALERT_DAYS: EXPIRE_ALERT_DAYS,

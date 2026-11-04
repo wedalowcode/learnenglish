@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>单词训练</title>
 <link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .fjudge { border:1px solid var(--border); background:#fff; color:var(--text-2); font-size:12px;
+    padding:5px 10px; border-radius:6px; cursor:pointer; margin-right:4px; }
+  .fjudge:hover { border-color:var(--primary); color:var(--primary-dark); }
+  .fjudge.on-yes { background:#ecfdf5; border-color:#10b981; color:#047857; font-weight:600; }
+  .fjudge.on-mid { background:#fffbeb; border-color:#f59e0b; color:#b45309; font-weight:600; }
+  .fjudge.on-no { background:#fef2f2; border-color:#ef4444; color:#b91c1c; font-weight:600; }
+</style>
 </head>
 <body class="focus-page">
 
@@ -162,6 +170,9 @@ function boot() {
   else if (task.status === '已中断') view = 'interrupted';
   else if (task.phase === '最后复习') {
     view = Object.keys(task.finalResults).length >= ids.length ? 'finalDone' : 'final';
+  } else if (task.phase === '强化训练') {
+    /* 展示循环任务走列表式展示页；历史逐词判断任务保留旧卡片流程 */
+    view = task.displayFlow ? 'display' : (allDone(gi) ? 'groupDone' : 'group');
   } else view = allDone(gi) ? 'groupDone' : 'group';
 
   render();
@@ -187,6 +198,12 @@ function updateTop() {
     sub.textContent = `任务 ${task.id} · 本次队列 ${ids.length} 个单词 · 不直接显示答案`;
     document.getElementById('topProgLabel').textContent = '最后复习进度';
     document.getElementById('topProg').textContent = finalDone + ' / ' + ids.length;
+  } else if (view === 'display') {
+    const st2 = Store.displayStat(task.id) || { total: 0, done: 0, groupIndex: 0, groupCount: 0 };
+    document.getElementById('topTitle').textContent = '强化训练 · ' + Store.student(task.studentId).name;
+    sub.textContent = `任务 ${task.id} · 第 ${st2.groupIndex + 1} / ${st2.groupCount} 组 · 每组最多 5 个单词`;
+    document.getElementById('topProgLabel').textContent = '强化展示进度';
+    document.getElementById('topProg').textContent = st2.done + ' / ' + st2.total;
   } else if (view === 'summary') {
     document.getElementById('topTitle').textContent = '训练已提交 · ' + Store.student(task.studentId).name;
     sub.textContent = `任务 ${task.id} · 已完成`;
@@ -210,7 +227,8 @@ function dotsHtml() {
 
 function render() {
   updateTop();
-  if (view === 'group') renderGroup();
+  if (view === 'display') renderDisplay();
+  else if (view === 'group') renderGroup();
   else if (view === 'groupDone') renderGroupDone();
   else if (view === 'final') renderFinal();
   else if (view === 'finalDone') renderFinalDone();
@@ -218,7 +236,109 @@ function render() {
   else renderSummary();
 }
 
-/* ---------- 分组训练 ---------- */
+/* ---------- 强化训练：列表式展示循环 ----------
+   每组最多5词，每词独立走 displayStep 0→1→2→3（英文→中文→隐藏→本轮完成）。
+   进度完全来自 Store.displayStat() 持久化的 trainDisplays，
+   不在此维护与 Store 不一致的副本，也不调用旧版 trainJudge。 */
+function renderDisplay() {
+  let st;
+  try { st = Store.displayStat(task.id); }
+  catch (e) { Proto.toast(e.message, 'err'); return; }
+  if (!st || !st.groupCount) {
+    el().innerHTML = `<div class="card"><div class="card-body"><div class="small muted">本次任务还没有训练队列。</div></div></div>`;
+    return;
+  }
+  const g = st.currentGroup || { words: [], total: 0, done: 0, allDone: false };
+  const lastGroup = st.groupIndex === st.groupCount - 1;
+
+  const dots = Array.from({ length: st.groupCount }, (_, i) =>
+    `<span class="gdot ${i < st.groupIndex ? 'done' : ''} ${i === st.groupIndex ? 'cur' : ''}">${i + 1}</span>`).join('');
+
+  const rows = g.words.map(wt => {
+    const w = Store.word(wt.id);
+    const s = wt.step || 0;
+    const en = (s >= 1 && s <= 2) ? (w ? w.en : wt.id) : '';
+    const ph = (s >= 1 && s <= 2) ? (w ? w.ph : '') : '';
+    const cn = (s === 2) ? (w ? w.mean.map(m => `${m.pos} ${m.cn}`).join('；') : '') : '';
+    const status = s >= 3
+      ? '<span class="tag tag-green nodot">已完成</span>'
+      : `<span class="tag tag-slate nodot">${['未开始', '显示英文', '显示中文'][s] || '未开始'}</span>`;
+    const btn = s >= 3 ? ''
+      : `<button class="btn btn-sm btn-primary" onclick="tap('${wt.id}')">${['显示英文', '显示中文', '隐藏'][s]}</button>`;
+    return `<tr>
+      <td style="font-weight:600">${en || '<span class="muted">———</span>'}</td>
+      <td style="color:#475569;font-family:'Times New Roman',serif">${ph || '—'}</td>
+      <td style="color:#475569">${cn || (s === 3 ? '' : '<span class="muted">———</span>')}</td>
+      <td class="nowrap">
+        ${btn}
+        ${s >= 3 ? '' : `<button class="btn btn-sm" style="margin-left:4px" title="播放发音" onclick="playWord(this,'${wt.id}')">🔊</button>
+        <button class="btn btn-sm ${wt.needsReinforce ? 'btn-danger' : ''}" style="margin-left:4px" onclick="reinforce('${wt.id}')">${wt.needsReinforce ? '已标强化' : '标强化'}</button>`}
+      </td>
+      <td>${status}</td>
+    </tr>`;
+  }).join('');
+
+  el().innerHTML = `
+    <div class="flex jcb aic mb12">
+      <div class="group-dots">${dots}</div>
+      <div class="small muted">第 ${st.groupIndex + 1} / ${st.groupCount} 组 · 已完成 ${st.done} / ${st.total} 个单词</div>
+    </div>
+    <div class="alert alert-info mb12"><span class="ico">i</span>
+      <div>强化训练为<b>带读展示</b>：每个单词独立完成「显示英文 → 显示中文 → 隐藏」三步即完成本轮，
+        单次完成不代表掌握，最终掌握由「最后一轮复习」判断。</div></div>
+    <div class="card" style="padding:0">
+      <div class="table-wrap" style="margin:0">
+        <table class="table compact">
+          <thead><tr><th>单词</th><th>音标</th><th>中文释义</th><th style="width:120px">展示操作</th><th style="width:110px">状态</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div class="flex jcb aic mt12" style="padding:12px 14px">
+        <button class="btn btn-ghost btn-sm" onclick="Proto.openModal('endModal')">结束本次训练</button>
+        ${st.currentComplete
+          ? (lastGroup
+              ? `<button class="btn btn-primary btn-lg" onclick="goFinal()">全部单词展示完成 → 进入最后一轮复习</button>`
+              : `<button class="btn btn-primary btn-lg" onclick="nextDisplayGroup(${st.groupIndex + 1})">第 ${st.groupIndex + 2} 组 →</button>`)
+          : '<span class="small muted">完成本组全部单词后可进入下一组</span>'}
+      </div>
+    </div>`;
+}
+
+function tap(wordId) {
+  try { Store.trainDisplayTap(task.id, wordId); }
+  catch (e) { Proto.toast(e.message, 'err'); }
+  render();
+}
+
+function playWord(btn, wordId) {
+  const w = word(wordId);
+  if (w) Proto.playAudio(btn, w.en, 'en-US');
+}
+function reinforce(wordId) {
+  const d = Store.trainDisplayOf(task.id, wordId);
+  const next = !(d && d.needsReinforce);
+  try { Store.markTrainReinforce(task.id, wordId, next); }
+  catch (e) { Proto.toast(e.message, 'err'); return; }
+  Proto.toast(next ? '已标记需要强化（可反复带读）' : '已取消强化标记', next ? 'ok' : 'warn');
+  render();
+}
+
+function nextDisplayGroup(index) {
+  try { Store.setTrainGroup(task.id, index); }
+  catch (e) { Proto.toast(e.message, 'err'); return; }
+  render();
+}
+
+function goFinal() {
+  const r = Store.toFinalStage(task.id);
+  if (!r.ok) { Proto.toast(r.reason || '还有单词未完成展示', 'err'); render(); return; }
+  task = Store.trainTask(task.id);
+  view = 'final';
+  Proto.toast('全部单词展示完成，进入最后一轮复习', 'ok');
+  render();
+}
+
+/* ---------- 分组训练（历史逐词判断任务，旧流程保留） ---------- */
 function renderGroup() {
   const g = curGroup();
   const id = g[wi];
@@ -392,52 +512,56 @@ function nextGroup() {
   render();
 }
 
-/* ---------- 最后一轮复习 ---------- */
+/* ---------- 最后一轮复习（列表式逐行判断） ---------- */
+const FR_TXT = { yes: '掌握', mid: '待加强', no: '未掌握' };
+const FR_TONE = { yes: 'green', mid: 'amber', no: 'red' };
 function renderFinal() {
-  const id = ids[task.finalIndex || 0] || ids[0];
-  const w = word(id);
-  const cur = task.finalResults[id];
+  const judgedCount = ids.filter(id => task.finalResults[id]).length;
+  const allJudged = judgedCount === ids.length;
+
+  const rows = ids.map(id => {
+    const w = word(id);
+    const cur = task.finalResults[id];
+    const picked = cur ? cur.result : '';
+    const btn = res => `<button class="fjudge ${picked === res ? 'on-' + res : ''}"
+      onclick="judgeFinalList('${id}','${res}')">${FR_TXT[res]}</button>`;
+    const status = cur
+      ? `<span class="tag tag-${FR_TONE[cur.result]} nodot">${FR_TXT[cur.result]}${cur.correctedFrom ? ' · 已改' : ''}</span>`
+      : '<span class="tag tag-slate nodot">待判断</span>';
+    return `<tr>
+      <td style="font-weight:600">${w ? w.en : id}</td>
+      <td style="color:#475569;font-family:'Times New Roman',serif">${w ? w.ph : ''}</td>
+      <td style="color:#475569">${w ? meanHtml(w) : ''}</td>
+      <td class="nowrap">${btn('yes')}${btn('mid')}${btn('no')}</td>
+      <td>${status}</td>
+    </tr>`;
+  }).join('');
 
   el().innerHTML = `
     <div class="alert alert-warn mb16"><span class="ico">!</span>
-      <div><b>最后一轮复习：</b>全部 ${groups.length} 组已完成，覆盖 ${ids.length} 个队列单词（初筛认识的单词不在其中）。
-        此阶段<b>不直接显示答案</b>，教师观察孩子反应后判断。</div></div>
-
-    <div class="bar mb12"><i style="width:${((task.finalIndex || 0) / ids.length * 100).toFixed(1)}%"></i></div>
-    <div class="flex jcb small muted mb12">
-      <span>复习进度 ${(task.finalIndex || 0) + 1} / ${ids.length}</span>
-      <span>已判断 ${Object.keys(task.finalResults).length} 个</span>
-    </div>
-
-    <div class="word-card">
-      <div class="wc-en">${w.en}</div>
-      <div class="wc-ph">${w.ph}</div>
-      ${revealed ? `<div class="wc-cn">${meanHtml(w)}</div>`
-        : `<div class="wc-cn muted" style="font-size:14px">（中文释义已隐藏，由教师观察孩子反应判断）</div>`}
-      <div class="mt12">
-        <button class="audio-btn" data-label="▶ 播放发音" onclick="Proto.playAudio(this,'${w.en}')">▶ 播放发音</button>
-        ${revealed ? '' : `<button class="btn btn-sm" style="margin-left:8px" onclick="finalReveal()">显示答案</button>`}
+      <div><b>最后一轮复习：</b>覆盖本次强化训练的 ${ids.length} 个队列单词（初筛认识的单词不在其中）。
+        逐行判断<b>掌握 / 待加强 / 未掌握</b>，提交前可随时修改，无需审批；「待加强」「未掌握」按待复习进入后续计划，掌握的不重复安排。</div></div>
+    <div class="card" style="padding:0">
+      <div class="table-wrap" style="margin:0">
+        <table class="table compact">
+          <thead><tr><th>单词</th><th>音标</th><th>中文释义</th><th style="width:228px">教师判断</th><th style="width:110px">状态</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
       </div>
-    </div>
-
-    ${cur ? `<div class="mt12 text-c">
-      <span class="tag tag-${cur.result === 'yes' ? 'green' : cur.result === 'mid' ? 'amber' : 'red'} nodot">
-      本词已判断：${cur.result === 'yes' ? '认识' : cur.result === 'mid' ? '暂不确定' : '不认识'}</span>
-      ${cur.correctedFrom ? `<span class="tag tag-amber nodot" style="margin-left:6px">已修正（原：${cur.correctedFrom === 'yes' ? '认识' : cur.correctedFrom === 'mid' ? '暂不确定' : '不认识'}）</span>` : ''}
-      <div class="mt8"><button class="btn btn-sm" onclick="openFinalFix('${id}')">修正本次判断</button></div>
-    </div>` : ''}
-
-    ${cur ? '' : `<div class="judge-row g3 mt16">
-      <button class="judge no" onclick="finalJudge('no')">不认识 <kbd>1</kbd></button>
-      <button class="judge mid" onclick="finalJudge('mid')">暂不确定 <kbd>2</kbd></button>
-      <button class="judge yes" onclick="finalJudge('yes')">认识 <kbd>3</kbd></button>
-    </div>`}
-
-    <div class="flex jcb mt12">
-      <button class="btn btn-ghost btn-sm" onclick="finalMove(-1)">← 上一个</button>
-      <div class="small muted">「暂不确定」<b>不会</b>被视为掌握；已判断的单词只能修正</div>
-      <button class="btn btn-ghost btn-sm" onclick="finalMove(1)">下一个 →</button>
+      <div class="flex jcb aic mt12" style="padding:12px 14px">
+        <div class="small muted">已判断 <b>${judgedCount} / ${ids.length}</b></div>
+        ${allJudged
+          ? `<button class="btn btn-primary btn-lg" onclick="view='finalDone';render()">确认结果并提交 →</button>`
+          : '<span class="btn btn-primary btn-lg" style="pointer-events:none;opacity:.5">请完成全部单词判断后提交</span>'}
+      </div>
     </div>`;
+}
+
+function judgeFinalList(id, res) {
+  try { Store.finalJudge(task.id, id, res, courseId); }
+  catch (e) { Proto.toast(e.message, 'err'); }
+  task = Store.trainTask(task.id);
+  render();
 }
 
 function finalReveal() { revealed = true; render(); }
@@ -688,6 +812,8 @@ function renderInterrupted() {
 
 function resumeNow() {
   task = Store.resumeTask(task.id);
+  /* 展示循环任务：恢复后由 Store 的 trainDisplays 保留每词步进，直接回到列表视图 */
+  if (task.phase === '强化训练' && task.displayFlow) { view = 'display'; render(); return; }
   const firstMissing = groups.findIndex(g => g.some(id => !task.results[id]));
   gi = firstMissing >= 0 ? firstMissing : groups.length - 1;
   wi = Math.max(curGroup().findIndex(id => !task.results[id]), 0);
