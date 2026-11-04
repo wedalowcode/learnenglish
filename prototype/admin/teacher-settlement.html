@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>教师结算工作台</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">财务管理<span class="sep">/</span>教师结算</div>
+          <h1 class="page-title">教师结算工作台</h1>
+          <div class="page-sub" id="periodLine">—</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn" onclick="exportCsv()">导出结算单</button>
+          <button class="btn btn-primary" onclick="doGenerate()">批量生成结算单</button>
+        </div>
+      </div>
+
+      <div class="grid g4 mb16" id="statCards"></div>
+
+      <div class="card filter">
+        <div class="field"><label>结算周期开始</label><input class="input" type="date" id="fFrom"></div>
+        <div class="field"><label>结算周期结束</label><input class="input" type="date" id="fTo"></div>
+        <div class="field"><label>状态</label>
+          <select class="select" id="fStatus" onchange="render()">
+            <option value="">全部</option><option>待教师确认</option><option>待付款</option>
+            <option>部分付款</option><option>已付款</option>
+          </select></div>
+        <div class="field"><label>教师姓名/编号</label><input class="input" id="fKw" oninput="render()" placeholder="搜索"></div>
+        <div class="filter-actions"><button class="btn" onclick="setCurrentPeriod()">用当前周期</button></div>
+      </div>
+
+      <div class="card mt16">
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>教师编号</th><th>教师</th><th class="right">体验课</th><th class="right">体验课金额</th>
+                <th class="right">正式课</th><th class="right">正式课金额</th><th class="right">调整</th>
+                <th class="right">应付总额</th><th class="right">已确认</th><th class="right">已支付</th><th>状态</th><th style="width:80px">操作</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 <b id="total">0</b> 人</span></div>
+        </div>
+      </div>
+
+      <div id="genResult" class="mt16"></div>
+      <div class="alert alert-info mt16"><span class="ico">i</span>
+        <div>结算单按「教师 + 结算周期」唯一生成；同一教师本期已有结算单时不会重复生成。遗漏课程走补充结算/调整，不覆盖历史。</div></div>
+
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'teacher-settlement' });
+const S = Store;
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function yuan(c) { return (Number(c || 0) / 100).toFixed(2); }
+const STATUS_TONE = { '待教师确认': 'tag-amber', '待付款': 'tag-blue', '部分付款': 'tag-blue', '已付款': 'tag-green', '已取消': 'tag-slate' };
+
+function setCurrentPeriod() {
+  const p = S.currentSettlementPeriod();
+  document.getElementById('fFrom').value = p.periodStart;
+  document.getElementById('fTo').value = p.periodEnd;
+  render();
+}
+
+function filters() {
+  return {
+    periodStart: document.getElementById('fFrom').value,
+    periodEnd: document.getElementById('fTo').value,
+    status: document.getElementById('fStatus').value,
+    kw: document.getElementById('fKw').value.trim()
+  };
+}
+
+function render() {
+  const f = filters();
+  let list, st;
+  try { list = S.settlementList(f); st = S.settlementStat(f); }
+  catch (e) { Proto.toast(e.message, 'err'); return; }
+  document.getElementById('periodLine').textContent = (f.periodStart || f.periodTo || '')
+    ? `结算周期 ${f.periodStart || '—'} ~ ${f.periodEnd || '—'}`
+    : '默认周期：上月 21 日 ~ 本月 20 日（可在用当前周期后查看）';
+
+  document.getElementById('statCards').innerHTML = `
+    <div class="card stat"><div class="stat-label">本期结算教师</div><div class="stat-value">${st.teachers}<small>人</small></div></div>
+    <div class="card stat"><div class="stat-label">本期应付总额</div><div class="stat-value">${yuan(st.totalAmountCents)}</div></div>
+    <div class="card stat"><div class="stat-label">待对账人数</div><div class="stat-value" style="color:var(--warning)">${st.pendingConfirm}</div>
+      <div class="stat-foot">待确认金额 ${yuan(st.pendingConfirmAmountCents)}</div></div>
+    <div class="card stat"><div class="stat-label">待付款金额</div><div class="stat-value" style="color:var(--primary)">${yuan(st.unpaidAmountCents)}</div>
+      <div class="stat-foot">已付 ${yuan(st.paidAmountCents)}</div></div>
+    <div class="card stat"><div class="stat-label">计费异常</div><div class="stat-value" style="color:var(--danger)">${st.exceptionCount}</div>
+      <div class="stat-foot">待结算明细 ${st.pendingFees}</div></div>`;
+
+  document.getElementById('total').textContent = list.length;
+  document.getElementById('rows').innerHTML = list.length ? list.map(s => `
+    <tr>
+      <td class="mono small">${esc(s.teacherCode || s.id)}</td>
+      <td class="strong">${esc(s.teacherName)}</td>
+      <td class="right mono">${s.experienceCount}</td>
+      <td class="right mono">${yuan(s.experienceAmountCents)}</td>
+      <td class="right mono">${s.formalCount}</td>
+      <td class="right mono">${yuan(s.formalAmountCents)}</td>
+      <td class="right mono">${yuan(s.adjustmentAmountCents)}</td>
+      <td class="right mono"><b>${yuan(s.totalAmountCents)}</b></td>
+      <td class="right mono">${yuan(s.confirmedAmountCents)}</td>
+      <td class="right mono">${yuan(s.paidAmountCents)}</td>
+      <td><span class="tag ${STATUS_TONE[s.status] || 'tag-slate'} nodot">${esc(s.status)}</span></td>
+      <td class="ops"><a class="btn-link" href="teacher-settlement-detail.html?id=${s.id}">详情</a></td>
+    </tr>`).join('') : '<tr><td colspan="12" class="empty">当前筛选没有结算单，点「批量生成结算单」</td></tr>';
+}
+
+function doGenerate() {
+  const f = filters();
+  const p = (f.periodStart && f.periodEnd) ? { periodStart: f.periodStart, periodEnd: f.periodEnd } : S.currentSettlementPeriod();
+  Proto.confirmBox('生成教师结算单',
+    `将按周期 <b>${p.periodStart} ~ ${p.periodEnd}</b> 汇总「待结算」课时费明细并生成结算单；已生成过的教师不会重复生成。`,
+    '确认生成', () => {
+      try {
+        const r = S.generateSettlements({ periodStart: p.periodStart, periodEnd: p.periodEnd });
+        document.getElementById('fFrom').value = p.periodStart;
+        document.getElementById('fTo').value = p.periodEnd;
+        document.getElementById('genResult').innerHTML = `<div class="alert alert-success"><span class="ico">✓</span>
+          <div>本次纳入 ${r.feeCount} 条课时费 · 新建结算单 <b>${r.created.length}</b> 张 · 跳过（已有）${r.skipped.length} 张。</div></div>`;
+        Proto.toast('结算单已生成 ' + r.created.length + ' 张', 'ok');
+        render();
+      } catch (e) { Proto.toast(e.message, 'err'); }
+    });
+}
+
+function exportCsv() {
+  const list = S.settlementList(filters());
+  if (!list.length) { Proto.toast('没有可导出的结算单', 'warn'); return; }
+  const head = ['结算单号', '教师', '周期开始', '周期结束', '体验课数', '体验课金额', '正式课数', '正式课金额', '调整', '应付总额', '已确认', '已支付', '状态'];
+  const lines = list.map(s => [s.id, s.teacherName, s.periodStart, s.periodEnd, s.experienceCount, yuan(s.experienceAmountCents), s.formalCount, yuan(s.formalAmountCents), yuan(s.adjustmentAmountCents), yuan(s.totalAmountCents), yuan(s.confirmedAmountCents), yuan(s.paidAmountCents), s.status].join(','));
+  const csv = '\uFEFF' + head.join(',') + '\n' + lines.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '教师结算单_' + (document.getElementById('fFrom').value || 'all') + '.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  Proto.toast('已导出 CSV', 'ok');
+}
+
+setCurrentPeriod();
+</script>
+</body>
+</html>

@@ -5,6 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>经营概览</title>
 <link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .edu-todo-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:10px; }
+  .edu-todo { display:block; text-decoration:none; color:inherit; border:1px solid var(--border); border-radius:10px;
+    padding:12px 14px; background:#fff; transition:box-shadow .15s; }
+  .edu-todo:hover { box-shadow:var(--shadow); border-color:var(--primary); }
+  .edu-todo .n { font-size:24px; font-weight:700; line-height:1.1; }
+  .edu-todo .l { font-size:12px; color:var(--text-2); margin-top:4px; }
+  .edu-todo.amber .n { color:var(--warning); }
+  .edu-todo.red .n { color:var(--danger); }
+  @media (max-width:1100px){ .edu-todo-grid { grid-template-columns:repeat(4,1fr); } }
+  @media (max-width:720px){ .edu-todo-grid { grid-template-columns:repeat(2,1fr); } }
+</style>
 </head>
 <body>
 <div class="layout">
@@ -27,34 +39,41 @@
         </div>
       </div>
 
+      <!-- 教务今日待办（真实数据聚合，可下钻） -->
+      <div class="card mb16" id="eduTodoCard">
+        <div class="card-head"><div class="card-title">教务今日待办</div>
+          <span class="small muted">点击数字直达对应处理列表</span></div>
+        <div class="card-body" id="eduTodoBody"></div>
+      </div>
+
       <!-- 统计卡 -->
       <div class="grid g6">
-        <div class="card stat">
+        <div class="card stat" style="cursor:pointer" onclick="location.href='student-list.html'">
           <div class="stat-label">本月新增学员</div>
           <div class="stat-value">12<small>人</small></div>
           <div class="stat-foot"><span class="trend-up">↑ 20.0%</span> 较上月</div>
         </div>
-        <div class="card stat">
+        <div class="card stat" style="cursor:pointer" onclick="location.href='student-list.html'">
           <div class="stat-label">当前在读学员</div>
           <div class="stat-value">86<small>人</small></div>
           <div class="stat-foot"><span class="trend-up">↑ 4 人</span> 较上月</div>
         </div>
-        <div class="card stat">
+        <div class="card stat" style="cursor:pointer" onclick="location.href='course-list.html'">
           <div class="stat-label">本月课程完成数</div>
           <div class="stat-value">218<small>节</small></div>
           <div class="stat-foot"><span class="trend-up">↑ 9.0%</span> 较上月</div>
         </div>
-        <div class="card stat">
+        <div class="card stat" style="cursor:pointer" onclick="location.href='hour-flow.html'">
           <div class="stat-label">本月课时消耗</div>
           <div class="stat-value">196<small>课时</small></div>
           <div class="stat-foot">已确认扣课流水汇总</div>
         </div>
-        <div class="card stat">
+        <div class="card stat" style="cursor:pointer" onclick="location.href='order-list.html'">
           <div class="stat-label">本月订单金额</div>
           <div class="stat-value">¥ 68,<small>420</small></div>
           <div class="stat-foot">应收金额合计</div>
         </div>
-        <div class="card stat">
+        <div class="card stat" style="cursor:pointer" onclick="location.href='order-list.html?tab=reviewed'">
           <div class="stat-label">本月实际收款</div>
           <div class="stat-value">¥ 52,<small>180</small></div>
           <div class="stat-foot"><span style="color:var(--warning)">待收 ¥16,240</span></div>
@@ -109,7 +128,7 @@
       <!-- 待处理 + 近期课程 -->
       <div class="grid g-1-2 mt16">
         <div class="card">
-          <div class="card-head"><div class="card-title">待处理事项</div><span class="tag tag-red nodot">4</span></div>
+          <div class="card-head"><div class="card-title">待处理事项</div><span class="tag tag-red nodot" id="todoBadge">0</span></div>
           <div class="card-body" id="todos"></div>
         </div>
 
@@ -170,6 +189,10 @@
 <script>
 Proto.shell({ role: 'admin', active: 'dashboard', title: '经营概览' });
 
+/* 第十三轮：教务今日待办（真实数据聚合；当前会话无权时降级提示） */
+let WB = null;
+try { Store.setSession({ role: 'admin' }); WB = Store.eduWorkbench(); } catch (e) { WB = null; }
+
 /* ---------------- 趋势图 ---------------- */
 const MONTHS = ['12月','1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月'];
 const TRENDS = {
@@ -215,14 +238,46 @@ function switchTrend(btn, key) {
 drawTrend('amount');
 
 /* ---------------- 待处理事项 ---------------- */
-const ICONS = { danger: '!', warn: '!', info: 'i' };
-document.getElementById('todos').innerHTML = DB.todos.map(t => `
-  <div class="alert alert-${t.type === 'danger' ? 'danger' : t.type === 'warn' ? 'warn' : 'info'} mb12" style="align-items:flex-start">
-    <span class="ico">${ICONS[t.type]}</span>
-    <div class="grow">${t.text}
-      <div style="margin-top:6px"><a href="${t.href}" class="small">${t.action} →</a></div>
-    </div>
-  </div>`).join('');
+/* ---------------- 教务今日待办（真实数据，可下钻） ---------------- */
+(function renderEduTodo() {
+  const body = document.getElementById('eduTodoBody');
+  if (!WB) { body.innerHTML = '<div class="alert alert-warn"><span class="ico">!</span><div>实时待办需要教务/管理身份，当前会话无权查看。</div></div>'; return; }
+  const C = WB.counts;
+  const cards = [
+    { n: C.pendingDemands, l: '待排课/待分配需求', href: 'demand-list.html', tone: C.pendingDemands ? 'amber' : '' },
+    { n: C.missingMeeting, l: '待补充会议链接', href: 'schedule-calendar.html?meeting=none', tone: C.missingMeeting ? 'amber' : '' },
+    { n: C.pendingOrders, l: '待审核订单', href: 'order-list.html?tab=pending', tone: C.pendingOrders ? 'red' : '' },
+    { n: C.pendingPayment, l: '待收款订单', href: 'order-list.html?tab=reviewed', tone: C.pendingPayment ? 'amber' : '' },
+    { n: C.abnormalCourses, l: '异常课程', href: 'course-list.html?tab=abnormal', tone: C.abnormalCourses ? 'red' : '' },
+    { n: C.unrepliedInquiries, l: '未回复咨询', href: 'parent-inquiry.html', tone: C.unrepliedInquiries ? 'amber' : '' },
+    { n: C.overdueReports, l: '超时未发布报告', href: 'course-list.html?report=overdue', tone: C.overdueReports ? 'amber' : '' }
+  ];
+  body.innerHTML = '<div class="edu-todo-grid">' + cards.map(c =>
+    `<a class="edu-todo ${c.tone}" href="${c.href}"><div class="n">${c.n}</div><div class="l">${c.l} ›</div></a>`).join('') + '</div>';
+})();
+
+/* ---------------- 待处理事项（真实待办 + 明确动作按钮） ---------------- */
+(function renderTodos() {
+  const box = document.getElementById('todos');
+  if (!WB) { box.innerHTML = '<div class="small muted">当前会话无权查看教务待办。</div>'; document.getElementById('todoBadge').textContent = '—'; return; }
+  const C = WB.counts;
+  const items = [];
+  if (C.pendingDemands) items.push({ tone: 'danger', text: `待排课/待分配需求 ${C.pendingDemands} 个`, href: 'demand-list.html', action: '去排课' });
+  if (C.missingMeeting) items.push({ tone: 'warn', text: `待补充会议链接 ${C.missingMeeting} 节课程`, href: 'schedule-calendar.html?meeting=none', action: '去补充' });
+  if (C.pendingOrders) items.push({ tone: 'warn', text: `待审核订单 ${C.pendingOrders} 笔`, href: 'order-list.html?tab=pending', action: '去审核' });
+  if (C.pendingPayment) items.push({ tone: 'info', text: `待收款订单 ${C.pendingPayment} 笔`, href: 'order-list.html?tab=reviewed', action: '去收款' });
+  if (C.abnormalCourses) items.push({ tone: 'danger', text: `异常课程 ${C.abnormalCourses} 节（未上课/已取消/扣课异常）`, href: 'course-list.html?tab=abnormal', action: '去处理' });
+  if (C.unrepliedInquiries) items.push({ tone: 'warn', text: `未回复家长咨询 ${C.unrepliedInquiries} 条`, href: 'parent-inquiry.html', action: '去回复' });
+  if (C.overdueReports) items.push({ tone: 'warn', text: `超时未发布学习报告 ${C.overdueReports} 份`, href: 'course-list.html?report=overdue', action: '去跟进' });
+  document.getElementById('todoBadge').textContent = items.length;
+  box.innerHTML = items.length ? items.map(it => `
+    <div class="alert alert-${it.tone} mb12" style="align-items:center">
+      <span class="ico">${it.tone === 'info' ? 'i' : '!'}</span>
+      <div class="grow">${it.text}</div>
+      <a class="btn btn-sm" href="${it.href}">${it.action}</a>
+    </div>`).join('')
+    : '<div class="alert alert-info" style="align-items:center"><span class="ico">✓</span><div class="grow">今日暂无待处理事项</div></div>';
+})();
 
 /* ---------------- 近期课程 ---------------- */
 const ST = { '已完成': 'tag-green', '待上课': 'tag-blue', '待处理': 'tag-amber', '未上课': 'tag-slate', '已取消': 'tag-slate', '已开始': 'tag-cyan' };

@@ -26,12 +26,12 @@
       </div>
 
       <div class="grid g4 mb16">
-        <div class="card stat"><div class="stat-label">账户总数</div><div class="stat-value">6<small>个</small></div></div>
-        <div class="card stat"><div class="stat-label">课时总余额</div><div class="stat-value">114<small>课时</small></div>
+        <div class="card stat"><div class="stat-label">账户总数</div><div class="stat-value"><span id="stAccTotal">0</span><small>个</small></div></div>
+        <div class="card stat"><div class="stat-label">课时总余额</div><div class="stat-value"><span id="stAccRemain">0</span><small>课时</small></div>
           <div class="stat-foot">按流水实时计算</div></div>
-        <div class="card stat"><div class="stat-label">余额不足账户</div><div class="stat-value" style="color:var(--danger)">1<small>个</small></div>
-          <div class="stat-foot">赵一诺 · 剩余 3 课时</div></div>
-        <div class="card stat"><div class="stat-label">30 天内到期</div><div class="stat-value" style="color:var(--warning)">2<small>个</small></div>
+        <div class="card stat"><div class="stat-label">余额不足账户</div><div class="stat-value" style="color:var(--danger)"><span id="stAccLow">0</span><small>个</small></div>
+          <div class="stat-foot" id="stAccLowFoot">—</div></div>
+        <div class="card stat"><div class="stat-label">30 天内到期</div><div class="stat-value" style="color:var(--warning)"><span id="stAccExpiring">0</span><small>个</small></div>
           <div class="stat-foot">需提醒续费</div></div>
       </div>
 
@@ -161,21 +161,51 @@
 <script src="../assets/js/data.js"></script>
 <script>
 Proto.shell({ role: 'admin', active: 'hour-account' });
+const S = Store;
+try { S.setSession({ role: 'admin' }); } catch (e) {}
 
 const AST = { '正常': 'tag-green', '余额不足': 'tag-red', '已用完': 'tag-slate' };
+function daysLeftOf(d) {
+  const s = String(d || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return -1;
+  const cur = new Date((S.TODAY || '') + 'T00:00:00');
+  const exp = new Date(s + 'T00:00:00');
+  return Math.round((exp - cur) / 86400000);
+}
+/* 从订单收款成功跳转：?student=学员姓名 预设筛选 */
+(function presetStudent() {
+  const q = new URLSearchParams(location.search).get('student');
+  if (q) document.getElementById('kw').value = q;
+})();
 
 function render() {
   const kw = document.getElementById('kw').value.trim();
   const st = document.getElementById('st').value;
-  const rows = DB.accounts.filter(a => {
-    if (kw && !a.student.includes(kw)) return false;
+  const ACCS = (typeof S.accounts === 'function') ? S.accounts() : DB.accounts;
+  const rows = ACCS.filter(a => {
+    if (kw && !(String(a.student).indexOf(kw) >= 0 || String(a.id).indexOf(kw) >= 0)) return false;
     if (st && a.status !== st) return false;
     return true;
   });
+
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const totalRemain = ACCS.reduce((n, a) => n + Number(a.remain || 0), 0);
+  const low = ACCS.filter(a => a.status === '余额不足' || Number(a.remain) < 10);
+  const exp = ACCS.filter(a => { const d = daysLeftOf(a.valid); return d >= 0 && d <= 30; });
+  set('stAccTotal', ACCS.length);
+  set('stAccRemain', totalRemain);
+  set('stAccLow', low.length);
+  set('stAccLowFoot', low.slice(0, 2).map(a => a.student + ' 剩余 ' + a.remain + ' 课时').join('；') || '无');
+  set('stAccExpiring', exp.length);
+
   document.getElementById('total').textContent = rows.length;
 
-  Proto.renderRows('rows', rows, a => `
-    <tr>
+  Proto.renderRows('rows', rows, a => {
+    const d = daysLeftOf(a.valid);
+    const lowTag = (a.status === '余额不足' || Number(a.remain) < 10) ? '<span class="tag tag-red nodot" style="margin-left:4px">余额不足</span>' : '';
+    const expTag = (d >= 0 && d <= 30) ? `<span class="tag tag-amber nodot" style="margin-left:4px">${d} 天到期</span>` : '';
+    const needRenew = (a.status === '余额不足' || Number(a.remain) < 10) || (d >= 0 && d <= 30);
+    return `<tr>
       <td class="mono small">${a.id}</td>
       <td class="strong">${a.student}</td>
       <td>${a.parent}</td>
@@ -185,14 +215,16 @@ function render() {
       <td class="right mono">${a.used}</td>
       <td class="right mono">${a.adjust || '—'}</td>
       <td class="right mono strong" style="color:${a.remain < 10 ? 'var(--danger)' : 'var(--success)'}">${a.remain}</td>
-      <td class="small">${a.valid}</td>
-      <td><span class="tag ${AST[a.status]}">${a.status}</span></td>
+      <td class="small">${a.valid}${expTag}</td>
+      <td><span class="tag ${AST[a.status]}">${a.status}</span>${lowTag}</td>
       <td class="ops">
         <button class="btn-link" onclick="openAcc('${a.student}')">详情</button>
         <a class="btn-link" href="hour-flow.html">流水</a>
         <button class="btn-link" onclick="openAdj('${a.student}')">调整</button>
+        ${needRenew ? `<a class="btn-link" href="renewal-list.html?student=${encodeURIComponent(a.student)}">续费</a>` : ''}
       </td>
-    </tr>`, 12, '没有符合条件的账户');
+    </tr>`;
+  }, 12, '没有符合条件的账户');
 }
 
 function openAcc(name) {

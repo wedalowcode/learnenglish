@@ -302,6 +302,7 @@ function renderDisplay() {
       <div class="group-dots">${dots}</div>
       <div class="small muted">第 ${st.groupIndex + 1} / ${st.groupCount} 组 · 已完成 ${st.done} / ${st.total} 个单词</div>
     </div>
+    <div class="small muted mb8">快捷键：数字键 1-5 操作对应单词，空格/回车推进第一个未完成单词。</div>
     <div class="alert alert-info mb12"><span class="ico">i</span>
       <div>强化训练为<b>带读展示</b>：每个单词独立完成「显示英文 → 显示中文 → 隐藏」三步即完成本轮，
         单次完成不代表掌握，最终掌握由「最后一轮复习」判断。</div></div>
@@ -560,6 +561,7 @@ function renderFinal() {
     <div class="alert alert-warn mb16"><span class="ico">!</span>
       <div><b>最后一轮复习：</b>覆盖本次强化训练的 ${ids.length} 个队列单词（初筛认识的单词不在其中）。
         逐行判断<b>掌握 / 待加强 / 未掌握</b>，提交前可随时修改，无需审批；「待加强」「未掌握」按待复习进入后续计划，掌握的不重复安排。</div></div>
+    <div class="small muted mb8">快捷键：1 未掌握 / 2 待加强 / 3 掌握（作用于第一个未判断单词）。</div>
     <div class="card" style="padding:0">
       <div class="table-wrap" style="margin:0">
         <table class="table compact">
@@ -746,8 +748,19 @@ function renderSummary() {
   const mid = ids.filter(id => task.finalResults[id] && task.finalResults[id].result === 'mid').length;
   const j = task.joins || { leitner: [], plan21: [], green: [], planIds: [] };
   const empty = !!j.empty || (ids.length > 0 && no + mid === 0);
+  const joinedSet = {};
+  ['leitner', 'plan21', 'green'].forEach(k => (j[k] || []).forEach(id => { joinedSet[id] = 1; }));
+  const joinedCount = Object.keys(joinedSet).length;
 
   el().innerHTML = `
+    <div class="card" style="border-color:#bfdbfe;background:#f8fbff">
+      <div class="card-body">
+        <div class="card-title" style="margin-bottom:8px">本节课关键变化</div>
+        <div class="m-row"><span class="k">新掌握</span><b class="mono" style="color:var(--success)">${yes} 个</b></div>
+        <div class="m-row"><span class="k">待加强</span><b class="mono" style="color:var(--warning)">${mid} 个</b></div>
+        <div class="m-row" style="border-bottom:none"><span class="k">已加入复习</span><b class="mono">${joinedCount} 个</b></div>
+      </div>
+    </div>
     <div class="card">
       <div class="card-head"><div class="card-title">训练完成并已提交</div>
         <span class="tag tag-green nodot">任务 ${task.id} 已完成</span></div>
@@ -823,7 +836,7 @@ function renderInterrupted() {
         </div>
         <div class="flex gap8" style="justify-content:flex-end">
           <a class="btn" href="${courseId ? 'word-training-setup.html?course=' + courseId : 'workbench.html'}">${courseId ? '返回词库选择' : '返回今日工作台'}</a>
-          <button class="btn btn-primary btn-lg" onclick="resumeNow()">恢复并继续训练 →</button>
+          <button class="btn btn-primary btn-lg" onclick="resumeNow()">继续训练 →</button>
         </div>
       </div>
     </div>`;
@@ -915,13 +928,30 @@ function doEnd() {
 /* ---------- 键盘 ---------- */
 document.addEventListener('keydown', e => {
   if (document.querySelector('.mask.show')) return;
-  if (view === 'group') {
-    if (e.key === '1') judge('no');
-    if (e.key === '2') judge('yes');
+  const tag = (e.target && e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  if (view === 'display') {
+    /* 空格/回车推进「第一个未完成」单词；数字键 1-5 操作当前组对应单词 */
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      const st = Store.displayStat(task.id);
+      const g = st && st.currentGroup;
+      if (g) { const w = g.words.find(x => !x.completed); if (w) tap(w.id); }
+      return;
+    }
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= 5) {
+      const st = Store.displayStat(task.id);
+      const g = st && st.currentGroup;
+      if (g && g.words[n - 1]) tap(g.words[n - 1].id);
+    }
   } else if (view === 'final') {
-    if (e.key === '1') finalJudge('no');
-    if (e.key === '2') finalJudge('mid');
-    if (e.key === '3') finalJudge('yes');
+    /* 1 未掌握 / 2 待加强 / 3 掌握，作用于第一个未判断单词 */
+    const firstUn = ids.find(id => !task.finalResults[id]);
+    if (!firstUn) return;
+    if (e.key === '1') judgeFinalList(firstUn, 'no');
+    if (e.key === '2') judgeFinalList(firstUn, 'mid');
+    if (e.key === '3') judgeFinalList(firstUn, 'yes');
   }
 });
 

@@ -34,6 +34,7 @@
         <div class="field"><label>线索状态</label>
           <select class="select" id="st" onchange="render()"><option value="">全部</option></select></div>
         <div class="filter-actions">
+          <button class="btn" id="btnPendingOwner" onclick="togglePendingOwner()">归属待审核</button>
           <button class="btn btn-primary" onclick="render()">查询</button>
           <button class="btn" onclick="reset()">重置</button>
         </div>
@@ -80,9 +81,20 @@ document.getElementById('ch').innerHTML = '<option value="">全部</option>' +
 document.getElementById('ag').innerHTML = '<option value="">全部</option><option value="__none">无（机构直营）</option>' +
   S.agents().map(a => `<option value="${a.id}">${a.name}（${a.id}）</option>`).join('');
 
+let pendingOwnerOnly = false;
+function togglePendingOwner() {
+  pendingOwnerOnly = !pendingOwnerOnly;
+  const b = document.getElementById('btnPendingOwner');
+  if (b) b.classList.toggle('on', pendingOwnerOnly);
+  render();
+}
+
 function reset() {
   ['kw'].forEach(id => document.getElementById(id).value = '');
   ['ch', 'ag', 'st'].forEach(id => document.getElementById(id).value = '');
+  pendingOwnerOnly = false;
+  const b = document.getElementById('btnPendingOwner');
+  if (b) b.classList.remove('on');
   render();
 }
 
@@ -96,6 +108,16 @@ function render() {
   if (ch) rows = rows.filter(r => r.lead.channel === ch);
   if (ag === '__none') rows = rows.filter(r => !S.leadCurrentAgentId(r.lead));
   else if (ag) rows = rows.filter(r => S.leadCurrentAgentId(r.lead) === ag);
+
+  /* 归属待审核：存在未裁定的归属争议（leadDisputes 状态=待裁定） */
+  const pendingSet = {};
+  try {
+    S.leadDisputesOf({ status: S.DISPUTE.OPEN }).forEach(x => { pendingSet[x.dispute.leadId] = 1; });
+  } catch (e) { /* 无权限或接口异常则忽略 */ }
+  if (pendingOwnerOnly) rows = rows.filter(r => pendingSet[r.lead.id]);
+  const pendCnt = Object.keys(pendingSet).length;
+  const pb = document.getElementById('btnPendingOwner');
+  if (pb) pb.textContent = '归属待审核' + (pendCnt ? ' (' + pendCnt + ')' : '');
 
   const counts = S.leadRowCounts();
   document.getElementById('sub').textContent =

@@ -140,6 +140,15 @@ function openDetail(courseId) {
   try { detail = Store.parentCourseDetail(PID, curKid, courseId); }
   catch (e) { Proto.toast(e.message, 'err'); return; }
   const c = detail;
+  /* 有已发布报告时，抽屉内直接给出本节训练单词数与一句话总结，减少跳转 */
+  let repWords = 0, repSummary = '';
+  if (c.reportViewable && c.reportId) {
+    try {
+      const rp = Store.parentReportDetail(PID, curKid, c.reportId);
+      repWords = (rp.stats && rp.stats.trainWords) || 0;
+      repSummary = (String(rp.content.performance || '').split('\n').find(x => x.trim()) || '').trim();
+    } catch (e) { /* 报告读取失败不影响课程详情 */ }
+  }
   const reportLink = c.reportViewable
     ? `<a class="btn btn-block btn-primary" href="report.html?student=${curKid}&report=${c.reportId}">查看学习报告</a>`
     : (c.reportStatus === '未生成' ? ''
@@ -160,8 +169,10 @@ function openDetail(courseId) {
       <div class="m-row"><span class="k detail-k">课程主题</span><span style="text-align:right;max-width:180px">${esc(c.topic || '—')}</span></div>
       <div class="m-row"><span class="k detail-k">课程状态</span><span><span class="tag ${CTAG[c.status] || 'tag-slate'} nodot">${c.status}</span></span></div>
       <div class="m-row"><span class="k detail-k">报告状态</span><span><span class="tag ${RTAG[c.reportStatus] || 'tag-slate'} nodot">${RTXT[c.reportStatus] || c.reportStatus}</span></span></div>
+      ${c.reportViewable && (repWords || repSummary) ? `<div class="m-row" style="align-items:flex-start"><span class="k detail-k">报告摘要</span><span style="text-align:right;max-width:220px"><div class="small">本节训练 ${repWords} 个单词</div>${repSummary ? `<div class="small muted" style="margin-top:2px">${esc(repSummary)}</div>` : ''}</span></div>` : ''}
       <div class="m-row"><span class="k detail-k">课时</span><span>${c.status === '已完成' ? '已扣课时' : c.status === '未上课' || c.status === '已取消' ? '不扣课时' : '未扣课时'}</span></div>
       ${reason}
+      ${(c.status === '未上课' || c.status === '已取消') ? `<a class="btn btn-sm btn-block mt8" href="hours.html?kid=${curKid}#iq">对本次课程有疑问？联系教务</a>` : ''}
       <div class="divider" style="margin:12px 0"></div>
       <div class="small muted" style="line-height:1.7">家长端仅可查看课程记录，不能修改课程状态与课时。</div>
       ${reportLink ? `<div style="margin-top:10px">${reportLink}</div>` : ''}

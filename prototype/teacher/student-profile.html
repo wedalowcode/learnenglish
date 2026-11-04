@@ -274,6 +274,26 @@ function renderStats() {
         </div>
       </div>
     </div>` : '';
+
+  /* 本节课建议卡片：今日到期 / 最近通过率 / 建议薄弱词 + 一键去训练 */
+  const adv = Store.teacherLessonAdvice(studentId);
+  let courseForTrain = null;
+  try {
+    courseForTrain = Store.coursesOfTeacher(Proto.teacherId())
+      .filter(c => c.studentId === studentId)
+      .sort((a, b) => (a.date + a.start) < (b.date + b.start) ? 1 : -1)[0] || null;
+  } catch (e) {}
+  const advCard = `<div class="card mb16" style="border-color:#fde68a;background:#fffdf5">
+    <div class="card-body">
+      <div class="card-title" style="margin-bottom:8px">本节课建议</div>
+      <div class="flex gap24 mb8" style="flex-wrap:wrap">
+        <div>今日到期复习：<b style="color:var(--warning)">${adv.dueReview}</b> 个</div>
+        <div>最近通过率：<b>${adv.lastPassRate === null ? '—' : adv.lastPassRate + '%'}</b></div>
+      </div>
+      ${adv.weakWords.length ? `<div class="small mb8">建议优先薄弱词：${adv.weakWords.map(w => `<span class="tag tag-amber nodot">${w.en}</span>`).join(' ')}</div>` : '<div class="small muted mb8">暂无近期薄弱词记录</div>'}
+      ${courseForTrain ? `<a class="btn btn-sm btn-primary" href="course-workbench.html?course=${courseForTrain.id}">去本节课训练未掌握词 →</a>` : '<span class="small muted">暂无关联课程，先从今日课程进入训练</span>'}
+    </div></div>`;
+  document.getElementById('resumeBox').insertAdjacentHTML('afterbegin', advCard);
 }
 
 /* ---------- 概览 ---------- */
@@ -343,6 +363,8 @@ function renderOverview() {
 }
 
 /* ---------- 单词档案 ---------- */
+let bankQuick = '';
+function setBankQuick(q) { bankQuick = q; renderBank(); }
 function renderBank() {
   const kw = (document.getElementById('wf_kw').value || '').trim().toLowerCase();
   const stFilter = document.getElementById('wf_state').value;
@@ -356,9 +378,26 @@ function renderBank() {
     return { s, w, ls, plans };
   }).filter(Boolean);
 
+  /* 今日到期集合（莱特纳到期 + 21 天今日任务），供「仅看今日到期」使用 */
+  const dueSet = {};
+  if (bankQuick === 'due') {
+    all.forEach(r => {
+      const ls = r.ls;
+      const leitnerDue = !!(ls && ls.box !== 'graduated' && ls.dueAt && ls.dueAt <= Store.TODAY);
+      let planDue = false;
+      r.plans.forEach(p => {
+        if (p.status === '已取消') return;
+        try { const tk = Store.plan21Today(p.id); if (tk && (tk.wordIds || []).indexOf(r.s.wordId) >= 0) planDue = true; } catch (e) {}
+      });
+      if (leitnerDue || planDue) dueSet[r.s.wordId] = 1;
+    });
+  }
+
   const rows = all.filter(r => {
     if (kw && r.w.en.toLowerCase().indexOf(kw) < 0 && !r.w.mean.some(m => m.cn.indexOf(kw) >= 0)) return false;
     if (stFilter && r.s.state !== stFilter) return false;
+    if (bankQuick === 'weak' && ['待强化训练', '暂不确定', '待最后复习', '待复习'].indexOf(r.s.state) < 0) return false;
+    if (bankQuick === 'due' && !dueSet[r.s.wordId]) return false;
     if (sysFilter === 'leitner' && !r.ls) return false;
     if (sysFilter === 'plan' && !r.plans.length) return false;
     if (sysFilter === 'both' && !(r.ls && r.plans.length)) return false;
@@ -370,7 +409,10 @@ function renderBank() {
 
   const counts = {};
   all.forEach(r => counts[r.s.state] = (counts[r.s.state] || 0) + 1);
-  document.getElementById('statePills').innerHTML = Object.keys(counts)
+  const quickBtns = `<span class="kv-pill" style="cursor:pointer;${bankQuick === 'due' ? 'background:#eff6ff;border-color:#bfdbfe;' : ''}" onclick="setBankQuick('due')">仅看今日到期</span>
+    <span class="kv-pill" style="cursor:pointer;${bankQuick === 'weak' ? 'background:#fffbeb;border-color:#fde68a;' : ''}" onclick="setBankQuick('weak')">仅看待加强</span>
+    ${bankQuick ? `<span class="kv-pill" style="cursor:pointer" onclick="setBankQuick('')">清除筛选</span>` : ''}`;
+  document.getElementById('statePills').innerHTML = quickBtns + Object.keys(counts)
     .map(k => `<span class="kv-pill" ${k === '待复习' || k === '暂不确定' ? 'style="color:var(--warning)"' : ''}>${k} ${counts[k]}</span>`)
     .join('');
 

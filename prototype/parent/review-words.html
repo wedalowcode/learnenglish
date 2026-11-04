@@ -6,7 +6,7 @@
 <title>待复习单词表 · 家长端</title>
 <link rel="stylesheet" href="../assets/css/common.css">
 <style>
-  body { background:#e2e8f0; padding:20px 12px 40px; }
+  body { background:#e2e8f0; padding:16px 12px 40px; }
   .sheet {
     width:210mm; max-width:100%; min-height:297mm; margin:0 auto; background:#fff;
     padding:14mm 14mm 18mm; box-shadow:0 6px 24px rgba(15,23,42,.14);
@@ -18,24 +18,31 @@
   .sheet-sub { font-size:11px; color:var(--text-3); margin-top:3px; }
   .sheet-meta { font-size:11px; color:var(--text-2); text-align:right; line-height:1.7; }
   .sheet table { width:100%; border-collapse:collapse; font-size:11.5px; }
-  .sheet th { background:#f1f5f9; border:1px solid #cbd5e1; padding:6px 6px; font-weight:600;
-    color:var(--text); text-align:left; font-size:11px; white-space:nowrap; }
+  .sheet th { background:#f1f5f9; border:1px solid #cbd5e1; padding:6px; font-weight:600; color:var(--text); text-align:left; font-size:11px; white-space:nowrap; }
   .sheet td { border:1px solid #cbd5e1; padding:6px; vertical-align:middle; }
   .sheet tr:nth-child(even) td { background:#fcfdfe; }
-  .check-box { width:14px; height:14px; border:1px solid #94a3b8; border-radius:2px;
-    display:inline-block; cursor:pointer; text-align:center; line-height:12px; font-size:11px; color:#0f766e; }
+  .check-box { width:14px; height:14px; border:1px solid #94a3b8; border-radius:2px; display:inline-block; cursor:pointer; text-align:center; line-height:12px; font-size:11px; color:#0f766e; }
   .check-box.on { background:#ccfbf1; border-color:#0d9488; }
   .sheet-foot { margin-top:14px; display:flex; justify-content:space-between; font-size:10.5px; color:var(--text-3); }
   .toolbar { width:210mm; max-width:100%; margin:0 auto 14px; display:flex; gap:8px; align-items:center;
     flex-wrap:wrap; background:#fff; border:1px solid var(--border); border-radius:8px; padding:12px; }
   .view-seg { display:inline-flex; background:#f1f5f9; border-radius:8px; padding:2px; gap:2px; }
-  .view-seg > button { border:none; background:transparent; font-size:12px; padding:6px 12px;
-    border-radius:6px; color:var(--text-2); cursor:pointer; }
+  .view-seg > button { border:none; background:transparent; font-size:12px; padding:6px 12px; border-radius:6px; color:var(--text-2); cursor:pointer; }
   .view-seg > button.on { background:#fff; color:var(--primary-dark); font-weight:600; box-shadow:var(--shadow); }
+
+  /* 手机复习模式 */
+  .rv-wrap { max-width:560px; margin:0 auto; }
+  .rv-card { background:#fff; border:1px solid var(--border); border-radius:14px; padding:16px 16px 12px; margin-bottom:12px; box-shadow:0 2px 10px rgba(15,23,42,.05); }
+  .rv-en { font-size:30px; font-weight:700; letter-spacing:.5px; line-height:1.2; }
+  .rv-ph { font-family:'Times New Roman',serif; color:var(--text-3); margin-top:4px; font-size:13px; }
+  .rv-cn { font-size:16px; color:var(--text-2); margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); }
+  .rv-ops { display:flex; align-items:center; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .rv-prog { background:#fff; border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:12px; }
   @media print {
     body { background:#fff; padding:0; }
     .sheet { box-shadow:none; width:100%; padding:0; min-height:0; }
-    .toolbar { display:none; }
+    .toolbar, .rv-wrap { display:none !important; }
+    .no-print { display:none !important; }
   }
 </style>
 </head>
@@ -47,23 +54,42 @@
     <button type="button" data-v="all">全部待复习</button>
     <button type="button" data-v="passed">已通过</button>
   </div>
-  <div class="field" style="min-width:160px"><label>学员</label>
+  <div class="view-seg" id="modeSeg">
+    <button type="button" class="on" data-m="mobile">手机复习</button>
+    <button type="button" data-m="print">打印清单</button>
+  </div>
+  <div class="field" style="min-width:150px"><label>学员</label>
     <select class="select" id="fStu" onchange="onKid()"></select></div>
-  <div class="field" style="min-width:140px"><label>词库</label>
+  <div class="field" style="min-width:130px"><label>词库</label>
     <select class="select" id="fBook" onchange="render()"></select></div>
-  <div class="field" style="min-width:130px"><label>复习体系</label>
+  <div class="field" style="min-width:120px"><label>复习体系</label>
     <select class="select" id="fSys" onchange="render()">
       <option value="all">全部体系</option>
       <option value="leitner">莱特纳</option>
       <option value="plan21">21 天记忆</option>
     </select></div>
   <label class="check" style="margin-left:4px"><input type="checkbox" id="fPassed" onchange="render()"> 含已通过</label>
+  <label class="check"><input type="checkbox" id="fUnchecked" onchange="render()"> 仅显示未勾选</label>
   <div class="grow"></div>
-  <button class="btn" onclick="Proto.toast('导出 PDF 将在后续版本实现','warn')">导出 PDF</button>
-  <button class="btn btn-primary" onclick="window.print()">打印（A4）</button>
+  <button class="btn" onclick="exportPdf()">导出 PDF</button>
+  <button class="btn btn-primary" onclick="printSheet()">打印（A4）</button>
 </div>
 
-<div class="sheet">
+<!-- 手机复习模式 -->
+<div class="rv-wrap no-print" id="mobileReview" style="display:none">
+  <div class="rv-prog">
+    <div class="flex jcb aic">
+      <span class="small">家庭复习进度</span>
+      <span class="small" id="rvProgText">0 / 0</span>
+    </div>
+    <div class="bar mt8"><i id="rvProgBar" style="width:0%"></i></div>
+    <div class="small muted mt8" id="rvProgHint"></div>
+  </div>
+  <div id="rvCards"></div>
+</div>
+
+<!-- A4 打印清单 -->
+<div class="sheet" id="sheetArea">
   <div class="sheet-head">
     <div>
       <div class="sheet-title" id="sheetTitle">今日待复习单词表</div>
@@ -93,7 +119,7 @@
   </table>
 
   <div class="sheet-foot">
-    <span>说明：家庭复习勾选仅作家长辅助记录（已写入系统辅助表），<b>不修改</b>系统内的正式掌握状态、莱特纳盒子与 21 天记忆计划。</span>
+    <span>说明：家庭复习勾选仅作家长辅助记录，<b>不修改</b>系统内的正式掌握状态、莱特纳盒子与 21 天记忆计划。</span>
     <span id="pageInfo">第 1 页 / 共 1 页</span>
   </div>
 </div>
@@ -103,10 +129,7 @@
 <script src="../assets/js/data.js"></script>
 <script src="../assets/js/store.js"></script>
 <script>
-/* 家长端待复习单词表
-   P0：学员下拉只取 Store.parentChildren（当前家长有权访问的孩子），
-       不再使用全量 Store.students()，越权参数由 Store 拒绝。
-   P1：三视图（今日待复习 / 全部待复习 / 已通过），两套体系独立计算、按词库关联筛选。 */
+/* 家长端待复习单词表：手机复习模式（遮挡中文/听音/勾选）+ A4 打印清单。 */
 const q = new URLSearchParams(location.search);
 const PID = Proto.parentId();
 Store.setSession({ role: 'parent', parentId: PID, operatorName: Proto.parentName() });
@@ -115,33 +138,26 @@ const STATE_LABEL = {
   '待复习': '待复习', '暂不确定': '暂不确定', '本次通过': '已通过',
   '待强化训练': '待强化', '待最后复习': '待最后复习', '初筛认识': '初筛认识', '未训练': '未训练'
 };
-let VIEW = 'today';
+let VIEW = q.get('view') || 'today';
+let MODE = 'mobile';
 let curKid = '';
 let rows = [];
+const revealed = {};
 
 function kids() { return Store.parentChildren(PID); }
 
 function init() {
-  const list = kids();
-  const sel = document.getElementById('fStu');
-  if (!list.length) {
-    sel.innerHTML = '<option value="">暂无孩子</option>';
-    document.getElementById('mStu').textContent = '—';
-    document.getElementById('rows').innerHTML =
-      `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:26px 6px">
-        当前家长账号下暂无关联孩子，请联系教务。</td></tr>`;
-    return;
-  }
-  sel.innerHTML = list.map(k => `<option value="${k.id}">${k.name} · ${k.grade}</option>`).join('');
-  /* 统一当前孩子：直接链接 ?student= 优先，其次五页共享状态，最后第一个孩子 */
-  const fromURL = q.get('student');
-  const shared = Store.parentCurrentChild(PID);
-  curKid = (fromURL && list.some(k => k.id === fromURL)) ? fromURL
-    : (shared && list.some(k => k.id === shared)) ? shared : list[0].id;
-  if (curKid !== shared && curKid !== fromURL) { try { Store.setParentCurrentChild(PID, curKid); } catch (e) {} }
-  sel.value = curKid;
+  /* 视图/模式初始按钮 */
+  document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === VIEW));
 
-  document.getElementById('mDate').textContent = Store.TODAY;
+  document.getElementById('modeSeg').addEventListener('click', e => {
+    const b = e.target.closest('button[data-m]');
+    if (!b) return;
+    MODE = b.dataset.m;
+    document.querySelectorAll('#modeSeg button').forEach(x => x.classList.toggle('on', x.dataset.m === MODE));
+    render();
+  });
+
   document.getElementById('viewSeg').addEventListener('click', e => {
     const b = e.target.closest('button[data-v]');
     if (!b) return;
@@ -149,6 +165,23 @@ function init() {
     document.querySelectorAll('#viewSeg button').forEach(x => x.classList.toggle('on', x.dataset.v === VIEW));
     render();
   });
+
+  const list = kids();
+  const sel = document.getElementById('fStu');
+  if (!list.length) {
+    sel.innerHTML = '<option value="">暂无孩子</option>';
+    document.getElementById('mStu').textContent = '—';
+    setBodyEmpty('当前家长账号下暂无关联孩子，请联系教务。');
+    return;
+  }
+  sel.innerHTML = list.map(k => `<option value="${k.id}">${k.name} · ${k.grade}</option>`).join('');
+  const fromURL = q.get('student');
+  const shared = Store.parentCurrentChild(PID);
+  curKid = (fromURL && list.some(k => k.id === fromURL)) ? fromURL
+    : (shared && list.some(k => k.id === shared)) ? shared : list[0].id;
+  if (curKid !== shared && curKid !== fromURL) { try { Store.setParentCurrentChild(PID, curKid); } catch (e) {} }
+  sel.value = curKid;
+  document.getElementById('mDate').textContent = Store.TODAY;
   render();
 }
 
@@ -158,30 +191,36 @@ function onKid() {
   render();
 }
 
+function setBodyEmpty(msg) {
+  document.getElementById('rows').innerHTML =
+    `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:26px 6px">${msg}</td></tr>`;
+  document.getElementById('rvCards').innerHTML = `<div class="rv-card"><div class="small muted">${msg}</div></div>`;
+  document.getElementById('rvProgText').textContent = '0 / 0';
+  document.getElementById('rvProgBar').style.width = '0%';
+  document.getElementById('rvProgHint').textContent = '';
+  document.getElementById('mCnt').textContent = '0';
+}
+
 function render() {
+  const mobile = MODE === 'mobile';
+  document.getElementById('mobileReview').style.display = mobile ? '' : 'none';
+  document.getElementById('sheetArea').style.display = mobile ? 'none' : '';
+
   const bookId = document.getElementById('fBook').value;
   const system = document.getElementById('fSys').value;
   const includePassed = document.getElementById('fPassed').checked;
+  const uncheckedOnly = document.getElementById('fUnchecked').checked;
   const titleEl = document.getElementById('sheetTitle');
   const mSys = document.getElementById('mSys');
 
-  if (!curKid) {
-    document.getElementById('rows').innerHTML =
-      `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:26px 6px">请先选择孩子</td></tr>`;
-    return;
-  }
+  if (!curKid) { setBodyEmpty('请先选择孩子'); return; }
 
-  /* 已通过视图没有筛选：教师确认掌握的单词 */
   let rowsAll = [];
   try { rowsAll = Store.parentReviewWords(PID, curKid, { view: VIEW, system, bookId, includePassed }); }
-  catch (e) {
-    document.getElementById('rows').innerHTML =
-      `<tr><td colspan="8" style="text-align:center;color:#b91c1c;padding:26px 6px">加载失败：${Proto.escHtml ? Proto.escHtml(e.message) : e.message}</td></tr>`;
-    return;
-  }
+  catch (e) { setBodyEmpty('加载失败：' + (Proto.escHtml ? Proto.escHtml(e.message) : e.message)); return; }
   rows = rowsAll;
 
-  /* 词库下拉：只列当前孩子复习数据里真实存在的词库（WordbookWord 关联） */
+  /* 词库下拉：只列当前孩子复习数据里真实存在的词库 */
   const books = {};
   rowsAll.forEach(r => (r.bookIds || []).forEach(bid => { books[bid] = 1; }));
   const bs = document.getElementById('fBook');
@@ -191,51 +230,127 @@ function render() {
     return `<option value="${bid}" ${bid === curBook ? 'selected' : ''}>${wb ? wb.name : bid}</option>`;
   }).join('');
 
-  titleEl.textContent = VIEW === 'today' ? '今日待复习单词表'
-    : VIEW === 'all' ? '全部待复习单词表' : '已通过单词表';
+  titleEl.textContent = VIEW === 'today' ? '今日待复习单词表' : VIEW === 'all' ? '全部待复习单词表' : '已通过单词表';
   mSys.textContent = system === 'all' ? '全部体系' : system === 'leitner' ? '莱特纳' : '21 天记忆';
 
   const stu = Store.student(curKid);
   document.getElementById('mStu').textContent = stu ? stu.name : curKid;
-  document.getElementById('mCnt').textContent = rows.length;
-  document.getElementById('sheetSub').textContent = '启航英语 · 城东校区' +
-    (stu && stu.teacherName ? ' · 教师：' + stu.teacherName : '');
+  document.getElementById('sheetSub').textContent = '启航英语 · 城东校区' + (stu && stu.teacherName ? ' · 教师：' + stu.teacherName : '');
 
-  const tb = document.getElementById('rows');
-  if (!rows.length) {
-    const tip = VIEW === 'today' ? '今天没有到期需要复习的单词'
-      : VIEW === 'all' ? '当前筛选条件下没有待复习单词' : '暂无教师确认通过的单词';
-    tb.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:26px 6px">${tip}</td></tr>`;
-    return;
-  }
-  tb.innerHTML = rows.map((r, i) => {
+  /* 家庭复习勾选集合 */
+  const checkedSet = {};
+  rowsAll.forEach(r => {
     const fc = Store.parentFamilyCheckAt(PID, curKid, r.wordId);
-    const on = fc && fc.checked;
-    return `<tr>
-      <td style="text-align:center;color:#64748b">${i + 1}</td>
-      <td style="font-weight:600;font-size:12.5px">${r.en}</td>
-      <td style="color:#475569;font-family:'Times New Roman',serif">${r.ph}</td>
-      <td>${r.cn}</td>
-      <td style="font-size:10.5px;color:#475569">${(r.bookNames && r.bookNames[0]) || '—'}</td>
-      <td style="font-size:10.5px">${STATE_LABEL[r.state] || r.state}</td>
-      <td style="font-size:10px;color:#475569">${(r.systems || []).join(' / ')}</td>
-      <td style="text-align:center">
-        <span class="check-box ${on ? 'on' : ''}" title="${on ? '已勾选（辅助记录）' : '点击勾选家庭复习'}"
-          onclick="toggle('${r.wordId}', this)">${on ? '✓' : ''}</span></td>
-    </tr>`;
-  }).join('');
+    if (fc && fc.checked) checkedSet[r.wordId] = true;
+  });
+  const checkedCount = rowsAll.filter(r => checkedSet[r.wordId]).length;
+
+  /* 仅显示未勾选过滤（影响展示，不影响进度分母口径——进度仍按当前视图全部计算） */
+  const shown = uncheckedOnly ? rows.slice().filter(r => !checkedSet[r.wordId]) : rows;
+
+  /* 进度条（按当前视图全部单词计） */
+  const pct = rowsAll.length ? Math.round(checkedCount / rowsAll.length * 100) : 0;
+  document.getElementById('rvProgText').textContent = checkedCount + ' / ' + rowsAll.length;
+  document.getElementById('rvProgBar').style.width = pct + '%';
+  document.getElementById('rvProgHint').textContent = rowsAll.length
+    ? (checkedCount >= rowsAll.length ? '全部完成，太棒了！家庭复习已记录。' : (checkedCount ? '已完成部分复习，继续保持。' : '点击卡片「家庭已复习」记录今天完成的内容。'))
+    : '';
+  document.getElementById('mCnt').textContent = shown.length;
+
+  /* ---- 打印清单行 ---- */
+  const tb = document.getElementById('rows');
+  if (!shown.length) {
+    const tip = rowsAll.length && uncheckedOnly ? '按「仅显示未勾选」过滤后没有剩余单词' :
+      (VIEW === 'today' ? '今天没有到期需要复习的单词' : VIEW === 'all' ? '当前筛选条件下没有待复习单词' : '暂无教师确认通过的单词');
+    tb.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:26px 6px">${tip}</td></tr>`;
+  } else {
+    tb.innerHTML = shown.map((r, i) => {
+      const on = checkedSet[r.wordId];
+      return `<tr>
+        <td style="text-align:center;color:#64748b">${i + 1}</td>
+        <td style="font-weight:600;font-size:12.5px">${r.en}</td>
+        <td style="color:#475569;font-family:'Times New Roman',serif">${r.ph}</td>
+        <td>${r.cn}</td>
+        <td style="font-size:10.5px;color:#475569">${(r.bookNames && r.bookNames[0]) || '—'}</td>
+        <td style="font-size:10.5px">${STATE_LABEL[r.state] || r.state}</td>
+        <td style="font-size:10px;color:#475569">${(r.systems || []).join(' / ')}</td>
+        <td style="text-align:center"><span class="check-box ${on ? 'on' : ''}" title="${on ? '已勾选（辅助记录）' : '点击勾选家庭复习'}" onclick="toggle('${r.wordId}', this)">${on ? '✓' : ''}</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  /* ---- 手机复习卡片 ---- */
+  const cards = document.getElementById('rvCards');
+  if (!shown.length) {
+    cards.innerHTML = emptyGuide(rowsAll.length, uncheckedOnly);
+  } else {
+    cards.innerHTML = shown.map(r => {
+      const on = checkedSet[r.wordId];
+      const cnShown = !!revealed[r.wordId];
+      return `<div class="rv-card" data-w="${r.wordId}">
+        <div class="rv-en">${r.en}</div>
+        <div class="rv-ph">${r.ph}</div>
+        <div class="rv-cn" id="cn_${r.wordId}" style="display:${cnShown ? '' : 'none'}">${r.cn}</div>
+        <div class="rv-ops">
+          <button class="btn btn-sm" onclick="speakWord('${(r.en || '').replace(/'/g, '')}')">🔊 听音</button>
+          <button class="btn btn-sm" onclick="revealCn('${r.wordId}', this)">${cnShown ? '遮盖中文' : '显示中文'}</button>
+          <label class="check" style="margin-left:auto"><input type="checkbox" ${on ? 'checked' : ''} onchange="toggle('${r.wordId}', this)"> 家庭已复习</label>
+        </div>
+        <div class="small muted" style="margin-top:6px">${(r.systems || []).join(' / ')} · ${STATE_LABEL[r.state] || r.state}</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+/* 空状态引导 */
+function emptyGuide(total, uncheckedOnly) {
+  if (uncheckedOnly && total) {
+    return `<div class="rv-card"><div class="small muted" style="margin-bottom:8px">按「仅显示未勾选」没有剩余单词，今天的单词都复习过了。</div>
+      <button class="btn btn-sm" onclick="document.getElementById('fUnchecked').checked=false;render()">显示全部</button></div>`;
+  }
+  return `<div class="rv-card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px">今天没有待复习单词</div>
+    <div class="small muted" style="line-height:1.8;margin-bottom:10px">可以回顾全部待复习单词，或看看已经通过的单词，持续巩固。</div>
+    <div class="flex gap8" style="flex-wrap:wrap">
+      <button class="btn btn-sm btn-primary" onclick="VIEW='all';syncViewButtons();render()">查看全部待复习</button>
+      <button class="btn btn-sm" onclick="VIEW='passed';syncViewButtons();render()">回顾已通过单词</button>
+    </div>
+  </div>`;
+}
+function syncViewButtons() {
+  document.querySelectorAll('#viewSeg button').forEach(x => x.classList.toggle('on', x.dataset.v === VIEW));
+}
+
+function speakWord(en) { try { Proto.speak(en, 'en-US'); } catch (e) { Proto.toast('当前环境不支持朗读', 'warn'); } }
+function revealCn(wordId, btn) {
+  revealed[wordId] = !revealed[wordId];
+  const el = document.getElementById('cn_' + wordId);
+  if (el) el.style.display = revealed[wordId] ? '' : 'none';
+  if (btn) btn.textContent = revealed[wordId] ? '遮盖中文' : '显示中文';
 }
 
 function toggle(wordId, node) {
   if (!curKid) return;
   const cur = Store.parentFamilyCheckAt(PID, curKid, wordId);
   const next = !(cur && cur.checked);
-  try {
-    Store.toggleParentFamilyCheck(PID, curKid, wordId, next);
-  } catch (e) { Proto.toast(e.message, 'err'); return; }
-  node.classList.toggle('on', next);
-  node.textContent = next ? '✓' : '';
-  Proto.toast(next ? '已勾选家庭复习（辅助记录，不影响正式状态）' : '已取消勾选', 'ok');
+  try { Store.toggleParentFamilyCheck(PID, curKid, wordId, next); }
+  catch (e) { Proto.toast(e.message, 'err'); return; }
+  Proto.toast(next ? '已记录家庭复习（辅助记录，不改正式状态）' : '已取消勾选', 'ok');
+  render();
+}
+
+function exportPdf() {
+  Proto.toast('在打印对话框选择「另存为 PDF」即可导出', 'ok');
+  MODE = 'print';
+  document.querySelectorAll('#modeSeg button').forEach(x => x.classList.toggle('on', x.dataset.m === MODE));
+  render();
+  setTimeout(() => window.print(), 200);
+}
+function printSheet() {
+  MODE = 'print';
+  document.querySelectorAll('#modeSeg button').forEach(x => x.classList.toggle('on', x.dataset.m === MODE));
+  render();
+  setTimeout(() => window.print(), 150);
 }
 
 init();

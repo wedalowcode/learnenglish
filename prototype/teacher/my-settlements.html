@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>我的结算</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学工作台<span class="sep">/</span>我的结算</div>
+          <h1 class="page-title">我的结算</h1>
+          <div class="page-sub" id="sub">仅显示你本人的结算单 · 每月 20 日左右对账</div>
+        </div>
+      </div>
+
+      <div class="grid g4 mb16" id="statCards"></div>
+
+      <div id="listBox"></div>
+
+      <div class="alert alert-info mt16"><span class="ico">i</span>
+        <div>结算金额来自已完成课程的课时费明细；确认后机构登记付款。如对某节课有疑问，可对结算单提交异议，机构核查后处理。</div></div>
+
+    </main>
+  </div>
+</div>
+
+<!-- 提异议 -->
+<div class="mask" id="disputeModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">提交结算异议</div>
+      <button class="modal-close" onclick="Proto.closeModal('disputeModal')">×</button></div>
+    <div class="modal-body">
+      <div class="desc g1 mb12" id="dq_info"></div>
+      <div class="form-grid">
+        <div class="field"><label>异议类型</label>
+          <select class="select" id="q_type"><option>金额异议</option><option>课程异议</option><option>时长异议</option><option>其他</option></select></div>
+        <div class="field"><label>关联课程（可空）</label><input class="input" id="q_course" placeholder="课程编号，如 C2026..."></div>
+        <div class="field"><label>期望调整金额（元，可空）</label><input class="input" id="q_expect" type="number" min="0" step="0.01"></div>
+        <div class="field full"><label>异议原因 <span class="req">*</span></label>
+          <textarea class="textarea" id="q_reason" rows="3" placeholder="请说明具体课程、差异与期望"></textarea></div>
+      </div>
+      <div class="small" style="color:var(--danger)" id="q_err"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('disputeModal')">取消</button>
+      <button class="btn btn-primary" onclick="submitDispute()">提交异议</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'teacher', active: 'my-settlements' });
+const S = Store;
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function yuan(c) { return (Number(c || 0) / 100).toFixed(2); }
+const STATUS_TONE = { '待教师确认': 'tag-amber', '待付款': 'tag-blue', '部分付款': 'tag-blue', '已付款': 'tag-green', '已取消': 'tag-slate' };
+let disTarget = '';
+
+function render() {
+  let list;
+  try { list = S.teacherSettlementsOf(); }
+  catch (e) { document.getElementById('listBox').innerHTML = `<div class="card"><div class="card-body"><div class="alert alert-warn">${esc(e.message)}</div></div></div>`; return; }
+  const total = list.reduce((n, s) => n + Number(s.totalAmountCents || 0), 0);
+  const paid = list.reduce((n, s) => n + Number(s.paidAmountCents || 0), 0);
+  const unpaid = total - paid;
+  const pending = list.filter(s => s.status === '待教师确认').length;
+
+  document.getElementById('statCards').innerHTML = `
+    <div class="card stat"><div class="stat-label">结算单</div><div class="stat-value">${list.length}<small>张</small></div></div>
+    <div class="card stat"><div class="stat-label">累计应付</div><div class="stat-value">${yuan(total)}</div></div>
+    <div class="card stat"><div class="stat-label">已支付</div><div class="stat-value" style="color:var(--success)">${yuan(paid)}</div></div>
+    <div class="card stat"><div class="stat-label">未支付</div><div class="stat-value" style="color:var(--warning)">${yuan(unpaid)}</div>
+      <div class="stat-foot">待我确认 ${pending} 张</div></div>`;
+
+  if (!list.length) {
+    document.getElementById('listBox').innerHTML = '<div class="card"><div class="card-body"><div class="empty"><p>暂无结算单</p><p class="small">机构生成月度结算单后，这里会显示。</p></div></div></div>';
+    return;
+  }
+
+  document.getElementById('listBox').innerHTML = list.map(s => {
+    let d = null;
+    try { d = S.teacherSettlementDetail(s.id); } catch (e) { d = null; }
+    const items = d ? d.items : [], pays = d ? d.payments : [], diss = d ? d.disputes : [], ads = d ? d.adjustments : [];
+    return `<div class="card mb16">
+      <div class="card-head"><div class="card-title">${esc(s.periodStart)} ~ ${esc(s.periodEnd)}
+        <span class="tag ${STATUS_TONE[s.status] || 'tag-slate'} nodot" style="margin-left:6px">${esc(s.status)}</span></div>
+        <div class="small muted">${esc(s.id)}</div></div>
+      <div class="card-body">
+        <div class="grid g4 mb12">
+          <div class="card stat"><div class="stat-label">体验课</div><div class="stat-value">${s.experienceCount}<small>节</small></div>
+            <div class="stat-foot">${yuan(s.experienceAmountCents)}</div></div>
+          <div class="card stat"><div class="stat-label">正式课</div><div class="stat-value">${s.formalCount}<small>节</small></div>
+            <div class="stat-foot">${yuan(s.formalAmountCents)}</div></div>
+          <div class="card stat"><div class="stat-label">调整</div><div class="stat-value">${yuan(s.adjustmentAmountCents)}</div></div>
+          <div class="card stat"><div class="stat-label">应付总额</div><div class="stat-value" style="color:var(--primary-dark)">${yuan(s.totalAmountCents)}</div>
+            <div class="stat-foot">已付 ${yuan(s.paidAmountCents)} · 未付 ${yuan(s.unpaidAmountCents)}</div></div>
+        </div>
+
+        <div class="flex gap8 mb12" style="flex-wrap:wrap">
+          ${s.status === '待教师确认'
+            ? `<button class="btn btn-primary" onclick="doConfirm('${s.id}')">确认无误</button>
+               <button class="btn" onclick="openDispute('${s.id}')">提出异议</button>`
+            : (s.status === '已付款'
+              ? '<span class="small muted">本期已结清</span>'
+              : `<button class="btn" onclick="openDispute('${s.id}')">提出异议</button>`)}
+        </div>
+
+        <div class="section-title">课程明细 ${items.length} 条</div>
+        <div class="table-wrap mb12"><table class="table compact">
+          <thead><tr><th>课程</th><th>日期</th><th>课型</th><th class="right">计费时长</th><th class="right">单价</th><th class="right">金额</th></tr></thead>
+          <tbody>${items.length ? items.map(it => `<tr>
+            <td class="mono small">${esc(it.courseId)}</td><td class="small">${esc(it.courseDate)}</td>
+            <td><span class="tag ${it.courseType === '体验课' ? 'tag-amber' : 'tag-blue'} nodot">${esc(it.courseType)}</span></td>
+            <td class="right mono">${it.payableHours} 时</td><td class="right mono">${yuan(it.unitPriceCents)}</td>
+            <td class="right mono">${yuan(it.amountCents)}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">无</td></tr>'}</tbody>
+        </table></div>
+
+        ${ads.length ? `<div class="section-title">调整</div>${ads.map(a => `<div class="m-row"><span class="k">${esc(a.dir)} · ${esc(a.reason)}</span>
+          <span class="mono">${a.dir === '扣减' ? '-' : '+'}${yuan(a.amountCents)} <span class="tag ${a.status === '已审核' ? 'tag-green' : 'tag-slate'} nodot">${esc(a.status)}</span></span></div>`).join('')}` : ''}
+
+        ${pays.length ? `<div class="section-title">付款记录</div>${pays.map(p => `<div class="m-row"><span class="k">${esc(p.paymentMethod)} · ${esc(p.paymentDate)}</span>
+          <span class="mono">${yuan(p.amountCents)} <span class="tag ${p.status === '成功' ? 'tag-green' : 'tag-red'} nodot">${esc(p.status)}</span></span></div>`).join('')}` : ''}
+
+        ${diss.length ? `<div class="section-title">我的异议</div>${diss.map(x => `<div class="m-row" style="display:block">
+          <div class="flex jcb"><b>${esc(x.type)}</b><span class="tag ${x.status === '已处理' ? 'tag-green' : 'tag-slate'} nodot">${esc(x.status)}</span></div>
+          <div class="small muted">${esc(x.reason)}</div>
+          ${x.opinion ? `<div class="small">处理意见：${esc(x.opinion)}</div>` : ''}</div>`).join('')}` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function doConfirm(id) {
+  Proto.confirmBox('确认结算单', '确认后表示你已核对本期课时费与金额无误，机构将安排付款。', '确认无误', () => {
+    try { S.teacherConfirmSettlement(id); Proto.toast('已确认，等待机构付款', 'ok'); render(); }
+    catch (e) { Proto.toast(e.message, 'err'); }
+  });
+}
+
+function openDispute(id) {
+  disTarget = id;
+  document.getElementById('dq_info').innerHTML = `<span class="k">结算单</span><span class="v mono">${esc(id)}</span>`;
+  document.getElementById('q_reason').value = '';
+  document.getElementById('q_course').value = '';
+  document.getElementById('q_expect').value = '';
+  document.getElementById('q_err').textContent = '';
+  Proto.openModal('disputeModal');
+}
+function submitDispute() {
+  const reason = document.getElementById('q_reason').value.trim();
+  const expect = Number(document.getElementById('q_expect').value || 0);
+  const err = document.getElementById('q_err');
+  if (!reason) { err.textContent = '请填写异议原因'; return; }
+  try {
+    S.addSettlementDispute({
+      settlementId: disTarget,
+      type: document.getElementById('q_type').value,
+      courseId: document.getElementById('q_course').value.trim(),
+      expectAmountCents: expect > 0 ? Math.round(expect * 100) : 0,
+      reason
+    });
+    Proto.closeModal('disputeModal');
+    Proto.toast('异议已提交，机构核查后会处理', 'ok');
+    render();
+  } catch (e) { err.textContent = e.message; }
+}
+
+render();
+</script>
+</body>
+</html>

@@ -27,6 +27,16 @@
           <select class="select" id="f_type"><option>电话</option><option>微信</option><option>面谈</option><option>其他</option></select></div>
         <div class="field"><label>下次跟进时间</label>
           <input class="input" type="date" id="f_next"></div>
+        <div class="field"><label>意向等级</label>
+          <select class="select" id="f_level"><option value="">不评估</option></select></div>
+        <div class="field"><label>决策人</label>
+          <select class="select" id="f_decision"><option value="">未明确</option></select></div>
+        <div class="field"><label>下次动作</label>
+          <select class="select" id="f_nextaction"><option value="">未设定</option></select></div>
+        <div class="field"><label>预算区间</label>
+          <input class="input" id="f_budget" placeholder="如 1-2万（选填）"></div>
+        <div class="field full"><label>主要顾虑（多选）</label>
+          <div class="flex gap8" id="f_concerns" style="flex-wrap:wrap"></div></div>
         <div class="field full"><label>沟通内容 <span class="req">*</span></label>
           <textarea class="textarea" id="f_content" placeholder="必填，记录客户诉求与你的回复"></textarea></div>
         <div class="field full"><label>推进状态（只能向前流转）</label>
@@ -84,6 +94,18 @@ const AG = Proto.agentId();
 S.setSession({ role: 'agent', agentId: AG, operatorName: Proto.agentName() });
 Proto.shell({ role: 'agent', active: 'agent-customers' });
 
+/* 结构化跟进字段初始化（来自 Store 枚举，集中维护不散落） */
+(function initFollowFields() {
+  const lv = document.getElementById('f_level');
+  lv.innerHTML = '<option value="">不评估</option>' + (S.LEAD_LEVELS || []).map(x => `<option>${x}</option>`).join('');
+  const dc = document.getElementById('f_decision');
+  dc.innerHTML = '<option value="">未明确</option>' + (S.LEAD_DECISION_MAKERS || []).map(x => `<option>${x}</option>`).join('');
+  const na = document.getElementById('f_nextaction');
+  na.innerHTML = '<option value="">未设定</option>' + (S.LEAD_NEXT_ACTIONS || []).map(x => `<option>${x}</option>`).join('');
+  const cs = document.getElementById('f_concerns');
+  cs.innerHTML = (S.LEAD_CONCERNS || []).map(x => `<label class="check"><input type="checkbox" name="fc" value="${x}"> ${x}</label>`).join('');
+})();
+
 const Q = new URLSearchParams(location.search);
 let LEAD_ID = Q.get('id');
 let VIEW = null;
@@ -129,6 +151,10 @@ function render() {
       </div>
     </div>
 
+    ${Q.get('first') === '1' ? `<div class="alert alert-success mb16"><span class="ico">✓</span>
+      <div><b>报备成功！</b>建议立即记录首次跟进，沉淀客户诉求、顾虑与下次动作。
+        <div class="mt8"><button class="btn btn-sm btn-primary" onclick="openFollow()">立即记录首次跟进</button></div></div></div>` : ''}
+
     <div class="grid g-2-1" style="align-items:start">
       <div>
         <div class="card">
@@ -170,6 +196,8 @@ function render() {
               <div class="tl-item ${i === 0 ? 'on' : ''}">
                 <div class="tl-head"><b>${esc(f.type)}</b><span class="tl-time">${esc(f.at)} · ${esc(f.by)}</span></div>
                 <div class="tl-body">${esc(f.content)}
+                  ${(f.level || f.decisionMaker || (f.concerns && f.concerns.length) || f.budget || f.nextAction)
+                    ? `<div class="small muted mt4">${f.level ? '等级 ' + esc(f.level) + ' ' : ''}${f.decisionMaker ? '决策人 ' + esc(f.decisionMaker) + ' ' : ''}${(f.concerns && f.concerns.length) ? '顾虑 ' + esc(f.concerns.join('/')) + ' ' : ''}${f.budget ? '预算 ' + esc(f.budget) + ' ' : ''}${f.nextAction ? '下次动作 ' + esc(f.nextAction) : ''}</div>` : ''}
                   ${f.nextAt ? `<div class="box">下次跟进：${esc(f.nextAt)}</div>` : ''}</div>
               </div>`).join('')}</div>`
               : '<div class="empty" style="padding:24px 8px"><p>尚未记录跟进</p><p class="small">至少一条跟进后才能转为意向</p></div>'}
@@ -177,15 +205,20 @@ function render() {
         </div>
 
         <div class="card">
-          <div class="card-head"><div class="card-title">成交订单</div></div>
-          <div class="card-body ${VIEW.orders.length ? 'tight' : ''}">
-            ${VIEW.orders.length ? `<table class="table compact">
-              <thead><tr><th>订单</th><th>套餐</th><th class="right">课时</th><th class="right">金额</th><th>状态</th><th>下单时间</th></tr></thead>
-              <tbody>${VIEW.orders.map(o => `<tr>
-                <td class="mono small">${o.id}</td><td class="small">${esc(o.productName)}</td>
-                <td class="right mono">${o.totalHours}</td><td class="right mono">${Proto.money(o.amount)}</td>
-                <td><span class="tag tag-${S.ORDER_TONE[o.status] || 'slate'}">${o.status}</span></td>
-                <td class="small muted">${esc(o.createdAt)}</td></tr>`).join('')}</tbody></table>`
+          <div class="card-head"><div class="card-title">成交订单 <span class="hint">状态时间轴</span></div></div>
+          <div class="card-body">
+            ${VIEW.orders.length ? VIEW.orders.map(o => `
+              <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+                <div class="flex jcb aic">
+                  <div><b>${esc(o.productName)}</b> <span class="mono small muted">${o.id}</span></div>
+                  <span class="tag tag-${S.ORDER_TONE[o.status] || 'slate'}">${esc(o.status)}</span>
+                </div>
+                <div class="small muted mt4">课时 ${o.totalHours} · 金额 ${Proto.money(o.amount)} · 已支付 ${Proto.money(o.paidAmount || 0)} · 下单 ${esc(o.createdAt)}</div>
+                <div class="flex mt8" style="gap:6px;flex-wrap:wrap;align-items:center">
+                  ${(o.timeline || []).map(n => `<span class="tag tag-${n.done ? (n.terminal ? 'red' : 'green') : 'slate'} nodot" title="${esc(n.at || '')}">${esc(n.label)}${n.done ? ' ✓' : ''}</span>`).join('<span class="muted">→</span>')}
+                </div>
+                ${o.rejectReason ? `<div class="alert alert-warn mt8" style="margin:8px 0 0"><span class="ico">!</span><div>驳回/取消原因：${esc(o.rejectReason)}</div></div>` : ''}
+              </div>`).join('')
               : `<div class="empty" style="padding:24px 8px"><div class="e-ico">▤</div><p>暂未成交</p><p class="small">转为意向并提交报名订单后，订单会保留你的代理归属</p></div>`}
           </div>
         </div>
@@ -249,15 +282,26 @@ function render() {
 
 function openFollow() { Proto.openModal('followModal'); }
 function saveFollow() {
+  const concerns = Array.from(document.querySelectorAll('input[name=fc]:checked')).map(x => x.value);
   try {
     S.addLeadFollowUp(LEAD_ID, {
       type: document.getElementById('f_type').value,
       content: document.getElementById('f_content').value.trim(),
       nextAt: document.getElementById('f_next').value,
-      status: document.getElementById('f_status').value
+      status: document.getElementById('f_status').value,
+      level: document.getElementById('f_level').value,
+      decisionMaker: document.getElementById('f_decision').value,
+      budget: document.getElementById('f_budget').value.trim(),
+      nextAction: document.getElementById('f_nextaction').value,
+      concerns: concerns
     });
     Proto.closeModal('followModal');
     document.getElementById('f_content').value = '';
+    document.getElementById('f_budget').value = '';
+    document.getElementById('f_level').value = '';
+    document.getElementById('f_decision').value = '';
+    document.getElementById('f_nextaction').value = '';
+    document.querySelectorAll('input[name=fc]').forEach(x => x.checked = false);
     Proto.toast('跟进已记录', 'ok');
     render();
   } catch (e) { Proto.toast(e.message, 'err'); }

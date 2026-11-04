@@ -55,6 +55,8 @@
         </div>
       </div>
 
+      <div id="topBar" class="mb16"></div>
+
       <div class="cw-chips" id="chips"></div>
 
       <div class="grid g-2-1" style="align-items:start">
@@ -113,6 +115,12 @@
               <span class="small muted">保存后会写入本节课记录</span></div>
             <div class="card-body">
               <textarea class="input" id="note" rows="3" placeholder="本节课的整体情况、临时调整、需要教务配合的事项…"></textarea>
+              <div class="flex gap8 mt8" style="flex-wrap:wrap">
+                <div class="field" style="min-width:150px"><label>学员状态</label>
+                  <select class="select" id="teachState"><option value="">未选择</option><option>专注</option><option>一般</option><option>疲惫</option></select></div>
+                <div class="field" style="min-width:150px"><label>需教务配合</label>
+                  <select class="select" id="needStaff"><option value="">未选择</option><option>是</option><option>否</option></select></div>
+              </div>
               <div class="divider" style="margin:14px 0"></div>
               <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
                 <div class="small muted" id="warn"></div>
@@ -305,7 +313,46 @@ function render() {
   renderEntries();
   renderRecord();
   renderSide();
+  renderTopBar();
 }
+
+/* ---------- 顶部：未完成训练强入口 + 今日到期合并 + 可关闭建议 ---------- */
+function renderTopBar() {
+  const sid = cur.studentId, cid = cur.id;
+  const courseTask = Store.openTrainTaskOfCourse(cid);
+  const due = Store.teacherDueReviewSummary(sid);
+  const tipKey = 'cw_tip_' + sid;
+  let dismissed = false;
+  try { dismissed = sessionStorage.getItem(tipKey) === '1'; } catch (e) {}
+
+  let html = '';
+  if (courseTask && cur.status !== '已完成') {
+    const href = courseTask.phase === '预筛选'
+      ? `word-training-prescreen.html?task=${courseTask.id}&course=${cid}`
+      : `word-training.html?task=${courseTask.id}&course=${cid}`;
+    const label = courseTask.status === '已中断' ? '继续上次训练（已中断）' : '继续上次训练';
+    html += `<div class="alert alert-info mb12" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span class="ico">▶</span>
+      <div style="flex:1">本课程有<b>未完成的单词训练</b>：${Proto.escHtml(courseTask.wordbookName || '')} · ${Proto.escHtml(courseTask.phase || '')}</div>
+      <a class="btn btn-primary" href="${href}">${label} →</a></div>`;
+  }
+  if (due.total) {
+    html += `<div class="card mb12"><div class="card-body flex jcb aic" style="flex-wrap:wrap;gap:10px">
+      <div>今日到期复习：<b>莱特纳 ${due.leitner}</b> · <b>21 天 ${due.plan21}</b></div>
+      <div class="flex gap8">
+        <a class="btn btn-sm" href="leitner.html?student=${sid}&course=${cid}">莱特纳 ${due.leitner} →</a>
+        <a class="btn btn-sm" href="memory21.html?student=${sid}&course=${cid}">21 天 ${due.plan21} →</a>
+      </div></div></div>`;
+  }
+  if (!dismissed) {
+    html += `<div class="alert alert-warn mb12" style="display:flex;gap:10px;align-items:flex-start">
+      <span class="ico">i</span>
+      <div style="flex:1">建议顺序：① 单词训练（未完成优先）→ ② 今日到期复习 → ③ 文章训练 → ④ 完成课程并写报告。</div>
+      <button class="btn btn-sm" onclick="dismissTip('${sid}')">知道了</button></div>`;
+  }
+  document.getElementById('topBar').innerHTML = html;
+}
+function dismissTip(sid) { try { sessionStorage.setItem('cw_tip_' + sid, '1'); } catch (e) {} renderTopBar(); }
 
 function pick(id) { location.href = 'course-workbench.html?course=' + id; }
 
@@ -517,6 +564,8 @@ function renderSide() {
     : '<div class="small muted">本节课没有未完成的教学任务。</div>';
 
   document.getElementById('note').value = rec ? (rec.teacherNote || '') : '';
+  const tsEl = document.getElementById('teachState'); if (tsEl) tsEl.value = rec ? (rec.teachState || '') : '';
+  const nsEl = document.getElementById('needStaff'); if (nsEl) nsEl.value = rec ? (rec.needStaff || '') : '';
   document.getElementById('finishBtn').disabled = cur.status === '已完成';
   document.getElementById('finishBtn').textContent = cur.status === '已完成' ? '本节课已完成' : '保存并完成本节课';
   document.getElementById('warn').textContent = unf.total
@@ -529,6 +578,8 @@ function saveNote() {
   const r = Store.recordOfCourse(cur.id);
   if (!r) { Proto.toast('请先进入课程再保存备注', 'err'); return; }
   r.teacherNote = document.getElementById('note').value;
+  r.teachState = document.getElementById('teachState').value;
+  r.needStaff = document.getElementById('needStaff').value;
   r.updatedAt = Store.stamp();
   Store.save();
   Proto.toast('备注已保存');
@@ -544,6 +595,8 @@ function askFinish() {
     : '<div class="alert alert-info"><span class="ico">i</span><div>本节课的教学任务都已完成。</div></div>';
   document.getElementById('reasonField').style.display = 'none';
   document.getElementById('finReason').value = '';
+  document.getElementById('finSummary').insertAdjacentHTML('afterbegin',
+    '<div class="alert alert-info" style="background:#eff6ff;margin-bottom:10px"><span class="ico">✓</span><div><b>完成后：</b>将扣 <b>1</b> 课时 · 生成 <b>教学报告草稿</b> · <b>家长暂不可见</b>（需先提交再发布）。</div></div>');
   Proto.openModal('finModal');
 }
 
@@ -558,6 +611,8 @@ function doFinish() {
   const pol = (document.querySelector('input[name=pol]:checked') || {}).value || '保留';
   const reason = document.getElementById('finReason').value.trim();
   if (pol !== '保留' && !reason) { Proto.toast('选择「结束」或「取消」时必须填写处理说明', 'err'); return; }
+  const r0 = Store.recordOfCourse(cur.id);
+  if (r0) { r0.teachState = document.getElementById('teachState').value; r0.needStaff = document.getElementById('needStaff').value; Store.save(); }
   let r;
   try {
     r = Store.finishCourse(cur.id, {

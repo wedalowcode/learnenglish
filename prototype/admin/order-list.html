@@ -31,6 +31,14 @@
         <div><b>课时口径：</b>只有「确认收款」动作会创建课时账户并入账；待审核/待收款订单一律不产生课时。
           收款金额必须与订单金额一致，部分收款不生成课时。</div></div>
 
+      <div class="pill-tabs mb12" id="quickTabs">
+        <button class="pill-tab on" data-tab="">全部</button>
+        <button class="pill-tab" data-tab="pending">待审核</button>
+        <button class="pill-tab" data-tab="reviewed">待收款</button>
+        <button class="pill-tab" data-tab="credited">已入账</button>
+      </div>
+      <div id="payResult"></div>
+
       <div class="card filter">
         <div class="field"><label>订单 / 学员</label><input class="input" id="kw" placeholder="订单号或学员姓名" oninput="render()"></div>
         <div class="field"><label>订单状态</label>
@@ -101,6 +109,18 @@ document.getElementById('ag').innerHTML = '<option value="">全部</option><opti
 document.getElementById('p_method').innerHTML = S.dictionaryOptions('pay_method').map(m => `<option>${m}</option>`).join('');
 
 let payId = '';
+let quickTab = (function () {
+  const t = new URLSearchParams(location.search).get('tab');
+  return ['pending', 'reviewed', 'credited'].indexOf(t) >= 0 ? t : '';
+})();
+document.querySelectorAll('#quickTabs .pill-tab').forEach(x => x.classList.toggle('on', x.dataset.tab === quickTab));
+document.getElementById('quickTabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-tab]');
+  if (!b) return;
+  quickTab = b.dataset.tab;
+  document.querySelectorAll('#quickTabs .pill-tab').forEach(x => x.classList.toggle('on', x === b));
+  render();
+});
 
 function reset() {
   ['kw'].forEach(id => document.getElementById(id).value = '');
@@ -135,6 +155,8 @@ function render() {
   let rows = S.orderRows({ kw: kw, status: st, type: tp });
   if (ag === '__none') rows = rows.filter(r => !r.order.agentId);
   else if (ag) rows = rows.filter(r => r.order.agentId === ag);
+  const TQ = { pending: S.ORDER.PENDING, reviewed: S.ORDER.REVIEWED, credited: S.ORDER.CREDITED };
+  if (quickTab && TQ[quickTab]) rows = rows.filter(r => r.order.status === TQ[quickTab]);
   document.getElementById('total').textContent = rows.length;
 
   Proto.renderRows('rows', rows, r => {
@@ -181,13 +203,21 @@ function openPay(id) {
 }
 function confirmPay() {
   try {
+    const ord0 = S.order(payId);
+    const stu0 = ord0 ? S.student(ord0.studentId) : null;
     const o = S.confirmOrderPayment(payId, {
       method: document.getElementById('p_method').value,
       amount: document.getElementById('p_amount').value,
       note: document.getElementById('p_note').value.trim() || '管理员确认收款'
     });
     Proto.closeModal('payModal');
-    Proto.toast(`订单 ${o.id} 已收款并入账，学员课时 ${o.totalHours}`, 'ok');
+    const name = stu0 ? stu0.name : '';
+    document.getElementById('payResult').innerHTML = `<div class="alert alert-success mb16" style="align-items:center">
+      <span class="ico">✓</span>
+      <div class="grow">订单 <b>${o.id}</b> 已收款并入账：已为学员 <b>${name}</b> 入账 <b>${o.totalHours}</b> 课时。</div>
+      <a class="btn btn-sm" href="hour-account.html?student=${encodeURIComponent(name)}">查看课时账户</a>
+    </div>`;
+    Proto.toast(`已为学员入账 ${o.totalHours} 课时`, 'ok');
     render();
   } catch (e) { Proto.toast(e.message, 'err'); }
 }

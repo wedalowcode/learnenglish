@@ -3,8 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>业绩概览</title>
+<title>今日作战台</title>
 <link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .entry-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .entry { display:block; text-decoration:none; color:inherit; border:1px solid var(--border); border-radius:10px;
+    padding:14px 16px; background:#fff; transition:box-shadow .15s; }
+  .entry:hover { box-shadow:var(--shadow); border-color:var(--primary); }
+  .entry .n { font-size:26px; font-weight:700; line-height:1.1; }
+  .entry .l { font-size:12.5px; color:var(--text-2); margin-top:4px; }
+  .entry.red .n { color:var(--danger); }
+  .entry.amber .n { color:var(--warning); }
+  .entry.blue .n { color:var(--primary-dark); }
+  .op-row { align-items:flex-start; }
+  .op-row .who { flex:1; min-width:0; }
+  .quick a, .quick button { margin-right:6px; }
+  @media (max-width:820px){ .entry-grid { grid-template-columns:repeat(2,1fr); } }
+</style>
 </head>
 <body>
 <div class="layout">
@@ -15,40 +30,37 @@
 
       <div class="page-head">
         <div>
-          <div class="crumb">工作台<span class="sep">/</span>业绩概览</div>
-          <h1 class="page-title">业绩概览</h1>
+          <div class="crumb">工作台<span class="sep">/</span>今日作战台</div>
+          <h1 class="page-title">今日作战台</h1>
           <div class="page-sub" id="sub">—</div>
         </div>
         <div class="page-actions">
           <a class="btn" href="my-customers.html">我的客户</a>
-          <button class="btn btn-primary" onclick="openCreate()">+ 客户报备</button>
+          <button class="btn btn-primary" onclick="location.href='customer-create.html'">+ 客户报备</button>
         </div>
       </div>
 
-      <div class="grid g4 mb16" id="stats"></div>
-
-      <div class="alert alert-warn mb16"><span class="ico">!</span>
-        <div><b>佣金规则待确认：</b>确认时点、退款冲回、结算周期由机构配置。当前金额按代理档案中的规则预估，<b>仅供参考，不作为结算依据</b>（完整结算本轮不做）。</div></div>
+      <div class="entry-grid mb16" id="entries"></div>
 
       <div class="grid g-2-1" style="align-items:start">
-        <div class="card">
-          <div class="card-head"><div class="card-title">最近客户</div>
-            <a class="btn btn-sm" href="my-customers.html">全部客户</a></div>
-          <div class="card-body tight">
-            <table class="table compact">
-              <thead><tr><th>客户</th><th>学生年级</th><th>意向课程</th><th>状态</th><th>最近跟进</th><th style="width:80px">操作</th></tr></thead>
-              <tbody id="recent"></tbody>
-            </table>
+        <div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">今日必跟 / 逾期跟进 <span class="hint">点击直接记录</span></div>
+              <a class="btn btn-sm" href="my-customers.html">全部客户</a></div>
+            <div class="card-body" id="today"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">本周跟进计划</div></div>
+            <div class="card-body" id="week"></div>
           </div>
         </div>
 
         <div>
           <div class="card">
-            <div class="card-head"><div class="card-title">待跟进提醒</div>
-              <span class="tag tag-red nodot" id="dueCount">0</span></div>
-            <div class="card-body" id="dueList"></div>
+            <div class="card-head"><div class="card-title">业绩（次要）</div></div>
+            <div class="card-body" id="stats"></div>
           </div>
-
           <div class="card">
             <div class="card-head"><div class="card-title">续费机会</div>
               <a class="btn btn-sm" href="renewal-list.html">全部</a></div>
@@ -56,6 +68,9 @@
           </div>
         </div>
       </div>
+
+      <div class="alert alert-warn mt16"><span class="ico">!</span>
+        <div><b>佣金规则待确认：</b>金额按代理档案规则预估，仅供参考，不作为结算依据（完整结算本轮不做）。</div></div>
 
     </main>
   </div>
@@ -66,54 +81,80 @@
 <script src="../assets/js/data.js"></script>
 <script src="../assets/js/store.js"></script>
 <script>
-/* 代理身份取自会话：不使用任何工号/姓名硬编码 */
+/* 代理身份取自会话，不使用工号/姓名硬编码 */
 const S = Store;
 const AG = Proto.agentId();
 S.setSession({ role: 'agent', agentId: AG, operatorName: Proto.agentName() });
 Proto.shell({ role: 'agent', active: 'agent-workbench' });
 
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function d10(t) { return String(t || '').slice(0, 10); }
+
+const wb = S.agentWorkbench(AG);
 const ov = S.agentOverview(AG);
-const rows = S.agentCustomers();
 const cm = ov.commission || {};
 
 document.getElementById('sub').textContent =
-  `${ov.agent ? ov.agent.name : ''} · ${ov.agent ? ov.agent.type : ''} · 佣金规则 ${ov.agent ? ov.agent.ruleText : '—'}`;
+  `${S.TODAY} · ${ov.agent ? ov.agent.name : ''} · 今日课程/待办见下`;
 
+/* ---- 四入口卡：可点进列表 ---- */
+document.getElementById('entries').innerHTML = [
+  { key: 'todayFollow', l: '今日必跟', n: wb.counts.todayFollow, cls: 'blue', href: 'my-customers.html?due=today' },
+  { key: 'overdue', l: '逾期未跟进', n: wb.counts.overdue, cls: 'red', href: 'my-customers.html?due=overdue' },
+  { key: 'intentNoOrder', l: '待提交订单', n: wb.counts.intentNoOrder, cls: 'amber', href: 'my-customers.html?stage=intent' },
+  { key: 'pendingPayment', l: '待确认收款', n: wb.counts.pendingPayment, cls: 'blue', href: 'my-customers.html?stage=payment' }
+].map(e => `<a class="entry ${e.cls}" href="${e.href}"><div class="n">${e.n}</div><div class="l">${e.l} ›</div></a>`).join('');
+
+/* ---- 今日必跟 / 逾期：可操作列表 ---- */
+const ops = wb.overdue.concat(wb.todayFollow);
+document.getElementById('today').innerHTML = ops.length ? ops.map(r => `
+  <div class="m-row op-row">
+    <div class="who">
+      <div><b>${esc(r.customerName)}</b> · ${esc(r.grade || '—')} · <span class="tag tag-${S.LEAD_TONE[r.status] || 'slate'} nodot">${r.status}</span>
+        ${d10(r.nextFollowAt) < S.TODAY ? '<span class="tag tag-red nodot">逾期</span>' : ''}</div>
+      <div class="small muted">${esc(r.phone || '—')} · 下次跟进 ${esc(d10(r.nextFollowAt) || '—')}</div>
+    </div>
+    <div class="quick nowrap">
+      <a class="btn btn-sm btn-primary" href="customer-detail.html?id=${r.leadId}">记录跟进</a>
+      <button class="btn btn-sm" onclick="copyPhone('${esc(r.phone || '')}')">复制</button>
+      <a class="btn btn-sm" href="tel:${esc(r.phone || '')}">拨号</a>
+    </div>
+  </div>`).join('') : '<div class="small muted">今天没有待跟进客户，全部按计划推进。</div>';
+
+/* ---- 本周跟进计划（今天起 7 天内） ---- */
+const rows = S.agentCustomers();
+const weekEnd = (function () { const d = new Date(S.TODAY); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); })();
+const week = rows.filter(r => r.nextFollowAt && d10(r.nextFollowAt) >= S.TODAY && d10(r.nextFollowAt) <= weekEnd &&
+  [S.LEAD.DEAL, S.LEAD.INVALID, S.LEAD.CLOSED].indexOf(r.status) < 0)
+  .sort((a, b) => d10(a.nextFollowAt) < d10(b.nextFollowAt) ? -1 : 1);
+document.getElementById('week').innerHTML = week.length ? week.map(r => `
+  <div class="m-row"><span class="k">${esc(d10(r.nextFollowAt))} ${esc(r.customerName)} · ${esc(r.grade || '—')}</span>
+    <a class="btn-link" href="customer-detail.html?id=${r.leadId}">跟进</a></div>`).join('')
+  : '<div class="small muted">本周暂无计划跟进。可在客户详情记录跟进时设置下次时间。</div>';
+
+/* ---- 业绩（次要位，紧凑展示） ---- */
 document.getElementById('stats').innerHTML = `
-  <div class="card stat"><div class="stat-label">我的客户</div><div class="stat-value">${ov.customers}<small>人</small></div>
-    <div class="stat-foot">跟进中 ${ov.pendingLeads} 人</div></div>
-  <div class="card stat"><div class="stat-label">成交客户</div><div class="stat-value" style="color:var(--success)">${ov.deals}<small>人</small></div>
-    <div class="stat-foot">已入账订单 ${ov.creditedOrders} 笔</div></div>
-  <div class="card stat"><div class="stat-label">成交金额</div><div class="stat-value">${Proto.money(ov.amount)}</div>
-    <div class="stat-foot">按已收款入账订单统计</div></div>
-  <div class="card stat"><div class="stat-label">佣金预估</div><div class="stat-value" style="color:var(--warning)">${Proto.money(cm.estimatedCommission || 0)}</div>
-    <div class="stat-foot">${cm.settlementStatus || '未结算'} · 仅预估</div></div>`;
+  <div class="m-row"><span class="k">我的客户</span><span class="mono">${ov.customers} 人</span></div>
+  <div class="m-row"><span class="k">成交客户</span><span class="mono">${ov.deals} 人</span></div>
+  <div class="m-row"><span class="k">成交金额</span><span class="mono">${Proto.money(ov.amount)}</span></div>
+  <div class="m-row" style="border-bottom:none"><span class="k">佣金预估</span>
+    <span class="mono" style="color:var(--warning)">${Proto.money(cm.estimatedCommission || 0)}</span></div>`;
 
-Proto.renderRows('recent', rows.slice(0, 6), r => `
-  <tr>
-    <td class="strong"><a href="customer-detail.html?id=${r.leadId}">${r.customerName}</a></td>
-    <td>${r.grade || '—'}</td>
-    <td class="small">${r.intent || '—'}</td>
-    <td><span class="tag tag-${S.LEAD_TONE[r.status] || 'slate'}">${r.status}</span></td>
-    <td class="small muted">${(r.lastFollowAt || '—').slice(5, 16)}</td>
-    <td class="ops"><a class="btn-link" href="customer-detail.html?id=${r.leadId}">跟进</a></td>
-  </tr>`, 6);
-
-const due = rows.filter(r => r.nextFollowAt && r.nextFollowAt.slice(0, 10) <= S.TODAY &&
-  [S.LEAD.DEAL, S.LEAD.INVALID, S.LEAD.CLOSED].indexOf(r.status) < 0);
-document.getElementById('dueCount').textContent = due.length;
-document.getElementById('dueList').innerHTML = due.length ? due.map(r => `
-  <div class="m-row"><span class="k">${r.customerName} · ${r.grade || '—'}</span>
-    <span class="tag tag-amber nodot">${r.nextFollowAt.slice(0, 10)}</span></div>`).join('')
-  : '<div class="small muted">暂无逾期跟进，全部按计划推进。</div>';
-
+/* ---- 续费机会 ---- */
 const rn = S.agentRenewals(AG);
 document.getElementById('renewals').innerHTML = rn.length ? rn.slice(0, 4).map(x => `
-  <div class="m-row"><span class="k">${x.studentName} · 剩余 ${x.remain} 课时</span>
+  <div class="m-row"><span class="k">${esc(x.studentName)} · 剩余 ${x.remain} 课时</span>
     <span class="tag tag-${S.RENEWAL_TONE[x.renewal.status]}">${x.renewal.status}</span></div>`).join('')
   : '<div class="small muted">暂无续费机会。</div>';
 
-function openCreate() { location.href = 'customer-create.html'; }
+function copyPhone(phone) {
+  if (!phone) { Proto.toast('没有可复制的手机号', 'warn'); return; }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(phone).then(() => Proto.toast('已复制 ' + phone, 'ok'), () => Proto.toast('复制失败，请手动复制：' + phone, 'warn'));
+    } else { Proto.toast('请手动复制：' + phone, 'warn'); }
+  } catch (e) { Proto.toast('请手动复制：' + phone, 'warn'); }
+}
 </script>
 </body>
 </html>

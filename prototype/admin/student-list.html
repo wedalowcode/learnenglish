@@ -52,6 +52,14 @@
             <option value="low">低于 10 课时</option>
             <option value="zero">0 课时</option>
           </select></div>
+        <div class="field"><label>训练任务</label>
+          <select class="select" id="f_task" onchange="applyFilter()">
+            <option value="">不限</option><option value="open">有未完成训练任务</option>
+          </select></div>
+        <div class="field"><label>最近上课</label>
+          <select class="select" id="f_recent" onchange="applyFilter()">
+            <option value="">不限</option><option value="idle">近 7 天无上课</option>
+          </select></div>
         <div class="field full"><label>创建时间范围</label>
           <div class="flex gap8">
             <input class="input" type="date" value="2026-01-01" style="max-width:160px">
@@ -155,11 +163,17 @@ function currentFilter() {
     teacher: document.getElementById('f_teacher').value,
     status: document.getElementById('f_status').value,
     remain: document.getElementById('f_remain').value,
+    task: document.getElementById('f_task').value,
+    recent: document.getElementById('f_recent').value,
   };
 }
 
 function applyFilter() {
   const f = currentFilter();
+  /* 第十三轮：有未完成训练任务 / 近 7 天无上课（数据来自 Store 聚合） */
+  const openSet = {}, idleSet = {};
+  try { S.studentsWithOpenTrainTask().forEach(id => { openSet[id] = 1; }); } catch (e) {}
+  try { S.inactiveStudents(7).forEach(id => { idleSet[id] = 1; }); } catch (e) {}
   const rows = S.students().filter(s => {
     if (f.kw && !(s.name.includes(f.kw) || s.id.toLowerCase().includes(f.kw.toLowerCase()))) return false;
     if (f.phone && !s.phone.includes(f.phone)) return false;
@@ -168,6 +182,8 @@ function applyFilter() {
     if (f.status && s.status !== f.status) return false;
     if (f.remain === 'low' && !(s.remain < 10)) return false;
     if (f.remain === 'zero' && s.remain !== 0) return false;
+    if (f.task === 'open' && !openSet[s.id]) return false;
+    if (f.recent === 'idle' && !idleSet[s.id]) return false;
     return true;
   });
 
@@ -192,6 +208,7 @@ function applyFilter() {
         <a class="btn-link" href="student-detail.html?id=${s.id}">详情</a>
         <a class="btn-link" href="student-form.html">编辑</a>
         <button class="btn-link" onclick="openAssign('${s.id}')">分配教师</button>
+        ${s.remain < 10 ? `<a class="btn-link" href="renewal-list.html?student=${encodeURIComponent(s.name)}">发起续费</a>` : ''}
         ${s.status === '在读'
           ? `<button class="btn-link mute" onclick="pause('${s.name}')">暂停</button>`
           : `<button class="btn-link mute" onclick="Proto.toast('已恢复服务（示意）','ok')">恢复</button>`}
@@ -202,6 +219,7 @@ function applyFilter() {
 function resetFilter() {
   ['f_kw', 'f_phone'].forEach(id => document.getElementById(id).value = '');
   ['f_grade', 'f_teacher', 'f_status', 'f_remain'].forEach(id => document.getElementById(id).value = '');
+  ['f_task', 'f_recent'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   applyFilter();
 }
 

@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>教师结算详情</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content" id="page">
+      <div class="empty" style="padding:60px 20px"><div class="e-ico">▤</div><p>正在加载结算单…</p></div>
+    </main>
+  </div>
+</div>
+
+<!-- 创建调整 -->
+<div class="mask" id="adjModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">创建结算调整</div>
+      <button class="modal-close" onclick="Proto.closeModal('adjModal')">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field"><label>类型</label>
+          <select class="select" id="a_dir"><option>补发</option><option>扣减</option></select></div>
+        <div class="field"><label>金额（元） <span class="req">*</span></label>
+          <input class="input" id="a_amount" type="number" min="0" step="0.01"></div>
+        <div class="field full"><label>调整原因 <span class="req">*</span></label>
+          <input class="input" id="a_reason" placeholder="如：补发漏计课程 / 课时费更正"></div>
+      </div>
+      <div class="small" style="color:var(--danger)" id="a_err"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('adjModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveAdjust()">保存（待审核）</button>
+    </div>
+  </div>
+</div>
+
+<!-- 登记付款 -->
+<div class="mask" id="payModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">登记教师付款</div>
+      <button class="modal-close" onclick="Proto.closeModal('payModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb12"><span class="ico">i</span><div>仅登记真实支付事实；支持分批/部分付款，累计不能超过应付金额。</div></div>
+      <div class="form-grid">
+        <div class="field"><label>付款金额（元） <span class="req">*</span></label>
+          <input class="input" id="p_amount" type="number" min="0" step="0.01"></div>
+        <div class="field"><label>付款日期</label><input class="input" type="date" id="p_date"></div>
+        <div class="field"><label>付款方式</label>
+          <select class="select" id="p_method"><option>银行转账</option><option>微信</option><option>支付宝</option><option>现金</option></select></div>
+        <div class="field"><label>流水号</label><input class="input" id="p_no" placeholder="可空"></div>
+        <div class="field"><label>付款结果</label>
+          <select class="select" id="p_status"><option>成功</option><option>失败</option></select></div>
+        <div class="field"><label>凭证链接（可空）</label><input class="input" id="p_proof" placeholder="https://..."></div>
+        <div class="field full"><label>备注</label><input class="input" id="p_note"></div>
+      </div>
+      <div class="small" style="color:var(--danger)" id="p_err"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('payModal')">取消</button>
+      <button class="btn btn-primary" onclick="savePayment()">登记付款</button>
+    </div>
+  </div>
+</div>
+
+<!-- 处理异议 -->
+<div class="mask" id="disModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">处理教师异议</div>
+      <button class="modal-close" onclick="Proto.closeModal('disModal')">×</button></div>
+    <div class="modal-body">
+      <div class="desc g1 mb12" id="disInfo"></div>
+      <div class="form-grid">
+        <div class="field"><label>处理结果</label>
+          <select class="select" id="d_status"><option>已处理</option><option>已驳回</option><option>处理中</option></select></div>
+        <div class="field full"><label>处理意见</label><input class="input" id="d_opinion" placeholder="核查结论与处理说明"></div>
+        <div class="field"><label>生成调整（可选）</label>
+          <select class="select" id="d_adjType"><option value="">不生成</option><option value="补发">补发</option><option value="扣减">扣减</option></select></div>
+        <div class="field"><label>调整金额（元）</label><input class="input" id="d_adjAmt" type="number" min="0" step="0.01"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('disModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveDispute()">保存处理</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'teacher-settlement' });
+const S = Store;
+const Q = new URLSearchParams(location.search);
+const SID = Q.get('id') || '';
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function yuan(c) { return (Number(c || 0) / 100).toFixed(2); }
+const STATUS_TONE = { '待教师确认': 'tag-amber', '待付款': 'tag-blue', '部分付款': 'tag-blue', '已付款': 'tag-green', '已取消': 'tag-slate' };
+let VIEW = null, disTarget = '';
+
+function render() {
+  if (!SID) { document.getElementById('page').innerHTML = '<div class="card"><div class="card-body"><div class="alert alert-warn">缺少结算单 id</div></div></div>'; return; }
+  try { VIEW = S.settlementDetailFor(SID); }
+  catch (e) { document.getElementById('page').innerHTML = `<div class="card"><div class="card-body"><div class="alert alert-warn">${esc(e.message)}</div><a class="btn mt12" href="teacher-settlement.html">返回结算工作台</a></div></div>`; return; }
+  const s = VIEW.settlement, items = VIEW.items, ads = VIEW.adjustments, diss = VIEW.disputes, pays = VIEW.payments;
+  document.getElementById('page').innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="crumb">财务管理<span class="sep">/</span><a href="teacher-settlement.html">教师结算</a><span class="sep">/</span>结算详情</div>
+        <h1 class="page-title">${esc(s.teacherName)} <span class="tag ${STATUS_TONE[s.status] || 'tag-slate'}" style="font-size:12px;vertical-align:middle">${esc(s.status)}</span></h1>
+        <div class="page-sub">${esc(s.id)} · ${esc(s.periodStart)} ~ ${esc(s.periodEnd)} · 教师编号 ${esc(s.teacherCode)}</div>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="teacher-settlement.html">返回</a>
+        <button class="btn" onclick="openAdjust()">创建调整</button>
+        ${s.status === '待教师确认' ? `<button class="btn" onclick="doOrgConfirm()">机构确认</button>` : ''}
+        <button class="btn btn-primary" onclick="openPay()" ${['待付款', '部分付款'].indexOf(s.status) < 0 ? 'disabled' : ''}>登记付款</button>
+      </div>
+    </div>
+
+    <div class="grid g4 mb16">
+      <div class="card stat"><div class="stat-label">应付总额</div><div class="stat-value">${yuan(s.totalAmountCents)}</div></div>
+      <div class="card stat"><div class="stat-label">已确认金额</div><div class="stat-value">${yuan(s.confirmedAmountCents)}</div>
+        <div class="stat-foot">${s.teacherConfirmedAt ? '教师确认 ' + esc(s.teacherConfirmedAt) : '待教师确认'}</div></div>
+      <div class="card stat"><div class="stat-label">已支付</div><div class="stat-value" style="color:var(--success)">${yuan(s.paidAmountCents)}</div></div>
+      <div class="card stat"><div class="stat-label">未支付</div><div class="stat-value" style="color:var(--warning)">${yuan(s.unpaidAmountCents)}</div></div>
+    </div>
+
+    <div class="grid g-2-1" style="align-items:start">
+      <div>
+        <div class="card">
+          <div class="card-head"><div class="card-title">课时费汇总</div></div>
+          <div class="card-body">
+            <div class="grid g2">
+              <div class="card stat"><div class="stat-label">体验课</div><div class="stat-value">${s.experienceCount}<small>节</small></div>
+                <div class="stat-foot">金额 ${yuan(s.experienceAmountCents)}</div></div>
+              <div class="card stat"><div class="stat-label">正式课</div><div class="stat-value">${s.formalCount}<small>节</small></div>
+                <div class="stat-foot">金额 ${yuan(s.formalAmountCents)}</div></div>
+            </div>
+            <div class="m-row mt12"><span class="k">调整金额</span><span class="mono">${yuan(s.adjustmentAmountCents)}</span></div>
+            <div class="m-row" style="border-bottom:none"><span class="k">应付总额</span><b class="mono">${yuan(s.totalAmountCents)}</b></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">课程明细 <span class="hint">${items.length} 条</span></div></div>
+          <div class="card-body tight">
+            <div class="table-wrap"><table class="table compact">
+              <thead><tr><th>课程</th><th>日期</th><th>课型</th><th class="right">计费时长</th><th class="right">单价</th><th class="right">金额</th><th>操作</th></tr></thead>
+              <tbody>${items.length ? items.map(it => `
+                <tr>
+                  <td class="mono small">${esc(it.courseId)}</td>
+                  <td class="small">${esc(it.courseDate)}</td>
+                  <td><span class="tag ${it.courseType === '体验课' ? 'tag-amber' : 'tag-blue'} nodot">${esc(it.courseType)}</span></td>
+                  <td class="right mono">${it.payableHours} 时</td>
+                  <td class="right mono">${yuan(it.unitPriceCents)}</td>
+                  <td class="right mono">${yuan(it.amountCents)}</td>
+                  <td class="ops"><a class="btn-link" href="course-detail.html?course=${esc(it.courseId)}">课程详情</a></td>
+                </tr>`).join('') : '<tr><td colspan="7" class="empty">无明细</td></tr>'}</tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">调整记录</div></div>
+          <div class="card-body tight">
+            <div class="table-wrap"><table class="table compact">
+              <thead><tr><th>编号</th><th>类型</th><th class="right">金额</th><th>原因</th><th>状态</th><th>审核人</th><th>操作</th></tr></thead>
+              <tbody>${ads.length ? ads.map(a => `
+                <tr>
+                  <td class="mono small">${esc(a.id)}</td>
+                  <td>${esc(a.dir)}</td>
+                  <td class="right mono">${a.dir === '扣减' ? '-' : '+'}${yuan(a.amountCents)}</td>
+                  <td class="small muted">${esc(a.reason)}</td>
+                  <td><span class="tag ${a.status === '已审核' ? 'tag-green' : a.status === '已驳回' ? 'tag-red' : 'tag-amber'} nodot">${esc(a.status)}</span></td>
+                  <td class="small muted">${esc(a.reviewer || '—')}</td>
+                  <td class="ops">${a.status === '待审核' ? `<button class="btn-link" onclick="approveAdj('${a.id}',true)">通过</button><button class="btn-link danger" onclick="approveAdj('${a.id}',false)">驳回</button>` : '—'}</td>
+                </tr>`).join('') : '<tr><td colspan="7" class="empty">无调整</td></tr>'}</tbody>
+            </table></div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="card-head"><div class="card-title">教师确认 / 机构确认</div></div>
+          <div class="card-body">
+            <div class="m-row"><span class="k">教师确认</span><span class="small">${s.teacherConfirmedAt ? esc(s.teacherConfirmedAt) + ' · ' + esc(s.teacherConfirmedBy) : '未确认'}</span></div>
+            <div class="m-row"><span class="k">确认金额</span><span class="mono">${yuan(s.teacherConfirmAmountCents)}</span></div>
+            <div class="m-row" style="border-bottom:none"><span class="k">机构确认</span><span class="small">${s.orgConfirmedAt ? esc(s.orgConfirmedAt) + ' · ' + esc(s.orgConfirmedBy) : '未确认'}</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">异议记录 <span class="hint">${diss.length}</span></div></div>
+          <div class="card-body">
+            ${diss.length ? diss.map(d => `
+              <div class="m-row" style="display:block">
+                <div class="flex jcb aic"><b>${esc(d.type)}</b>
+                  <span class="tag ${d.status === '已处理' ? 'tag-green' : d.status === '已驳回' ? 'tag-red' : 'tag-amber'} nodot">${esc(d.status)}</span></div>
+                <div class="small muted mt4">${esc(d.reason)}</div>
+                <div class="small muted">期望 ${yuan(d.expectAmountCents)} · ${esc(d.submittedAt)}</div>
+                ${d.opinion ? `<div class="box mt4">处理意见：${esc(d.opinion)}</div>` : ''}
+                ${d.status === '待处理' ? `<button class="btn btn-sm mt8" onclick="openDispute('${d.id}','${esc(d.reason).replace(/'/g, '')}')">处理</button>` : ''}
+              </div>`).join('') : '<div class="small muted">无异议</div>'}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">付款记录 <span class="hint">${pays.length}</span></div></div>
+          <div class="card-body">
+            ${pays.length ? pays.map(p => `
+              <div class="m-row" style="display:block">
+                <div class="flex jcb aic"><b class="mono">${yuan(p.amountCents)}</b>
+                  <span class="tag ${p.status === '成功' ? 'tag-green' : 'tag-red'} nodot">${esc(p.status)}</span></div>
+                <div class="small muted">${esc(p.paymentMethod)} · ${esc(p.paymentDate)} · 操作 ${esc(p.operator)}</div>
+                ${p.transactionNo ? `<div class="small muted">流水号 ${esc(p.transactionNo)}</div>` : ''}
+              </div>`).join('') : '<div class="small muted">暂无付款记录</div>'}
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function openAdjust() {
+  document.getElementById('a_amount').value = '';
+  document.getElementById('a_reason').value = '';
+  document.getElementById('a_err').textContent = '';
+  Proto.openModal('adjModal');
+}
+function saveAdjust() {
+  const dir = document.getElementById('a_dir').value;
+  const amt = Number(document.getElementById('a_amount').value);
+  const reason = document.getElementById('a_reason').value.trim();
+  const err = document.getElementById('a_err');
+  if (!(amt > 0)) { err.textContent = '请输入大于 0 的金额'; return; }
+  if (!reason) { err.textContent = '请填写调整原因'; return; }
+  try {
+    S.addSettlementAdjustment({ settlementId: SID, dir, amountCents: Math.round(amt * 100), reason });
+    Proto.closeModal('adjModal'); Proto.toast('调整已创建（待审核）', 'ok'); render();
+  } catch (e) { err.textContent = e.message; }
+}
+function approveAdj(id, ok) {
+  try { S.reviewSettlementAdjustment(id, ok, ok ? '核对无误' : '不予通过'); Proto.toast('调整已' + (ok ? '通过' : '驳回'), ok ? 'ok' : 'warn'); render(); }
+  catch (e) { Proto.toast(e.message, 'err'); }
+}
+function openPay() {
+  document.getElementById('p_amount').value = (Number(VIEW.settlement.unpaidAmountCents || 0) / 100).toFixed(2);
+  document.getElementById('p_date').value = S.TODAY;
+  document.getElementById('p_no').value = '';
+  document.getElementById('p_note').value = '';
+  document.getElementById('p_status').value = '成功';
+  document.getElementById('p_proof').value = '';
+  document.getElementById('p_err').textContent = '';
+  Proto.openModal('payModal');
+}
+function savePayment() {
+  const amt = Number(document.getElementById('p_amount').value);
+  const err = document.getElementById('p_err');
+  if (!(amt > 0)) { err.textContent = '请输入大于 0 的金额'; return; }
+  try {
+    S.addSettlementPayment({
+      settlementId: SID, amountCents: Math.round(amt * 100),
+      paymentMethod: document.getElementById('p_method').value,
+      paymentDate: document.getElementById('p_date').value,
+      transactionNo: document.getElementById('p_no').value.trim(),
+      proofUrl: document.getElementById('p_proof').value.trim(),
+      status: document.getElementById('p_status').value,
+      note: document.getElementById('p_note').value.trim()
+    });
+    Proto.closeModal('payModal'); Proto.toast('已登记付款', 'ok'); render();
+  } catch (e) { err.textContent = e.message; }
+}
+function openDispute(id, reason) {
+  disTarget = id;
+  document.getElementById('disInfo').innerHTML = `<span class="k">异议原因</span><span class="v">${esc(reason)}</span>`;
+  document.getElementById('d_opinion').value = '';
+  document.getElementById('d_adjType').value = '';
+  document.getElementById('d_adjAmt').value = '';
+  document.getElementById('d_status').value = '已处理';
+  Proto.openModal('disModal');
+}
+function saveDispute() {
+  const adjType = document.getElementById('d_adjType').value;
+  const amt = Number(document.getElementById('d_adjAmt').value);
+  try {
+    S.handleSettlementDispute(disTarget, {
+      status: document.getElementById('d_status').value,
+      opinion: document.getElementById('d_opinion').value.trim(),
+      createAdjustment: !!adjType,
+      adjustDir: adjType,
+      adjustAmountCents: amt > 0 ? Math.round(amt * 100) : 0
+    });
+    Proto.closeModal('disModal'); Proto.toast('异议已处理', 'ok'); render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function doOrgConfirm() {
+  try { S.orgConfirmSettlement(SID); Proto.toast('机构已确认', 'ok'); render(); }
+  catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+render();
+</script>
+</body>
+</html>

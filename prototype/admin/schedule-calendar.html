@@ -66,6 +66,7 @@
             <button class="btn" id="v-month" onclick="setView('month')">月</button>
           </div>
           <a class="btn" href="course-list.html">课程记录</a>
+          <button class="btn" onclick="openBatchMeeting()">待补会议批量处理</button>
           <button class="btn btn-primary" onclick="openCreate()">+ 新增课程</button>
         </div>
       </div>
@@ -83,6 +84,10 @@
         <div class="field"><label>腾讯会议</label>
           <select class="select" id="f_meeting" onchange="drawCal()">
             <option value="">全部</option><option value="has">已有链接</option><option value="none">待补充</option>
+          </select></div>
+        <div class="field"><label>课程类型</label>
+          <select class="select" id="f_courseType" onchange="drawCal()">
+            <option value="">全部课型</option><option>体验课</option><option>正式课</option><option>待确认</option>
           </select></div>
         <div class="filter-actions"><button class="btn" onclick="drawCal()">刷新</button></div>
       </div>
@@ -130,17 +135,20 @@
       <div id="conflictBox"></div>
       <div class="form-grid g3">
         <div class="field"><label>学员 <span class="req">*</span></label>
-          <select class="select" id="n_student">
+          <select class="select" id="n_student" onchange="onStudentPick()">
             <option value="">请选择学员</option>
           </select></div>
         <div class="field"><label>授课教师 <span class="req">*</span></label>
-          <select class="select" id="n_teacher">
+          <select class="select" id="n_teacher" onchange="onTeacherOrDate()">
             <option value="">请选择教师</option>
           </select></div>
-        <div class="field"><label>课程类型</label>
-          <select class="select" id="n_type"><option>一对一</option><option>补课</option><option>试听</option></select></div>
+        <div class="field full"><div id="teacherDayHint" class="small muted"></div></div>
+        <div class="field"><label>课程类型 <span class="req">*</span></label>
+          <select class="select" id="n_courseType"><option>体验课</option><option>正式课</option></select></div>
+        <div class="field"><label>授课形式</label>
+          <select class="select" id="n_type"><option>一对一</option><option>补课</option><option>其他</option></select></div>
         <div class="field"><label>上课日期 <span class="req">*</span></label>
-          <input class="input" type="date" id="n_date" value="2026-11-02"></div>
+          <input class="input" type="date" id="n_date" value="2026-11-02" onchange="onTeacherOrDate()"></div>
         <div class="field"><label>开始时间 <span class="req">*</span></label>
           <input class="input" type="time" id="n_start" value="09:30"></div>
         <div class="field"><label>结束时间 <span class="req">*</span></label>
@@ -195,6 +203,25 @@
   </div>
 </div>
 
+<!-- 待补会议批量补充 -->
+<div class="mask" id="meetingModal">
+  <div class="modal wide">
+    <div class="modal-head"><div class="modal-title">待补会议链接批量补充</div>
+      <button class="modal-close" onclick="Proto.closeModal('meetingModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb12"><span class="ico">i</span><div>仅「待上课 / 授课中」且缺少链接的课程可补充；同一批使用同一会议链接。</div></div>
+      <div class="field mb12"><label>会议链接 <span class="req">*</span></label>
+        <input class="input" id="bm_url" placeholder="https://meeting.tencent.com/dm/…"></div>
+      <div id="bm_list"></div>
+      <div class="small" style="color:var(--danger)" id="bm_err"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('meetingModal')">取消</button>
+      <button class="btn btn-primary" onclick="submitBatchMeeting()">批量补充</button>
+    </div>
+  </div>
+</div>
+
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
@@ -219,7 +246,70 @@ const S = Store;
   const pool = S.teacherPool();
   document.getElementById('n_teacher').innerHTML = '<option value="">请选择教师</option>' +
     pool.map(p => `<option value="${p.teacher.id}">${p.teacher.name}（当前 ${p.stat.currentStudents} 人）</option>`).join('');
+
+  /* 从教务工作台「待补会议」直达：?meeting=none 预置筛选 */
+  const mq = new URLSearchParams(location.search).get('meeting');
+  if (mq === 'none' || mq === 'has') document.getElementById('f_meeting').value = mq;
 })();
+
+/* 第十三轮：选学员带出当前教师 / 教师当日已有课提示 / 待补会议批量补充 */
+function onStudentPick() {
+  const sid = document.getElementById('n_student').value;
+  if (!sid) return;
+  let tid = '';
+  try { const rel = S.activeRelationOfStudent(sid); tid = rel ? (rel.teacherId || '') : ''; } catch (e) { tid = ''; }
+  if (!tid) { const st = S.student(sid); tid = st ? (st.teacherId || '') : ''; }
+  if (tid) {
+    const sel = document.getElementById('n_teacher');
+    if (Array.from(sel.options).some(o => o.value === tid)) sel.value = tid;
+  }
+  onTeacherOrDate();
+}
+function onTeacherOrDate() {
+  const tid = document.getElementById('n_teacher').value;
+  const date = document.getElementById('n_date').value;
+  const box = document.getElementById('teacherDayHint');
+  if (!box) return;
+  if (!tid || !date) { box.textContent = ''; return; }
+  let list = [];
+  try { list = S.coursesOfTeacher(tid, date); } catch (e) { list = []; }
+  box.innerHTML = list.length
+    ? '该教师当日已有 ' + list.length + ' 节课：' + list.map(c => c.start + '-' + c.end + ' ' + c.student + '（' + c.status + '）').join('；')
+    : '该教师当日暂无课程，可正常排课。';
+}
+function openBatchMeeting() {
+  let list = [];
+  try { list = S.coursesMissingMeeting(); } catch (e) { Proto.toast(e.message, 'err'); return; }
+  const box = document.getElementById('bm_list');
+  document.getElementById('bm_err').textContent = '';
+  document.getElementById('bm_url').value = '';
+  if (!list.length) {
+    box.innerHTML = '<div class="small muted">当前没有待补充会议链接的课程。</div>';
+  } else {
+    box.innerHTML = '<div class="table-wrap"><table class="table compact"><thead><tr>' +
+      '<th style="width:44px"><input type="checkbox" id="bm_all" checked onchange="document.querySelectorAll(\'input[name=bm]\').forEach(x=>x.checked=this.checked)"></th>' +
+      '<th>日期</th><th>时间</th><th>学员</th><th>教师</th><th>状态</th></tr></thead><tbody>' +
+      list.map(c => '<tr><td><input type="checkbox" name="bm" value="' + c.id + '" checked></td>' +
+        '<td class="small">' + c.date + '</td><td class="small">' + c.start + '-' + c.end + '</td>' +
+        '<td>' + c.student + '</td><td class="small">' + c.teacher + '</td>' +
+        '<td><span class="tag tag-slate nodot">' + c.status + '</span></td></tr>').join('') +
+      '</tbody></table></div>';
+  }
+  Proto.openModal('meetingModal');
+}
+function submitBatchMeeting() {
+  const ids = Array.from(document.querySelectorAll('input[name=bm]:checked')).map(x => x.value);
+  const url = document.getElementById('bm_url').value.trim();
+  const err = document.getElementById('bm_err');
+  if (!ids.length) { err.textContent = '请至少勾选一节课'; return; }
+  if (!/^https?:\/\//i.test(url)) { err.textContent = '会议链接需以 http:// 或 https:// 开头'; return; }
+  try {
+    const r = S.batchFillMeeting({ courseIds: ids, meetingUrl: url, reason: '排课页批量补充会议链接' });
+    Proto.closeModal('meetingModal');
+    Proto.toast('已补充 ' + r.done.length + ' 节' + (r.skipped.length ? '，跳过 ' + r.skipped.length + ' 节' : ''), r.skipped.length ? 'warn' : 'ok');
+    drawCal();
+  } catch (e) { err.textContent = e.message; }
+}
 
 const DAYS = ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08'];
 const WEEKS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -235,10 +325,12 @@ function filtered() {
   const st = document.getElementById('f_student').value;
   const s = document.getElementById('f_status').value;
   const m = document.getElementById('f_meeting').value;
+  const ct = document.getElementById('f_courseType') ? document.getElementById('f_courseType').value : '';
   return S.courses().filter(c => {
     if (t && c.teacherId !== t) return false;
     if (st && c.studentId !== st) return false;
     if (s && c.status !== s) return false;
+    if (ct && c.courseType !== ct) return false;
     if (m === 'has' && !c.meetingUrl) return false;
     if (m === 'none' && c.meetingUrl) return false;
     return true;
@@ -271,7 +363,7 @@ function drawCal() {
           onclick='openEv(${JSON.stringify(c).replace(/'/g, "&#39;")})'>
           <b>${c.student}</b>
           <span class="t">${c.start}-${c.end} · ${c.teacher}</span>
-          <span class="t">${c.status}${c.deduct === '扣课异常' ? ' · 扣课异常' : ''}</span>
+          <span class="t">${c.courseType || '待确认'} · ${c.status}${c.deduct === '扣课异常' ? ' · 扣课异常' : ''}${c.teacherFeeState === '计费异常' ? ' · 计费异常' : ''}</span>
         </div>`;
       }).join('')}
     </div>`;
@@ -326,6 +418,7 @@ function submitCourse() {
   const meetingUrl = document.getElementById('n_meeting').value.trim();
   const note = document.getElementById('n_note').value.trim();
   const type = document.getElementById('n_type').value;
+  const courseType = document.getElementById('n_courseType').value;
   const box = document.getElementById('conflictBox');
 
   if (!studentId || !teacherId || !date || !start || !end) {
@@ -337,7 +430,7 @@ function submitCourse() {
 
   try {
     /* 服务端二次校验：学员/教师存在、时间合法、会议链接格式、教师与学员时段冲突 */
-    const c = S.createCourse({ studentId, teacherId, date, start, end, meetingUrl, note, type });
+    const c = S.createCourse({ studentId, teacherId, date, start, end, meetingUrl, note, type, courseType, lessonMode: type });
     box.innerHTML = `<div class="alert alert-success mb12"><span class="ico">✓</span>
       <div>课程 <b>${c.id}</b> 已写入课程集合：${esc(c.student)} · ${esc(c.teacher)} · ${c.date} ${c.start}—${c.end}
         · ${c.meetingUrl ? '会议链接已保存' : '会议链接待补充'}。</div></div>`;

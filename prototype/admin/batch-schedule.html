@@ -74,7 +74,8 @@
           <div class="field"><label>开始时间</label><input class="input" type="time" id="b_start" value="19:00"></div>
           <div class="field"><label>单节时长（分钟）</label><input class="input" type="number" id="b_duration" value="60" min="30" step="15"></div>
           <div class="field"><label>统一教师</label><select class="select" id="b_teacher"><option value="">按推荐 / 学员当前教师</option></select></div>
-          <div class="field"><label>课程类型</label><select class="select" id="b_type"><option>一对一</option><option>补课</option></select></div>
+          <div class="field"><label>课型</label><select class="select" id="b_courseType"><option>正式课</option><option>体验课</option></select></div>
+          <div class="field"><label>授课形式</label><select class="select" id="b_type"><option>一对一</option><option>补课</option><option>其他</option></select></div>
           <div class="field"><label>会议链接</label><input class="input" id="b_meeting" placeholder="留空待补充，不自动创建"></div>
         </div>
         <div class="flex gap8 aic mb12">
@@ -83,7 +84,7 @@
           <span class="small muted" id="rowMeta">未生成排课行</span>
         </div>
         <div class="table-wrap"><table class="table compact batch-table">
-          <thead><tr><th>学员</th><th>年级</th><th>日期</th><th>时间</th><th>教师</th><th>推荐理由 / 提醒</th><th class="right">操作</th></tr></thead>
+          <thead><tr><th>学员</th><th>年级</th><th>日期</th><th>时间</th><th>教师</th><th>推荐理由 / 提醒</th><th>课型</th><th class="right">操作</th></tr></thead>
           <tbody id="rowTbody"></tbody></table></div>
         <div class="flex jcb aic mt12">
           <button class="btn" onclick="setStep(1)">上一步</button>
@@ -276,6 +277,8 @@ function buildRows() {
       studentId: id, student: stu.name, grade: stu.grade || '',
       teacherId: tid, date: date, start: start, end: endOf(start, duration),
       duration: duration, type: document.getElementById('b_type').value,
+      courseType: document.getElementById('b_courseType').value,
+      lessonMode: document.getElementById('b_type').value,
       meetingUrl: meetingUrl, skip: false
     };
   });
@@ -286,7 +289,7 @@ function buildRows() {
 function renderRowsTable() {
   const tbody = document.getElementById('rowTbody');
   if (!state.rows.length) {
-    tbody.innerHTML = '<tr><td colspan="7"><span class="small muted">选择学员后点「生成排课行」。</span></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8"><span class="small muted">选择学员后点「生成排课行」。</span></td></tr>';
     return;
   }
   tbody.innerHTML = state.rows.map((r, i) => {
@@ -302,6 +305,7 @@ function renderRowsTable() {
       <td><select class="select" onchange="editRow(${i},'teacherId',this.value)"><option value="">未指定</option>${teacherOptions(r.teacherId)}</select>
         <div class="rec">${esc(rec)}</div></td>
       <td class="rec">${esc(cand[0] ? cand[0].reasons.join('、') : '')}</td>
+      <td><select class="select" onchange="editRow(${i},'courseType',this.value)">${['正式课', '体验课'].map(v => `<option ${r.courseType === v ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
       <td class="right"><button class="btn-link" onclick="removeRow(${i})">移除</button></td>
     </tr>`;
   }).join('');
@@ -311,13 +315,14 @@ function editRow(i, key, value) {
   if (!r) return;
   if (key === 'start') r.start = value, r.end = endOf(value, r.duration);
   else if (key === 'date') r.date = value;
+  else if (key === 'courseType') r.courseType = value;
   else r.teacherId = value;
   r.rowKey = r.studentId + '|' + r.date + '|' + r.start;
   /* 记录人工选择，重新生成时保留 */
   if (key === 'teacherId') state.perTeacher[r.studentId] = value;
   if (state.batchId) {
     try {
-      S.retryBatchRow(state.batchId, r.rowKey, { date: r.date, start: r.start, end: r.end, teacherId: r.teacherId });
+      S.retryBatchRow(state.batchId, r.rowKey, { date: r.date, start: r.start, end: r.end, teacherId: r.teacherId, courseType: r.courseType, lessonMode: r.lessonMode });
     } catch (e) { Proto.toast(e.message, 'err'); }
   }
   renderRowsTable();
@@ -344,7 +349,7 @@ function doPreview() {
     const batch = S.createScheduleBatch({
       rows: state.rows.map(r => ({
         rowKey: r.rowKey, studentId: r.studentId, teacherId: r.teacherId,
-        date: r.date, start: r.start, end: r.end, type: r.type,
+        date: r.date, start: r.start, end: r.end, type: r.type, courseType: r.courseType, lessonMode: r.lessonMode,
         meetingUrl: r.meetingUrl, note: r.note || '', skip: r.skip
       })),
       note: '批量排课页面创建'

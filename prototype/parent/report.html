@@ -6,9 +6,14 @@
 <title>家长端 · 学习报告</title>
 <link rel="stylesheet" href="../assets/css/common.css">
 <style>
-  .bar { height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; }
-  .bar > i { display: block; height: 100%; background: linear-gradient(90deg,#2563eb,#3b82f6); }
-  .bar > i.warn { background: linear-gradient(90deg,#d97706,#f59e0b); }
+  .summary-hero { background:linear-gradient(135deg,#fff7ed,#fef2f2); border:1px solid #fde68a; border-radius:12px; padding:14px 16px; margin-bottom:12px; }
+  .summary-hero .q { font-size:11px; color:var(--warning); font-weight:600; margin-bottom:4px; }
+  .summary-hero .s { font-size:15.5px; font-weight:600; line-height:1.55; color:var(--text); }
+  .ratio-wrap { display:flex; align-items:center; gap:14px; margin:10px 0; }
+  .adv-row { display:flex; align-items:flex-start; gap:8px; padding:7px 0; }
+  .adv-row .c { margin-top:3px; }
+  .read-dim { opacity:.62; }
+  .act-fixed { position:sticky; bottom:8px; z-index:5; }
 </style>
 </head>
 <body class="mobile-bg">
@@ -40,8 +45,7 @@
 <script src="../assets/js/data.js"></script>
 <script src="../assets/js/store.js"></script>
 <script>
-/* 家长端学习报告：列表与详情分离、五区详情、近7次学习趋势、家庭配合建议。
-   只展示「已发布且允许家长可见」的报告；越权 report 参数由 Store 拒绝。 */
+/* 家长端学习报告：列表与详情分离、五区详情、近7次趋势、家庭建议可勾选（不改正式状态）。 */
 const q = new URLSearchParams(location.search);
 const PID = Proto.parentId();
 Store.setSession({ role: 'parent', parentId: PID, operatorName: Proto.parentName() });
@@ -49,9 +53,11 @@ const KIDS = Store.parentChildren(PID);
 let curKid = '';
 let fromDate = '';
 let toDate = '';
+let unreadOnly = false;
 
 function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function nl(s) { return (s || '').split('\n').filter(Boolean).map(x => `<div>${esc(x)}</div>`).join('') || '—'; }
+function firstLine(s) { return (String(s || '').split('\n').find(x => x.trim()) || '').trim(); }
 
 function initKid() {
   const fromURL = q.get('student');
@@ -81,38 +87,6 @@ function bindKidSeg() {
 }
 
 /* ---------------- 列表 ---------------- */
-/* 家长只读：训练会话报告 + 复习计划（不改正式状态） */
-function trainBox() {
-  let trs = [], plans = [];
-  try {
-    trs = Store.parentTrainingReports(PID, curKid);
-    plans = Store.parentReviewPlan(PID, curKid);
-  } catch (e) { return ''; }
-  const planDue = plans.filter(p => p.due);
-  let html = '<div class="m-card"><div class="m-card-title">训练报告与复习</div>';
-  if (!trs.length && !plans.length) {
-    html += '<div class="small muted">暂无训练报告与复习计划。</div></div>';
-    return html;
-  }
-  if (trs.length) {
-    html += trs.slice(0, 3).map(r => `
-      <div class="m-row" style="align-items:flex-start;border-bottom:none">
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:600">${esc(r.sessionDate)} · 训练报告</div>
-          <div class="small muted" style="margin-top:2px">掌握 ${r.mastered} · 待加强 ${r.needsPractice} · 未掌握 ${r.notMastered} · 掌握率 ${r.masteredRate}%</div>
-          ${r.teacherOverall ? `<div class="small muted" style="margin-top:2px">${esc(r.teacherOverall)}</div>` : ''}
-        </div>
-      </div>`).join('');
-  }
-  if (plans.length) {
-    html += `<div class="small" style="margin-top:6px;color:${planDue.length ? 'var(--warning)' : 'var(--text-3)'}">
-      当前复习计划 ${plans.length} 条${planDue.length ? ` · <b>${planDue.length} 条待复习</b>` : ''}</div>
-      <div class="small muted" style="line-height:1.7">${planDue.slice(0, 6).map(p => `${esc(p.en)}（${p.mastery === 'not_mastered' ? '未掌握' : p.mastery === 'needs_practice' ? '待加强' : ''}，${esc(p.nextReviewAt)}）`).join('、')}</div>`;
-  }
-  html += '</div>';
-  return html;
-}
-
 function renderList() {
   document.getElementById('headTitle').textContent = '学习报告';
   document.getElementById('headTag').textContent = '已发布';
@@ -121,8 +95,10 @@ function renderList() {
 
   const stu = Store.student(curKid);
   let list = [];
+  let unreadCount = 0;
   try {
-    list = Store.parentReports(PID, curKid, {});
+    list = Store.parentReports(PID, curKid, unreadOnly ? { unread: true } : {});
+    unreadCount = Store.parentReports(PID, curKid, {}).filter(r => r.read === false).length;
     if (fromDate) list = list.filter(r => r.courseDate >= fromDate);
     if (toDate) list = list.filter(r => r.courseDate <= toDate);
   } catch (e) {
@@ -134,11 +110,10 @@ function renderList() {
   if (!list.length) {
     document.getElementById('body').innerHTML = `
       ${kidSegHTML()}
-      ${trainBox()}
       <div class="m-card">
-        <div class="m-card-title">还没有可查看的报告</div>
+        <div class="m-card-title">${unreadOnly ? '没有未读报告' : '还没有可查看的报告'}</div>
         <div class="small muted" style="line-height:1.8">
-          老师完成授课后会整理本节课报告，提交并发布后你就能在这里看到。
+          ${unreadOnly ? '所有报告都已读过，可关闭「仅看未读」查看历史报告。' : '老师完成授课后会整理本节课报告，提交并发布后你就能在这里看到。'}
         </div>
       </div>
       <div class="m-card">
@@ -150,24 +125,24 @@ function renderList() {
 
   document.getElementById('body').innerHTML = `
     ${kidSegHTML()}
-    ${trainBox()}
     <div class="m-card">
       <div class="m-card-title">筛选
-        <span class="small muted">共 ${list.length} 份已发布报告</span></div>
+        <span class="small muted">共 ${list.length} 份${unreadOnly ? '未读' : ''}报告${unreadCount ? ' · ' + unreadCount + ' 份未读' : ''}</span></div>
       <div class="flex gap8">
         <div class="field" style="flex:1"><label>从</label>
           <input class="input" type="date" id="fFrom" value="${fromDate || ''}" onchange="fromDate=this.value;renderList()"></div>
         <div class="field" style="flex:1"><label>到</label>
           <input class="input" type="date" id="fTo" value="${toDate || ''}" onchange="toDate=this.value;renderList()"></div>
       </div>
+      <label class="check" style="margin-top:8px"><input type="checkbox" ${unreadOnly ? 'checked' : ''} onchange="unreadOnly=this.checked;renderList()"> 仅看未读</label>
     </div>
     <div class="m-card" style="padding:0">
       ${list.map((r, i) => `
-        <a class="m-row" href="report.html?student=${curKid}&report=${r.id}" style="align-items:flex-start;padding:12px 14px${i === list.length - 1 ? ';border-bottom:none' : ''}">
+        <a class="m-row ${r.read ? 'read-dim' : ''}" href="report.html?student=${curKid}&report=${r.id}" style="align-items:flex-start;padding:12px 14px${i === list.length - 1 ? ';border-bottom:none' : ''}">
           <div style="flex:1">
-            <div style="font-size:13.5px;font-weight:600">${esc(r.courseDate)} · ${esc(r.title)}</div>
+            <div style="font-size:13.5px;font-weight:600">${r.read ? '' : '<span class="tag tag-red nodot" style="font-size:10px">新</span> '}${esc(r.courseDate)} · ${esc(r.title)}</div>
             <div class="small muted" style="margin-top:2px">${esc(r.teacherName)}</div>
-            <div class="small" style="margin-top:4px;color:var(--text-2);line-height:1.6">${esc(r.summary || '')}</div>
+            <div class="small" style="margin-top:4px;color:var(--text-2);line-height:1.6">${esc(firstLine(r.summary))}</div>
             <div class="small muted" style="margin-top:4px">发布于 ${esc(r.publishedAt || '—')}</div>
           </div>
           <span class="muted">›</span>
@@ -190,13 +165,23 @@ function renderDetail(reportId) {
       `<div class="m-card"><div class="small" style="color:var(--danger)">无法打开报告：${esc(e.message)}</div></div>`;
     return;
   }
+  try { Store.markParentReportRead(PID, curKid, reportId); } catch (e) { /* 只读辅助，失败不阻断 */ }
+
   const stu = Store.student(curKid);
   const st = rp.stats || {};
   const art = rp.articleStat;
   const trend = trendRows();
+  const pct = st.trainWords ? Math.round((st.mastered || 0) / st.trainWords * 100) : 0;
+  const summary = firstLine(rp.content.performance) || rp.title || '本节课学习情况';
 
   document.getElementById('body').innerHTML = `
     ${kidSegHTML()}
+
+    <div class="summary-hero">
+      <div class="q">老师一句话总结 · ${esc(rp.courseDate)}</div>
+      <div class="s">${esc(summary)}</div>
+      <div class="small muted" style="margin-top:6px">${stu ? esc(stu.name) + ' · ' + esc(stu.grade) : ''} · 授课教师 ${esc(rp.teacherName)}</div>
+    </div>
 
     <div class="m-card">
       <div class="flex jcb aic mb12">
@@ -219,7 +204,14 @@ function renderDetail(reportId) {
 
     <div class="m-card">
       <div class="m-card-title">单词学习</div>
-      <div class="m-stat" style="margin:10px 0">
+      <div class="ratio-wrap">
+        <div style="flex:1">
+          <div class="small muted">掌握率</div>
+          <div class="bar mt4"><i style="width:${pct}%"></i></div>
+        </div>
+        <div style="font-size:22px;font-weight:700;color:var(--success)">${pct}%</div>
+      </div>
+      <div class="m-stat" style="margin:6px 0">
         <div><div class="v">${st.trainWords || 0}</div><div class="k">训练单词</div></div>
         <div><div class="v" style="color:var(--success)">${st.mastered || 0}</div><div class="k">确认掌握</div></div>
         <div><div class="v" style="color:var(--warning)">${st.weak || 0}</div><div class="k">待加强</div></div>
@@ -227,6 +219,7 @@ function renderDetail(reportId) {
       ${st.leitnerWords ? `<div class="m-row"><span class="k">莱特纳复习</span><span>${st.leitnerWords} 个单词</span></div>` : ''}
       ${st.plan21Words ? `<div class="m-row"><span class="k">21 天复习</span><span>${st.plan21Words} 个单词</span></div>` : ''}
       <div class="small muted mt8">「确认掌握」是教师本节课的判断，不等于永久掌握，仍会进入复习体系继续巩固。</div>
+      ${(st.weak || 0) > 0 ? `<a class="btn btn-sm mt8" href="review-words.html?student=${curKid}&view=all">查看待加强单词 ›</a>` : ''}
     </div>
 
     ${rp.article ? `<div class="m-card">
@@ -239,11 +232,11 @@ function renderDetail(reportId) {
     <div class="m-card">
       <div class="m-card-title">教师反馈</div>
       <div class="mb12">
-        <div class="small" style="font-weight:600;margin-bottom:4px">本节表现</div>
+        <div class="small" style="font-weight:600;margin-bottom:4px;color:var(--success)">本节表现</div>
         <div style="font-size:13px;color:var(--text-2);line-height:1.75">${nl(rp.content.performance)}</div>
       </div>
       <div class="mb12">
-        <div class="small" style="font-weight:600;margin-bottom:4px">当前薄弱点</div>
+        <div class="small" style="font-weight:600;margin-bottom:4px;color:var(--warning)">当前薄弱点</div>
         <div style="font-size:13px;color:var(--text-2);line-height:1.75">${nl(rp.content.weak)}</div>
       </div>
       <div>
@@ -253,10 +246,8 @@ function renderDetail(reportId) {
     </div>
 
     <div class="m-card">
-      <div class="m-card-title">家庭配合建议</div>
-      ${rp.content.homeworkAdvice
-        ? `<div style="font-size:13px;color:var(--text-2);line-height:1.75">${nl(rp.content.homeworkAdvice)}</div>`
-        : `<div class="small muted">教师本次未填写家庭配合建议，可参照「单词学习」与「教师反馈」里的待加强内容在家中辅助复习。</div>`}
+      <div class="m-card-title">家庭配合建议 <span class="small muted" style="font-weight:400">（勾选仅作家庭记录，不改教学状态）</span></div>
+      ${adviceList(rp)}
     </div>
 
     ${trend ? trendHTML(trend) : ''}
@@ -269,17 +260,52 @@ function renderDetail(reportId) {
         <span>文章音频 · 《${esc(rp.article.name)}》</span>
         <button class="btn btn-sm" onclick="Proto.speak('${esc(rp.article.name).replace(/'/g, '')}','en-US')">英文朗读</button>
       </div>` : ''}
-    </div>
-
-    <div class="m-card">
-      <div class="small muted" style="line-height:1.75;margin-bottom:10px">
+      <div class="small muted" style="line-height:1.75;margin-top:8px">
         报告由教师提交并发布后可见，家长不可编辑。如需沟通请通过机构教务联系教师。<br>
         「英文朗读」为系统语音合成演示，<b>不是</b>课程原始录音。
       </div>
-      <a class="btn btn-block" href="report.html?student=${curKid}">返回报告列表</a>
-      <a class="btn btn-block btn-primary mt8" href="review-words.html?student=${curKid}">打印待复习单词表</a>
+    </div>
+
+    <div class="m-card act-fixed">
+      <div class="flex gap8" style="flex-wrap:wrap">
+        <a class="btn btn-primary" style="flex:1" href="review-words.html?student=${curKid}">查看待复习单词</a>
+        <a class="btn" style="flex:1" href="review-words.html?student=${curKid}&print=1">打印单词表</a>
+        <a class="btn" style="flex:1" href="hours.html?kid=${curKid}#iq">联系教务</a>
+      </div>
+      <a class="btn btn-block mt8" href="report.html?student=${curKid}">返回报告列表</a>
     </div>`;
   bindKidSeg();
+}
+
+/* 家庭建议：可勾选清单；无建议时给默认模板（本地记录，不改变正式状态） */
+function adviceItems(rp) {
+  const text = rp.content.homeworkAdvice || '';
+  let items = String(text).split('\n').map(x => x.trim()).filter(Boolean);
+  if (!items.length) {
+    const weak = firstLine(rp.content.weak);
+    items = [
+      weak ? `针对「${weak}」每天朗读并复述 5 分钟` : '每天朗读并复述本节课单词 5 分钟',
+      '睡前口述今天学会的 3 个单词及中文',
+      '周末一起回顾待复习单词表'
+    ];
+  }
+  return items;
+}
+function adviceList(rp) {
+  let checks = {};
+  try { Store.parentAdviceChecks(PID, curKid, rp.id).forEach(x => checks[x.itemKey] = x.checked); } catch (e) {}
+  const items = adviceItems(rp);
+  return items.map((it, i) => `
+    <label class="adv-row"><input class="c" type="checkbox" ${checks[it] ? 'checked' : ''}
+      onchange="toggleAdvice('${esc(rp.id)}', this.checked, this.getAttribute('data-k'))" data-k="${esc(it)}">
+      <span class="small" style="line-height:1.6;color:var(--text-2)">${esc(it)}</span></label>`).join('') +
+    (rp.content.homeworkAdvice ? '' : '<div class="small muted" style="margin-top:4px">以上为系统根据本节薄弱点生成的家庭复习参考，可自行调整。</div>');
+}
+function toggleAdvice(reportId, checked, itemKey) {
+  try {
+    Store.toggleParentAdviceCheck(PID, curKid, reportId, itemKey, !!checked);
+    Proto.toast(checked ? '已标记完成（仅家庭记录）' : '已取消', 'ok');
+  } catch (e) { Proto.toast(e.message, 'err'); }
 }
 
 /* 近 7 次已完成课程学习趋势（只统计真实完成课程） */
@@ -301,8 +327,11 @@ function trendRows() {
 }
 function trendHTML(data) {
   const max = Math.max(1, ...data.map(d => d.train));
+  const first = data[0].mastered, last = data[data.length - 1].mastered;
+  const trendText = last > first ? '最近掌握数量较前期有所上升' : last < first ? '最近掌握数量较前期有所回落' : '最近掌握数量基本持平';
   return `<div class="m-card">
     <div class="m-card-title">学习趋势 · 近 ${data.length} 次已完成课程</div>
+    <div class="small muted mb8">${trendText}（单次课的掌握判断不等同于长期能力提升，仅供参考）。</div>
     ${data.map(d => `
       <div class="mb12">
         <div class="flex jcb" style="font-size:12px">
@@ -325,7 +354,7 @@ function boot() {
       '<div class="m-card"><div class="small muted">当前家长账号下暂无孩子档案。</div></div>';
     return;
   }
-  const reportId = q.get('report') ? KIDS.filter(k => k.id === q.get('student'))[0] && q.get('report') : '';
+  const reportId = q.get('report') || '';
   if (reportId) renderDetail(reportId);
   else renderList();
 }

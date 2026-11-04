@@ -181,6 +181,14 @@ function render() {
       </div>
     </div>
 
+    ${STU ? `<div class="alert alert-success mb16" style="align-items:center">
+      <span class="ico">✓</span>
+      <div class="grow">学员 <b>${esc(STU.name)}</b> 已建档。下一步建议：分配负责教师 → 创建首单 / 排首课。</div>
+      <a class="btn btn-sm" href="student-detail.html?id=${encodeURIComponent(STU.id)}">去分配教师</a>
+      <a class="btn btn-sm" href="order-create.html?studentId=${encodeURIComponent(STU.id)}">创建订单</a>
+      <a class="btn btn-sm" href="schedule-calendar.html">去排课</a>
+    </div>` : ''}
+
     <div class="grid g-2-1" style="align-items:start">
       <div>
         <div class="card">

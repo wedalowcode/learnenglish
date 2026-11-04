@@ -10,6 +10,7 @@
   .al-dot { width:7px; height:7px; border-radius:50%; margin-top:5px; flex:none; }
   .al-dot.orange { background:#f59e0b; }
   .al-dot.red { background:#dc2626; }
+  .iq-new { background:#eff6ff; border-left:3px solid var(--primary); }
 </style>
 </head>
 <body class="mobile-bg">
@@ -41,19 +42,30 @@
 <script src="../assets/js/data.js"></script>
 <script src="../assets/js/store.js"></script>
 <script>
-/* 家长端课时与订单：多套餐账户分别展示、到期提醒（阈值来自机构配置）、
-   订单历史（订单状态与收款状态分开）、联系教务真实落库（不 Toast 代替）。 */
+/* 家长端课时与订单：多套餐账户、到期提醒（阈值来自机构配置）、最近扣课记录（只读）、
+   订单状态白话说明、联系教务真实落库（不 Toast 代替）。 */
 const S = Store;
 const PID = Proto.parentId();
 S.setSession({ role: 'parent', parentId: PID, operatorName: Proto.parentName() });
 const q = new URLSearchParams(location.search);
 const KIDS = S.parentChildren(PID);
 let curKid = '';
+let flashInquiry = '';
 
 function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
-const ORD_TONE = { '待支付': 'tag-amber', '已支付': 'tag-blue', '已确认': 'tag-green', '已退款': 'tag-slate', '已取消': 'tag-slate' };
+const ORD_TONE = { '待支付': 'tag-amber', '已支付': 'tag-blue', '已确认': 'tag-green', '已退款': 'tag-slate', '已取消': 'tag-slate', '待审核': 'tag-amber', '待收款': 'tag-blue', '已入账': 'tag-green' };
 const IQ_TONE = { '待处理': 'tag-amber', '处理中': 'tag-blue', '已回复': 'tag-green', '已关闭': 'tag-slate' };
+const ORD_PLAIN = {
+  '待审核': '机构正在确认你的订单',
+  '待收款': '订单已确认，等待收款到账',
+  '已入账': '收款已到账，课时已增加',
+  '已退款': '该订单已退款，课时已扣回',
+  '已取消': '该订单已取消，不产生课时',
+  '待支付': '订单待支付',
+  '已支付': '订单已支付，等待确认',
+  '已确认': '机构已确认订单'
+};
 
 function initKid() {
   const fromURL = q.get('kid');
@@ -90,12 +102,14 @@ function render() {
     return;
   }
 
-  let h, orders, inqs;
+  let h, orders, inqs, flows, products;
   try {
     const hours = S.parentHours(PID);
     h = hours.filter(x => x.studentId === curKid)[0] || hours[0] || null;
     orders = S.parentOrders(PID).filter(o => o.studentId === curKid);
     inqs = S.parentInquiries(PID).filter(x => !x.studentId || x.studentId === curKid);
+    flows = S.parentLessonFlows(PID, curKid);
+    products = S.products().filter(p => p.status !== '停用');
   } catch (e) {
     document.getElementById('body').innerHTML =
       `<div class="m-card"><div class="small" style="color:var(--danger)">加载失败：${esc(e.message)}</div></div>`;
@@ -113,7 +127,7 @@ function render() {
   const k = KIDS.filter(x => x.id === h.studentId)[0] || {};
   document.getElementById('kidName').textContent = h.studentName;
 
-  /* 到期提醒 */
+  /* 到期/低余额提醒 */
   const alerts = [];
   if (h.lowAlert) alerts.push({ tone: 'red', text: `课时余额不足：当前剩余 ${h.totalRemain} 节课，建议尽快续费` });
   (h.accounts || []).forEach(a => {
@@ -121,18 +135,37 @@ function render() {
     else if (a.remain <= 0) alerts.push({ tone: 'red', text: `${a.product} 已用完（${a.expireAt || '无到期日'}）` });
   });
 
+  /* 拼音昵称（无则用学生名） */
+  const inquiryList = inqs.map(x => {
+    const hl = (x.id === flashInquiry) || (x.status === '已回复' && x.reply);
+    return `<div class="m-row ${x.id === flashInquiry ? 'iq-new' : ''}" style="align-items:flex-start;padding:10px 14px">
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600">${esc(x.type)}${x.studentName ? ' · ' + esc(x.studentName) : ''}
+          <span class="tag ${IQ_TONE[x.status] || 'tag-slate'} nodot" style="margin-left:6px">${x.status}</span>
+          ${x.id === flashInquiry ? '<span class="tag tag-blue nodot" style="margin-left:4px;font-size:10px">新</span>' : ''}</div>
+        <div class="small muted" style="margin-top:2px">${esc(x.content)}</div>
+        <div class="small muted" style="margin-top:2px">${esc((x.createdAt || '').slice(0, 16))}</div>
+        ${x.reply ? `<div class="small" style="margin-top:4px;background:var(--bg);border-radius:6px;padding:6px 8px;color:var(--text-2)">教务回复：${esc(x.reply)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
   document.getElementById('body').innerHTML = `
     ${kidSegHTML()}
 
     <div class="m-hero">
       <div class="t">当前可用课时</div>
       <div class="n">${h.totalRemain}</div>
-      <div class="s">${esc(k.grade || '')} · 教师 ${esc(k.teacherName || '未分配')}</div>
+      <div class="s">${esc(k.grade || '')} · 教师 ${esc(k.teacherName || '未分配')}${h.weeksEstimate != null ? ` · 按每周 ${h.weeklyEstimate} 节约可支撑 ${h.weeksEstimate} 周` : ''}</div>
     </div>
 
     ${alerts.length ? `<div class="m-card">
       <div class="m-card-title">课时提醒</div>
       ${alerts.map(a => `<div class="al-item"><span class="al-dot ${a.tone}"></span><span>${esc(a.text)}</span></div>`).join('')}
+      <div class="flex gap8 mt8" style="flex-wrap:wrap">
+        <a class="btn btn-sm btn-primary" href="#iqcard" onclick="scrollToIq()">联系教务咨询续费</a>
+        <button class="btn btn-sm" onclick="showProducts()">查看推荐套餐</button>
+      </div>
       <div class="small muted mt8">提醒阈值由机构在「课时设置」中配置，非页面硬编码。</div>
     </div>` : ''}
 
@@ -156,7 +189,35 @@ function render() {
     </div>
 
     <div class="m-card" style="padding:0">
+      <div class="m-card-title" style="padding:12px 14px 4px">最近扣课记录 <span class="small muted">近 ${flows.length} 条 · 只读</span></div>
+      ${flows.length ? flows.map(f => `
+        <div class="m-row" style="align-items:flex-start;padding:10px 14px">
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600">${esc(f.topic)}</div>
+            <div class="small muted" style="margin-top:2px">${esc((f.at || '').slice(0, 16))}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="small" style="color:var(--danger);font-weight:600">${f.delta} 节</div>
+            <div class="small muted">扣后剩 ${f.after}</div>
+          </div>
+        </div>`).join('')
+        : '<div class="m-row" style="border-bottom:none"><span class="small muted">暂无扣课记录</span></div>'}
+      <div class="small muted" style="padding:4px 14px 12px">仅展示最近 10 条真实扣课记录；家长端不可修改课时。</div>
+    </div>
+
+    <div class="m-card" id="prodCard" style="display:none">
+      <div class="m-card-title">推荐套餐 <span class="small muted" style="font-weight:400">仅供参考，需联系教务报名</span></div>
+      ${products.length ? products.map(p => `
+        <div class="m-row"><span class="k">${esc(p.name)}</span><span class="small">${p.hours} 课时 · ${Proto.money(p.amount)}</span></div>`).join('')
+        : '<div class="small muted">暂无可用套餐</div>'}
+      <div class="small muted mt8">家长端仅展示，不直接下单；如需报名请联系教务。</div>
+    </div>
+
+    <div class="m-card" style="padding:0">
       <div class="m-card-title" style="padding:12px 14px 4px">订单历史 <span class="small muted">${orders.length} 笔</span></div>
+      <div class="small muted" style="padding:0 14px 6px;line-height:1.7">
+        订单状态用白话说明：<b>待审核</b>=机构正在确认；<b>待收款</b>=已确认等待收款；<b>已入账</b>=收款到账且课时已增加。课时只在「已入账」后增加。
+      </div>
       ${orders.length ? orders.map((o, i) => `
         <div class="m-row" style="align-items:flex-start;padding:10px 14px${i === orders.length - 1 ? ';border-bottom:none' : ''}">
           <div style="flex:1">
@@ -164,14 +225,15 @@ function render() {
             <div class="small muted" style="margin-top:2px">单号 ${esc(o.id)} · 课时 ${o.totalHours}</div>
             <div class="small muted" style="margin-top:2px">下单 ${esc((o.createdAt || '').slice(0, 10))}${o.creditedAt ? ' · 入账 ' + esc((o.creditedAt || '').slice(0, 10)) : ''}</div>
             <div class="small" style="margin-top:3px">订单金额 ¥${o.amount}<span class="muted"> · 已支付 ¥${o.paidAmount || 0}</span></div>
+            <div class="small muted" style="margin-top:2px">${esc(ORD_PLAIN[o.status] || '')}</div>
           </div>
           <span class="tag ${ORD_TONE[o.status] || 'tag-slate'} nodot">${o.status}</span>
         </div>`).join('')
         : '<div class="m-row" style="border-bottom:none"><span class="small muted">暂无订单</span></div>'}
-      <div class="small muted" style="padding:4px 14px 12px">订单状态（审核/支付）与收款状态分开展示；「订单已确认」不等于「已收款到账」，课时只在收款入账后增加。</div>
+      <div class="small muted" style="padding:4px 14px 12px">订单状态与收款状态分开；「订单已确认」不等于「已收款到账」。</div>
     </div>
 
-    <div class="m-card">
+    <div class="m-card" id="iqcard">
       <div class="m-card-title">联系教务</div>
       <div class="field" style="margin-bottom:8px"><label>咨询类型</label>
         <select class="select" id="iqType">
@@ -191,19 +253,20 @@ function render() {
 
     <div class="m-card" style="padding:0">
       <div class="m-card-title" style="padding:12px 14px 4px">我的咨询 <span class="small muted">${inqs.length} 条</span></div>
-      ${inqs.length ? inqs.map((x, i) => `
-        <div class="m-row" style="align-items:flex-start;padding:10px 14px${i === inqs.length - 1 ? ';border-bottom:none' : ''}">
-          <div style="flex:1">
-            <div style="font-size:13px;font-weight:600">${esc(x.type)}${x.studentName ? ' · ' + esc(x.studentName) : ''}
-              <span class="tag ${IQ_TONE[x.status] || 'tag-slate'} nodot" style="margin-left:6px">${x.status}</span></div>
-            <div class="small muted" style="margin-top:2px">${esc(x.content)}</div>
-            <div class="small muted" style="margin-top:2px">${esc((x.createdAt || '').slice(0, 16))}</div>
-            ${x.reply ? `<div class="small" style="margin-top:4px;background:var(--bg);border-radius:6px;padding:6px 8px;color:var(--text-2)">教务回复：${esc(x.reply)}</div>` : ''}
-          </div>
-        </div>`).join('')
-        : '<div class="m-row" style="border-bottom:none"><span class="small muted">暂无咨询记录</span></div>'}
+      ${inquiryList || '<div class="m-row" style="border-bottom:none"><span class="small muted">暂无咨询记录</span></div>'}
     </div>`;
   bindKidSeg();
+}
+
+function scrollToIq() {
+  const el = document.getElementById('iqcard');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function showProducts() {
+  const c = document.getElementById('prodCard');
+  if (!c) return;
+  c.style.display = '';
+  c.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function submitInquiry() {
@@ -213,8 +276,9 @@ function submitInquiry() {
   const studentId = document.getElementById('iqKid').value || '';
   const contact = document.getElementById('iqContact').value.trim();
   try {
-    S.createParentInquiry({ type, content, studentId, contact });
-    Proto.toast('已提交咨询，教务将在处理后在「我的咨询」中回复', 'ok');
+    const res = S.createParentInquiry({ type, content, studentId, contact });
+    flashInquiry = res && res.id ? res.id : '';
+    Proto.toast('已提交咨询，教务处理后可在此查看回复', 'ok');
     document.getElementById('iqContent').value = '';
     render();
   } catch (e) { Proto.toast(e.message, 'err'); }

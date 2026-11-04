@@ -76,6 +76,19 @@
             </div>
           </div>
 
+          <div class="card">
+            <div class="card-head"><div class="card-title">批量报备 · 地推/电话后快速录入</div></div>
+            <div class="card-body">
+              <div class="small muted mb8">每行一条：<b>姓名 + 手机号</b>（11 位手机号，顺序不限）。仅需选择年级即可批量建线索，其余信息可后补。</div>
+              <div class="field mb8"><label>批量学生年级 <span class="req">*</span></label>
+                <select class="select" id="batchGrade"><option value="">请选择</option></select></div>
+              <div class="field mb8"><label>粘贴内容</label>
+                <textarea class="textarea" id="batchText" rows="5" placeholder="张三 13800001111&#10;13900002222 李四"></textarea></div>
+              <button class="btn btn-primary btn-block" onclick="submitBatch()">批量报备</button>
+              <div id="batchResult" class="mt8"></div>
+            </div>
+          </div>
+
           <div class="alert alert-info mt16"><span class="ico">i</span>
             <div>报备成功后会生成线索编号，机构按需分配跟进人；成交后订单保留代理归属，佣金按机构规则预估，本轮不做结算。</div>
           </div>
@@ -103,6 +116,8 @@ document.getElementById('i_grade').innerHTML = '<option value="">请选择</opti
   S.dictionaryOptions('grade').map(g => `<option>${g}</option>`).join('');
 document.getElementById('i_channel').innerHTML = S.dictionaryOptions('lead_channel').map(c =>
   `<option>${c}</option>`).join('');
+document.getElementById('batchGrade').innerHTML = '<option value="">请选择</option>' +
+  S.dictionaryOptions('grade').map(g => `<option>${g}</option>`).join('');
 
 function checkDup() {
   const phone = document.getElementById('i_phone').value.trim();
@@ -114,6 +129,30 @@ function checkDup() {
     <div><b>该手机号已归属本人</b>（线索 ${own.leadId} · ${own.customerName} · 状态 ${own.status}）。<br>
     无需重复报备，可直接补充跟进记录。</div>
     <div class="mt8"><a class="btn btn-sm" href="customer-detail.html?id=${own.leadId}">前往补充跟进</a></div></div>`;
+}
+
+function submitBatch() {
+  const grade = document.getElementById('batchGrade').value;
+  const channel = document.getElementById('i_channel').value || '其他';
+  const raw = document.getElementById('batchText').value || '';
+  const lines = raw.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  if (!grade) { Proto.toast('请选择批量报备的学生年级', 'err'); return; }
+  if (!lines.length) { Proto.toast('请粘贴至少一行「姓名 + 手机号」', 'err'); return; }
+  let ok = 0, dup = 0, bad = 0; const errs = [];
+  lines.forEach(line => {
+    const m = line.match(/1\d{10}/);
+    if (!m) { bad++; errs.push('无有效手机号：' + line); return; }
+    const phone = m[0];
+    const name = line.replace(phone, '').replace(/[,，;；\t|/]+/g, ' ').trim();
+    if (!name) { bad++; errs.push('缺少姓名：' + line); return; }
+    try { S.createLead({ name: name, phone: phone, grade: grade, channel: channel }); ok++; }
+    catch (e) { if (e.code === 'LEAD_DUP') dup++; else { bad++; errs.push(line + '：' + e.message); } }
+  });
+  const msg = `批量报备完成：成功 ${ok}，重复/待审核 ${dup}，失败 ${bad}`;
+  const safe = errs.slice(0, 5).map(x => (Proto.escHtml ? Proto.escHtml(x) : x)).join('<br>');
+  document.getElementById('batchResult').innerHTML =
+    `<div class="alert alert-${bad ? 'warn' : 'info'}"><div>${msg}${safe ? '<br>' + safe : ''}</div></div>`;
+  Proto.toast(msg, bad ? 'warn' : 'ok');
 }
 
 function submitLead() {
@@ -137,7 +176,7 @@ function submitLead() {
         document.getElementById('i_remark').value.trim()].filter(Boolean).join('；')
     });
     Proto.toast('报备成功，线索编号 ' + lead.id + ' 已生成', 'ok');
-    setTimeout(() => location.href = 'customer-detail.html?id=' + lead.id, 900);
+    setTimeout(() => location.href = 'customer-detail.html?id=' + lead.id + '&first=1', 900);
   } catch (e) {
     /* 归属冲突/重复报备：直接展示 Store 给出的阻断原因，不以最后报备者判定归属 */
     Proto.toast(e.message, e.code === 'LEAD_DUP' ? 'warn' : 'err');

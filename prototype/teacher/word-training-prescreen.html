@@ -463,6 +463,18 @@ function answer(wordId, known) {
   }
 }
 
+/* 键盘快捷键：← 不认识 / → 认识（作用于当前词库第一个未筛选单词） */
+document.addEventListener('keydown', e => {
+  if (document.querySelector('.mask.show')) return;
+  const tag = (e.target && e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const first = (cands || []).filter(c => !c.screened && !c.excluded && (!bookFilter || c.wordbookId === bookFilter))[0];
+  if (!first) return;
+  e.preventDefault();
+  answer(first.id, e.key === 'ArrowRight');
+});
+
 function openFix(wordId, known) {
   const c = cands.filter(x => x.id === wordId)[0];
   fixTarget = { wordId: wordId, known: known };

@@ -201,6 +201,11 @@
      排课（新建 / 周期 / 批量 / 改期 / 改派）一律不扣课时。
      ============================================================ */
   var COURSE_SOURCE = { MANUAL: '手动', SERIES: '周期', BATCH: '批量' };
+  /* 第十二轮：课程业务类型（决定教师课时费核算）与授课形式（描述授课方式）分离 */
+  var COURSE_TYPE = ['体验课', '正式课', '待确认'];
+  var LESSON_MODE = ['一对一', '补课', '其他'];
+  var FEE_STATE = { NONE: '未计费', FEE: '已计费', ERROR: '计费异常', NA: '不适用' };
+  var PAY_RULE_STATUS = ['启用', '停用'];
   var SERIES_STATUS = { DRAFT: '草稿', GENERATED: '已生成', PARTIAL: '部分生成', CANCELLED: '已取消' };
   var BATCH_STATUS = { DRAFT: '草稿', PARTIAL: '部分生成', GENERATED: '已生成', CANCELLED: '已取消' };
   var AVAIL_EXCEPTION = { BLOCK: '不可用', EXTRA: '可加班', LIMITED: '限定时段' };
@@ -2086,6 +2091,13 @@
       interval: { not_mastered: 1, needs_practice: 3, mastered: 7 },
       maxStage: 5, multiplier: 1.5
     };
+    /* 第十二轮：教师课时费 / 结算机构级参数（显式配置，禁止代码里隐式取整） */
+    d.config.teacherPay = d.config.teacherPay || {
+      settlementCycle: { startDay: 21, endDay: 20 },
+      pricingMode: '按小时', allowDecimalHours: true, roundMode: 'none',
+      minBillMinutes: 0, allowExceedScheduled: false, missingActual: '异常',
+      legacyCourseType: '待确认'
+    };
 
     /* ---- 第七轮域：结构性默认值 ---- */
     d.agents = d.agents || [];
@@ -2109,6 +2121,22 @@
     d.parentAdviceChecks = d.parentAdviceChecks || [];
     d.meta.seq.PRR = Math.max(d.meta.seq.PRR || 0, d.parentReportReads.length);
     d.meta.seq.PAC = Math.max(d.meta.seq.PAC || 0, d.parentAdviceChecks.length);
+
+    /* 第十二轮：教师课时费 / 结算体系（附加式默认，金额一律整数分） */
+    d.teacherPayRules = d.teacherPayRules || [];
+    d.teacherLessonFees = d.teacherLessonFees || [];
+    d.teacherSettlements = d.teacherSettlements || [];
+    d.teacherSettlementItems = d.teacherSettlementItems || [];
+    d.teacherSettlementAdjustments = d.teacherSettlementAdjustments || [];
+    d.teacherSettlementDisputes = d.teacherSettlementDisputes || [];
+    d.teacherPayments = d.teacherPayments || [];
+    d.meta.seq.TPR = Math.max(d.meta.seq.TPR || 0, d.teacherPayRules.length);
+    d.meta.seq.TLF = Math.max(d.meta.seq.TLF || 0, d.teacherLessonFees.length);
+    d.meta.seq.TS = Math.max(d.meta.seq.TS || 0, d.teacherSettlements.length);
+    d.meta.seq.TSI = Math.max(d.meta.seq.TSI || 0, d.teacherSettlementItems.length);
+    d.meta.seq.TSA = Math.max(d.meta.seq.TSA || 0, d.teacherSettlementAdjustments.length);
+    d.meta.seq.TSD = Math.max(d.meta.seq.TSD || 0, d.teacherSettlementDisputes.length);
+    d.meta.seq.TPY = Math.max(d.meta.seq.TPY || 0, d.teacherPayments.length);
     d.leadDisputes = d.leadDisputes || [];
     d.paymentRegistrations = d.paymentRegistrations || [];
     d.refundRequests = d.refundRequests || [];
@@ -2749,6 +2777,14 @@
         : (c.seriesId ? COURSE_SOURCE.SERIES : c.batchId ? COURSE_SOURCE.BATCH : COURSE_SOURCE.MANUAL);
       c.meetingPolicy = c.meetingPolicy || '';
       c.scheduleNote = c.scheduleNote || '';
+      /* 第十二轮：课型 / 授课形式 / 教师计费状态（附加字段；历史课程课型=待确认，不默认正式课） */
+      c.lessonMode = LESSON_MODE.indexOf(c.lessonMode) >= 0 ? c.lessonMode
+        : (LESSON_MODE.indexOf(c.type) >= 0 ? c.type : '一对一');
+      c.courseType = COURSE_TYPE.indexOf(c.courseType) >= 0 ? c.courseType
+        : ((d.config && d.config.teacherPay && d.config.teacherPay.legacyCourseType) || '待确认');
+      if ([FEE_STATE.NONE, FEE_STATE.FEE, FEE_STATE.ERROR, FEE_STATE.NA].indexOf(c.teacherFeeState) < 0) {
+        c.teacherFeeState = FEE_STATE.NONE;
+      }
     });
 
     /* ============================================================
@@ -6229,9 +6265,14 @@
       db.reports.push(rp);
       r.reportId = rp.id;
     }
+    /* 第十二轮：逐节生成教师课时费（幂等；无规则/缺时间入异常队列，不影响课程完成） */
+    var feeRes = null;
+    try { feeRes = generateLessonFee(courseId); }
+    catch (e) { c.teacherFeeState = FEE_STATE.ERROR; }
     save();
     return {
       ok: true, course: c, record: r, report: rp, deduct: deduct,
+      fee: feeRes ? feeRes.fee : null,
       unfinished: unf.items, policy: policy,
       warnings: deduct.ok ? [] : [deduct.reason]
     };
@@ -7367,10 +7408,15 @@
   /* ---------- 会话与权限 ---------- */
   function accountForSession() {
     if (session.accountId) {
-      return db.users.filter(function (u) { return u.id === session.accountId; })[0] || null;
+      var byAccount = db.users.filter(function (u) { return u.id === session.accountId; })[0];
+      if (byAccount) return byAccount;
+      /* 陈旧 accountId（数据版本变化 / 账号已删除）不能直接判定「无人」：
+         清空后继续按角色回退，避免身份卡在「未识别员工身份」。 */
+      session.accountId = '';
     }
     if (session.operatorId && String(session.operatorId).indexOf('UA') === 0) {
-      return db.users.filter(function (u) { return u.id === session.operatorId; })[0] || null;
+      var byOp = db.users.filter(function (u) { return u.id === session.operatorId; })[0];
+      if (byOp) return byOp;
     }
     /* 只有对应业务身份才用对应档案定位账号，避免切角色后残留 teacherId 借到他人账号 */
     if (session.role === 'teacher' && session.teacherId) {
@@ -7388,6 +7434,10 @@
       var sameRole = db.users.filter(function (u) {
         return u.roleCode === session.role && u.profileType === 'staff';
       });
+      var byProfile = session.operatorId
+        ? sameRole.filter(function (u) { return u.profileId === session.operatorId || u.id === session.operatorId; })[0]
+        : null;
+      if (byProfile) return byProfile;
       var byName = sameRole.filter(function (u) { return staffNameOf(u) === session.operatorName; })[0];
       if (byName) return byName;
       if (sameRole.length === 1) return sameRole[0];
@@ -7412,7 +7462,8 @@
       }
       session.accountId = acc.id;
       if (!s.operatorName) { s.operatorName = (staffNameOf(acc) || acc.loginName); }
-    } else if ('accountId' in s) {
+    } else if ('accountId' in s || roleChanged) {
+      /* 切换角色且未显式提供账号时清空上一个角色的 accountId，避免跨角色借用他人身份 */
       session.accountId = '';
     }
     if (s.role) session.role = s.role;
@@ -7572,6 +7623,13 @@
     });
     var settled = done.length + cancelled + missed;
     var reports = db.reports.filter(function (r) { return r.teacherId === id; });
+    /* 第十二轮：课时费 / 结算 / 付款汇总（应付≠已确认≠已付，禁止用课程数推算工资） */
+    var _fees = db.teacherLessonFees.filter(function (f) { return f.teacherId === id && f.status !== '已冲正'; });
+    var _monthFees = _fees.filter(function (f) { return String(f.courseDate || '').slice(0, 7) === MONTH; });
+    var _feeSum = function (a) { return a.reduce(function (n, f) { return n + Number(f.amountCents || 0); }, 0); };
+    var _settles = db.teacherSettlements.filter(function (s) { return s.teacherId === id && s.status !== '已取消'; });
+    var _pays = db.teacherPayments.filter(function (p) { return p.teacherId === id && p.status === '成功'; });
+    var _lastSettle = _settles.slice().sort(function (a, b) { return (a.generatedAt || '') < (b.generatedAt || '') ? 1 : -1; })[0];
     return {
       id: id, code: t.code, name: t.name,
       cooperationStatus: t.cooperationStatus, accountStatus: accountStatusOf(id),
@@ -7589,6 +7647,18 @@
       futureCourses: futureCoursesOf(id).length,
       monthsBy: months,
       reportCount: reports.length,
+      /* 第十二轮：薪酬相关统计 */
+      monthExperienceCount: _monthFees.filter(function (f) { return f.courseType === '体验课'; }).length,
+      monthFormalCount: _monthFees.filter(function (f) { return f.courseType === '正式课'; }).length,
+      monthPayableMinutes: _monthFees.reduce(function (n, f) { return n + Number(f.payableMinutes || 0); }, 0),
+      monthPendingAmountCents: _feeSum(_monthFees.filter(function (f) { return f.status === '待结算'; })),
+      monthSettledAmountCents: _feeSum(_monthFees.filter(function (f) { return f.status === '已结算'; })),
+      totalFeeAmountCents: _feeSum(_fees),
+      totalConfirmedAmountCents: _settles.reduce(function (n, s) { return n + Number(s.confirmedAmountCents || 0); }, 0),
+      totalPaidAmountCents: _pays.reduce(function (n, p) { return n + Number(p.amountCents || 0); }, 0),
+      unpaidAmountCents: _settles.reduce(function (n, s) { return n + Number(s.unpaidAmountCents || 0); }, 0),
+      feeExceptionCount: _fees.filter(function (f) { return f.status === '异常'; }).length,
+      lastSettlementAt: _lastSettle ? _lastSettle.generatedAt : '',
       draftReports: reports.filter(function (r) { return r.status === REPORT_STATUS.DRAFT; }).length
     };
   }
@@ -7807,6 +7877,851 @@
       }).length,
       needsAdjust: db.courses.filter(function (c) { return c.teacherId === id && c.needsAdjust; }).length
     };
+  }
+
+  /* ================= 教师端聚合读取（第一批页面用；含教师/课程归属校验） ================= */
+  function _selfTeacherOr(teacherId) {
+    return (session.role === 'teacher') ? assertSelfTeacher(teacherId) : teacherId;
+  }
+  function _assertMyCourse(courseId) {
+    var c = course(courseId);
+    if (!c) throw bizError('COURSE_NOT_FOUND', '课程不存在');
+    if (session.role === 'teacher' && (c.teacherId || '') !== sessionTeacherId()) {
+      throw bizError('FORBIDDEN', '该课程不是当前教师的授课课程');
+    }
+    return c;
+  }
+  /** 今日概览：课程(含报告状态/学员) + 统计 + 待写报告 + 需要关注学员 */
+  function teacherTodayOverview(teacherId, date) {
+    var tid = _selfTeacherOr(teacherId);
+    var d = date || TODAY;
+    var courses = coursesOfTeacher(tid, d).map(function (c) {
+      var rp = reportOfCourse(c.id);
+      var s = student(c.studentId);
+      return {
+        id: c.id, start: c.start, end: c.end, status: c.status,
+        studentId: c.studentId, studentName: s ? s.name : (c.student || ''),
+        grade: s ? s.grade : '', teacherId: c.teacherId, teacherName: c.teacherName || c.teacher || '',
+        meetingUrl: c.meetingUrl || '', meeting: c.meeting || '',
+        reportId: rp ? rp.id : '', reportStatus: rp ? rp.status : '未生成'
+      };
+    });
+    var pendingReports = db.reports.filter(function (r) {
+      return (r.teacherId || '') === (tid || '') &&
+        (r.status === REPORT_STATUS.DRAFT || r.status === REPORT_STATUS.SUBMITTED);
+    }).map(function (r) {
+      var s = student(r.studentId); var c = course(r.courseId);
+      return {
+        id: r.id, courseId: r.courseId, studentId: r.studentId, studentName: s ? s.name : '',
+        title: r.title, status: r.status, courseDate: c ? c.date : ''
+      };
+    }).sort(function (a, b) { return (a.courseDate || '') < (b.courseDate || '') ? 1 : -1; });
+    return {
+      date: d, courses: courses,
+      stat: courseStat(tid, d), reportStat: reportStat(tid),
+      pendingReports: pendingReports,
+      pendingDraft: pendingReports.filter(function (r) { return r.status === REPORT_STATUS.DRAFT; }).length,
+      attention: teacherAttentionStudents(tid)
+    };
+  }
+  /** 今日到期复习合并摘要（莱特纳 + 21 天），仅展示；执行仍分体系 */
+  function teacherDueReviewSummary(studentId) {
+    if (session.role === 'teacher') assertMyStudent(studentId);
+    var dueD = leitnerDueDetail(studentId);
+    var p21 = plan21TodaySummary(studentId);
+    var leitner = dueD ? (dueD.total || 0) : 0;
+    var plan21 = p21 ? (p21.due || 0) : 0;
+    return {
+      leitner: leitner, plan21: plan21, total: leitner + plan21,
+      leitnerDetail: dueD ? { red: dueD.red.length, yellow: dueD.yellow.length, manual: dueD.manual.length } : null,
+      plan21Detail: p21 ? { day: p21.day, due: p21.due, overdue: p21.overdueWords } : null
+    };
+  }
+  /** 最近一次完成训练的通过率（'yes' 占比，null 表示无） */
+  function _lastPassRateOfStudent(studentId) {
+    var lastTask = db.trainTasks.filter(function (t) { return t.studentId === studentId && t.status === STATUS.DONE; })
+      .sort(function (a, b) { return (a.finishedAt || '') < (b.finishedAt || '') ? 1 : -1; })[0];
+    if (!lastTask) return { rate: null, task: null };
+    var q = lastTask.queueWordIds || [];
+    if (!q.length) return { rate: null, task: lastTask };
+    var yes = q.filter(function (id) { var fr = lastTask.finalResults && lastTask.finalResults[id]; return fr && fr.result === 'yes'; }).length;
+    return { rate: Math.round(yes / q.length * 100), task: lastTask };
+  }
+  /** 需要关注学员：今日有到期复习 或 最近一次通过率偏低 */
+  function teacherAttentionStudents(teacherId) {
+    var tid = _selfTeacherOr(teacherId);
+    var out = [];
+    currentRelationsOf(tid).forEach(function (rel) {
+      var sid = rel.studentId;
+      var s = student(sid);
+      if (!s) return;
+      var due = teacherDueReviewSummary(sid);
+      var pr = _lastPassRateOfStudent(sid);
+      if (due.total > 0 || (pr.rate !== null && pr.rate < 50)) {
+        out.push({
+          studentId: sid, studentName: s.name, grade: s.grade,
+          dueReview: due.total, lastPassRate: pr.rate, lastCourse: s.lastCourse || ''
+        });
+      }
+    });
+    return out.sort(function (a, b) { return (b.dueReview || 0) - (a.dueReview || 0); });
+  }
+  /** 本节课建议：今日到期数 / 建议薄弱词 / 最近通过率 */
+  function teacherLessonAdvice(studentId) {
+    if (session.role === 'teacher') assertMyStudent(studentId);
+    var due = teacherDueReviewSummary(studentId);
+    var pr = _lastPassRateOfStudent(studentId);
+    var weak = [];
+    if (pr.task) {
+      (pr.task.queueWordIds || []).forEach(function (id) {
+        var fr = pr.task.finalResults && pr.task.finalResults[id];
+        if (fr && fr.result !== 'yes') { var w = word(id); if (w) weak.push({ wordId: id, en: w.en }); }
+      });
+    }
+    return { dueReview: due.total, weakWords: weak.slice(0, 8), lastPassRate: pr.rate, lastTaskId: pr.task ? pr.task.id : '' };
+  }
+  /** 报告自动带数（来自本节课记录快照，不改变课时/报告状态） */
+  function courseRecordAutoData(courseId) {
+    var c = _assertMyCourse(courseId);
+    var rec = recordOfCourse(courseId);
+    var v = rec ? recordView(rec) : null;
+    return {
+      courseId: courseId, studentId: c.studentId,
+      trainWords: v ? v.trainWords : 0, mastered: v ? v.mastered : 0, weak: v ? v.weak : 0,
+      leitnerWords: v ? v.leitnerWords : 0, plan21Words: v ? v.plan21Words : 0,
+      articleSentences: v ? v.articleSentences : 0, trainRecords: v ? v.trainRecords : 0
+    };
+  }
+
+  /* ================= 第十三轮：教务工作台聚合（含角色权限校验） ================= */
+  function _assertEdu() {
+    if (['admin', 'staff', 'ops'].indexOf(session.role) < 0) {
+      throw bizError('FORBIDDEN', '当前身份无权执行教务操作');
+    }
+  }
+  function coursesMissingMeeting() {
+    _assertEdu();
+    return db.courses.filter(function (c) {
+      return !c.meetingUrl && (c.status === COURSE_STATUS.PENDING || c.status === COURSE_STATUS.ONGOING);
+    }).sort(function (a, b) { return (a.date + a.start) < (b.date + b.start) ? -1 : 1; })
+      .map(function (c) {
+        return { id: c.id, date: c.date, start: c.start, end: c.end, student: c.student, teacher: c.teacher, status: c.status };
+      });
+  }
+  function batchFillMeeting(input) {
+    _assertEdu();
+    input = input || {};
+    var ids = input.courseIds || [];
+    var url = String(input.meetingUrl || '').trim();
+    if (!ids.length) throw bizError('REQUIRED', '请选择要补充会议链接的课程');
+    if (!/^https?:\/\//i.test(url)) throw bizError('MEETING_URL_INVALID', '腾讯会议链接需以 http:// 或 https:// 开头');
+    var done = [], skipped = [];
+    ids.forEach(function (id) {
+      var c = course(id);
+      if (!c) { skipped.push({ id: id, reason: '课程不存在' }); return; }
+      if (c.status !== COURSE_STATUS.PENDING && c.status !== COURSE_STATUS.ONGOING) {
+        skipped.push({ id: id, reason: '仅待上课/授课中可补充' }); return;
+      }
+      c.meetingUrl = url; c.meeting = '已生成'; c.updatedAt = stamp();
+      done.push(id);
+    });
+    recordAudit({ module: '教务', action: '批量补充会议链接', resourceType: 'course', resourceId: done.join(','), resourceName: done.length + ' 节课程', beforeData: null, afterData: { ids: done, meetingUrl: url }, reason: input.reason || '' });
+    save();
+    return { ok: true, done: done, skipped: skipped };
+  }
+  function abnormalCourses() {
+    _assertEdu();
+    return db.courses.filter(function (c) {
+      return c.status === COURSE_STATUS.MISSED || c.status === COURSE_STATUS.CANCELLED || c.deductState === '扣课异常';
+    }).sort(function (a, b) { return (a.date + a.start) < (b.date + b.start) ? 1 : -1; })
+      .map(function (c) {
+        return {
+          id: c.id, date: c.date, start: c.start, end: c.end, student: c.student, teacher: c.teacher,
+          status: c.status, deductState: c.deductState, reason: c.cancelReason || c.missedReason || '',
+          workNote: c.workNote || '', feeState: c.teacherFeeState || '未计费'
+        };
+      });
+  }
+  function courseWorkNote(courseId, note) {
+    _assertEdu();
+    var c = course(courseId);
+    if (!c) throw bizError('NOT_FOUND', '课程不存在');
+    c.workNote = String(note || '').trim();
+    c.updatedAt = stamp();
+    recordAudit({ module: '教务', action: '异常课程备注', resourceType: 'course', resourceId: c.id, resourceName: c.student + ' ' + c.date, beforeData: null, afterData: { workNote: c.workNote }, reason: c.workNote });
+    save();
+    return clone(c);
+  }
+  function orderQuickStat() {
+    _assertEdu();
+    var rows = db.orders.slice();
+    var by = function (st) { return rows.filter(function (o) { return o.status === st; }); };
+    var sum = function (a, k) { return a.reduce(function (n, o) { return n + Number(o[k] || 0); }, 0); };
+    var p = by(ORDER.PENDING), r = by(ORDER.REVIEWED), c = by(ORDER.CREDITED);
+    return {
+      pending: p.length, reviewed: r.length, credited: c.length,
+      pendingAmount: sum(p, 'amount'), reviewedAmount: sum(r, 'amount'), creditedAmount: sum(c, 'amount')
+    };
+  }
+  function overdueReports(days) {
+    _assertEdu();
+    var n = Number(days || 2);
+    var cutoff = addDays(TODAY, -n);
+    return db.courses.filter(function (c) {
+      if (c.status !== COURSE_STATUS.DONE) return false;
+      if (String(c.date) > cutoff) return false;
+      var rp = reportOfCourse(c.id);
+      return rp && (rp.status === REPORT_STATUS.DRAFT || rp.status === REPORT_STATUS.SUBMITTED);
+    }).map(function (c) {
+      var rp = reportOfCourse(c.id);
+      return { courseId: c.id, courseDate: c.date, student: c.student, teacher: c.teacher, reportId: rp.id, reportStatus: rp.status };
+    });
+  }
+  function unrepliedInquiries() {
+    _assertEdu();
+    return db.parentInquiries.filter(function (q) { return q.status === '待处理' || q.status === '处理中'; })
+      .sort(function (a, b) { return (a.createdAt || '') < (b.createdAt || '') ? 1 : -1; })
+      .map(function (q) {
+        var p = parent(q.parentId); var s = q.studentId ? student(q.studentId) : null;
+        return { id: q.id, parentName: (p && p.name) || '', studentName: (s && s.name) || '', type: q.type, content: q.content, status: q.status, createdAt: q.createdAt };
+      });
+  }
+  function studentsWithOpenTrainTask() {
+    _assertEdu();
+    var set = {};
+    db.trainTasks.forEach(function (t) { if (isOpen(t.status)) set[t.studentId] = 1; });
+    return Object.keys(set);
+  }
+  function inactiveStudents(days) {
+    _assertEdu();
+    var n = Number(days || 7);
+    var cutoff = addDays(TODAY, -n);
+    return db.students.filter(function (s) {
+      if (s.status && s.status !== '在读') return false;
+      var last = db.courses.filter(function (c) { return c.studentId === s.id && c.status === COURSE_STATUS.DONE; })
+        .sort(function (a, b) { return a.date < b.date ? 1 : -1; })[0];
+      return !last || String(last.date) < cutoff;
+    }).map(function (s) { return s.id; });
+  }
+  function setStudentEduNote(studentId, note) {
+    _assertEdu();
+    var s = student(studentId);
+    if (!s) throw bizError('NOT_FOUND', '学员不存在');
+    s.eduNote = String(note || '').trim();
+    s.updatedAt = stamp();
+    recordAudit({ module: '教务', action: '维护学员教务备注', resourceType: 'student', resourceId: s.id, resourceName: s.name, beforeData: null, afterData: { eduNote: s.eduNote }, reason: '教务备注（仅内部可见）' });
+    save();
+    return clone(s);
+  }
+  /** 教务今日待办聚合：数字与下钻列表来自真实业务数据 */
+  function eduWorkbench() {
+    _assertEdu();
+    var meeting = coursesMissingMeeting();
+    var os = orderQuickStat();
+    var ab = abnormalCourses();
+    var inq = unrepliedInquiries();
+    var rep = overdueReports(2);
+    var tasked = studentsWithOpenTrainTask();
+    var inactive = inactiveStudents(7);
+    var demands = (db.demands || []).filter(function (d) {
+      return d.status === '待分配' || d.status === '待响应' || d.status === '招募中' || d.status === '待确认';
+    });
+    var pendOrders = db.orders.filter(function (o) { return o.status === ORDER.PENDING; })
+      .sort(function (a, b) { return (a.createdAt || '') < (b.createdAt || '') ? 1 : -1; })
+      .slice(0, 8).map(function (o) {
+        return { id: o.id, studentId: o.studentId, productName: o.productName, amount: o.amount, status: o.status, createdAt: o.createdAt };
+      });
+    return {
+      counts: {
+        pendingDemands: demands.length,
+        missingMeeting: meeting.length,
+        pendingOrders: os.pending,
+        pendingPayment: os.reviewed,
+        abnormalCourses: ab.length,
+        unrepliedInquiries: inq.length,
+        overdueReports: rep.length,
+        studentsOpenTask: tasked.length,
+        inactiveStudents: inactive.length
+      },
+      orderStat: os,
+      lists: {
+        missingMeeting: meeting.slice(0, 8),
+        pendingOrders: pendOrders,
+        abnormalCourses: ab.slice(0, 8),
+        unrepliedInquiries: inq.slice(0, 8),
+        overdueReports: rep.slice(0, 8)
+      }
+    };
+  }
+
+  /* ================= 第十二轮：教师课时费规则（版本化 + 审计 + 角色校验） ================= */
+  function _payRoles(allowed, actionName) {
+    if (allowed.indexOf(session.role) < 0) {
+      throw bizError('FORBIDDEN', '当前身份无权执行该操作：' + (actionName || '教师课时费'));
+    }
+  }
+  function payRule(ruleId) {
+    return db.teacherPayRules.filter(function (r) { return r.id === ruleId; })[0] || null;
+  }
+  function payRuleList(opt) {
+    _payRoles(['admin', 'ops', 'staff'], '查看课时费规则');
+    opt = opt || {};
+    return db.teacherPayRules.filter(function (r) {
+      if (opt.teacherId && r.teacherId !== opt.teacherId) return false;
+      if (opt.courseType && r.courseType !== opt.courseType) return false;
+      if (opt.status && r.status !== opt.status) return false;
+      return true;
+    }).slice().sort(function (a, b) {
+      var ka = a.teacherId + a.courseType + (a.effectiveFrom || '');
+      var kb = b.teacherId + b.courseType + (b.effectiveFrom || '');
+      return ka < kb ? 1 : -1;
+    }).map(clone);
+  }
+  function payRuleUsedByFees(ruleId) {
+    return db.teacherLessonFees.some(function (f) { return f.ruleId === ruleId && f.status !== '已冲正'; });
+  }
+  /** 生效规则：状态启用 + 生效日期区间覆盖该课程日期；多条命中取生效日期最新 */
+  function activePayRule(teacherId, courseType, date) {
+    var d = date || TODAY;
+    var list = db.teacherPayRules.filter(function (r) {
+      return r.teacherId === teacherId && r.courseType === courseType && r.status === '启用'
+        && (!r.effectiveFrom || r.effectiveFrom <= d)
+        && (!r.effectiveTo || r.effectiveTo >= d);
+    }).sort(function (a, b) { return (a.effectiveFrom || '') < (b.effectiveFrom || '') ? 1 : -1; });
+    return list[0] || null;
+  }
+  /** 新建规则：版本化——旧的有效规则截止到新规则生效前一天，历史金额不随之改变 */
+  function createPayRule(input) {
+    _payRoles(['admin', 'ops'], '创建课时费规则');
+    input = input || {};
+    var t = teacher(input.teacherId);
+    if (!t) throw bizError('TEACHER_NOT_FOUND', '请选择有效的教师');
+    var ct = input.courseType;
+    if (['体验课', '正式课'].indexOf(ct) < 0) throw bizError('COURSE_TYPE_INVALID', '课型必须为体验课或正式课');
+    var pm = input.pricingMode || ((db.config.teacherPay && db.config.teacherPay.pricingMode) || '按小时');
+    if (['按小时', '按节', '按实际分钟'].indexOf(pm) < 0) throw bizError('PRICING_INVALID', '计费方式不合法');
+    var price = Math.round(Number(input.unitPriceCents !== undefined ? input.unitPriceCents : Number(input.unitPrice || 0) * 100));
+    if (!(price > 0)) throw bizError('PRICE_INVALID', '单价必须大于 0');
+    var from = String(input.effectiveFrom || TODAY).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) throw bizError('DATE_INVALID', '生效日期不合法');
+    /* 版本截断：同一教师+课型，新规则生效前的有效旧版截止到前一天 */
+    db.teacherPayRules.forEach(function (r) {
+      if (r.teacherId === t.id && r.courseType === ct && r.status === '启用' && !r.effectiveTo && r.effectiveFrom < from) {
+        r.effectiveTo = addDays(from, -1);
+        r.updatedAt = stamp();
+        r.changeLog = r.changeLog || [];
+        r.changeLog.push({ at: stamp(), by: session.operatorName || '', action: '版本截断', note: '新版本 ' + from + ' 生效，旧版截止 ' + r.effectiveTo });
+        r.changeLog = r.changeLog.slice(-20);
+      }
+    });
+    var rule = {
+      id: 'TPR' + seq('TPR', 3), teacherId: t.id, teacherName: t.name, teacherCode: t.code || '',
+      courseType: ct, pricingMode: pm, unitPriceCents: price,
+      effectiveFrom: from, effectiveTo: input.effectiveTo || '', status: '启用',
+      createdBy: session.operatorName || '', createdAt: stamp(), updatedAt: stamp(),
+      changeLog: [{ at: stamp(), by: session.operatorName || '', action: '创建', note: '' }]
+    };
+    db.teacherPayRules.push(rule);
+    recordAudit({
+      module: '教师课时费', action: '创建课时费规则', resourceType: 'payRule', resourceId: rule.id,
+      resourceName: t.name + ' · ' + ct, beforeData: null,
+      afterData: { courseType: ct, pricingMode: pm, unitPriceCents: price, effectiveFrom: from },
+      reason: input.reason || ''
+    });
+    save();
+    return clone(rule);
+  }
+  /** 修改规则：已被历史计费引用的规则禁止改单价/计费方式/生效日期（只能新建版本或停用） */
+  function updatePayRule(ruleId, patch) {
+    _payRoles(['admin', 'ops'], '修改课时费规则');
+    var r = payRule(ruleId);
+    if (!r) throw bizError('NOT_FOUND', '规则不存在');
+    patch = patch || {};
+    var used = payRuleUsedByFees(ruleId);
+    var before = { pricingMode: r.pricingMode, unitPriceCents: r.unitPriceCents, effectiveFrom: r.effectiveFrom, effectiveTo: r.effectiveTo, status: r.status };
+    if (used && (patch.unitPriceCents !== undefined || patch.pricingMode !== undefined || patch.effectiveFrom !== undefined)) {
+      throw bizError('RULE_IN_USE', '该规则已用于历史计费，不能修改单价/计费方式/生效日期；请新建版本或停用');
+    }
+    if (patch.unitPriceCents !== undefined) {
+      var p = Math.round(Number(patch.unitPriceCents));
+      if (!(p > 0)) throw bizError('PRICE_INVALID', '单价必须大于 0');
+      r.unitPriceCents = p;
+    }
+    if (patch.pricingMode !== undefined) {
+      if (['按小时', '按节', '按实际分钟'].indexOf(patch.pricingMode) < 0) throw bizError('PRICING_INVALID', '计费方式不合法');
+      r.pricingMode = patch.pricingMode;
+    }
+    if (patch.effectiveFrom !== undefined) r.effectiveFrom = String(patch.effectiveFrom || '');
+    if (patch.effectiveTo !== undefined) r.effectiveTo = String(patch.effectiveTo || '');
+    if (patch.status !== undefined && PAY_RULE_STATUS.indexOf(patch.status) >= 0) r.status = patch.status;
+    r.updatedAt = stamp();
+    r.changeLog = r.changeLog || [];
+    r.changeLog.push({ at: stamp(), by: session.operatorName || '', action: '修改', note: patch.reason || '', before: before, after: { pricingMode: r.pricingMode, unitPriceCents: r.unitPriceCents, effectiveFrom: r.effectiveFrom, effectiveTo: r.effectiveTo, status: r.status } });
+    r.changeLog = r.changeLog.slice(-20);
+    recordAudit({
+      module: '教师课时费', action: '修改课时费规则', resourceType: 'payRule', resourceId: r.id,
+      resourceName: r.teacherName + ' · ' + r.courseType, beforeData: before,
+      afterData: { pricingMode: r.pricingMode, unitPriceCents: r.unitPriceCents, effectiveFrom: r.effectiveFrom, effectiveTo: r.effectiveTo, status: r.status },
+      reason: patch.reason || ''
+    });
+    save();
+    return clone(r);
+  }
+  function disablePayRule(ruleId, reason) {
+    return updatePayRule(ruleId, { status: '停用', reason: reason || '停用规则' });
+  }
+
+  /* ================= 第十二轮：教师课时费明细（逐节计费，幂等 + 异常队列） ================= */
+  function effectiveLessonFee(courseId) {
+    return db.teacherLessonFees.filter(function (f) {
+      return f.courseId === courseId && f.status !== '已冲正';
+    })[0] || null;
+  }
+  function _feeMin(t) {
+    if (!t) return null;
+    var s = String(t);
+    var m = s.match(/(\d{1,2}:\d{2})\s*$/);
+    var v = m ? timeToMin(m[1]) : timeToMin(s);
+    return v >= 0 ? v : null;
+  }
+  function _feeMinutes(c, cfg) {
+    var a = _feeMin(c.actualStart), b = _feeMin(c.actualEnd);
+    if (a === null || b === null || b <= a) return null;
+    var minutes = b - a;
+    var s = _feeMin(c.start), e = _feeMin(c.end);
+    var sched = (s !== null && e !== null && e > s) ? e - s : null;
+    if (!cfg.allowExceedScheduled && sched !== null && minutes > sched) minutes = sched;
+    if (Number(cfg.minBillMinutes) > 0 && minutes < Number(cfg.minBillMinutes)) minutes = Number(cfg.minBillMinutes);
+    return minutes;
+  }
+  function _feeAmount(unitPriceCents, pricingMode, minutes, cfg) {
+    if (pricingMode === '按节') return Math.round(unitPriceCents);
+    var raw = unitPriceCents * minutes / 60;
+    var mode = cfg.roundMode || 'round';
+    if (mode === 'floor') return Math.floor(raw);
+    if (mode === 'ceil') return Math.ceil(raw);
+    return Math.round(raw);
+  }
+  function _buildFeeFields(c, rule, cfg) {
+    var minutes = _feeMinutes(c, cfg);
+    var out = {
+      courseType: c.courseType, lessonMode: c.lessonMode,
+      scheduledStart: c.date + ' ' + c.start, scheduledEnd: c.date + ' ' + c.end,
+      actualStart: c.actualStart || '', actualEnd: c.actualEnd || '',
+      payableMinutes: minutes || 0,
+      payableHours: minutes ? Math.round(minutes / 60 * 100) / 100 : 0,
+      pricingMode: rule ? rule.pricingMode : '',
+      unitPriceCents: rule ? rule.unitPriceCents : 0,
+      amountCents: 0,
+      ruleId: rule ? rule.id : '',
+      ruleSnapshot: rule ? { pricingMode: rule.pricingMode, unitPriceCents: rule.unitPriceCents, effectiveFrom: rule.effectiveFrom, effectiveTo: rule.effectiveTo } : null,
+      status: '待结算', exceptionReason: ''
+    };
+    if (!rule) { out.status = '异常'; out.exceptionReason = '缺少计费规则（' + (c.courseType || '待确认') + '）'; }
+    else if (minutes === null) { out.status = '异常'; out.exceptionReason = '实际授课时间缺失或不合法'; }
+    else out.amountCents = _feeAmount(rule.unitPriceCents, rule.pricingMode, minutes, cfg);
+    return out;
+  }
+  /** 生成课时费明细：仅已完成课程；幂等（单课程一条有效原始明细）；无规则/缺时间进异常队列 */
+  function generateLessonFee(courseId, opt) {
+    opt = opt || {};
+    _payRoles(['admin', 'ops', 'staff', 'teacher'], '生成课时费');
+    var c = course(courseId);
+    if (!c) return { ok: false, reason: '课程不存在' };
+    if (session.role === 'teacher' && c.teacherId !== session.teacherId) {
+      throw bizError('FORBIDDEN', '只能为本人授课课程生成课时费');
+    }
+    if (c.status !== COURSE_STATUS.DONE) return { ok: false, reason: '课程未完成，不生成课时费' };
+    var cfg = db.config.teacherPay || {};
+    var rule = (c.courseType === '待确认') ? null : activePayRule(c.teacherId, c.courseType, c.date);
+    var existing = effectiveLessonFee(courseId);
+    if (existing) {
+      if (existing.status !== '异常' || !opt.retry) {
+        c.teacherFeeState = existing.status === '异常' ? FEE_STATE.ERROR : FEE_STATE.FEE;
+        save();
+        return { ok: true, reused: true, fee: clone(existing) };
+      }
+      var f2 = _buildFeeFields(c, rule, cfg);
+      Object.keys(f2).forEach(function (k) { existing[k] = f2[k]; });
+      existing.updatedAt = stamp();
+      c.teacherFeeState = existing.status === '异常' ? FEE_STATE.ERROR : FEE_STATE.FEE;
+      recordAudit({
+        module: '教师课时费', action: '重试生成课时费', resourceType: 'lessonFee', resourceId: existing.id,
+        resourceName: c.student + ' · ' + c.date, beforeData: null,
+        afterData: { status: existing.status, amountCents: existing.amountCents, exceptionReason: existing.exceptionReason },
+        reason: opt.reason || ''
+      });
+      save();
+      return { ok: true, retried: true, fee: clone(existing) };
+    }
+    var fields = _buildFeeFields(c, rule, cfg);
+    var fee = {
+      id: 'TLF' + seq('TLF', 4), courseId: courseId, teacherId: c.teacherId, studentId: c.studentId,
+      teacherName: c.teacherName || c.teacher || '', courseDate: c.date, createdAt: stamp()
+    };
+    Object.keys(fields).forEach(function (k) { fee[k] = fields[k]; });
+    db.teacherLessonFees.push(fee);
+    c.teacherFeeState = fee.status === '异常' ? FEE_STATE.ERROR : FEE_STATE.FEE;
+    recordAudit({
+      module: '教师课时费',
+      action: fee.status === '异常' ? '教师课时费异常' : '生成教师课时费明细',
+      resourceType: 'lessonFee', resourceId: fee.id, resourceName: c.student + ' · ' + c.date,
+      beforeData: null,
+      afterData: { courseId: courseId, courseType: fee.courseType, amountCents: fee.amountCents, status: fee.status, exceptionReason: fee.exceptionReason },
+      reason: ''
+    });
+    save();
+    return { ok: true, fee: clone(fee) };
+  }
+  function retryLessonFee(courseId) { return generateLessonFee(courseId, { retry: true, reason: '计费异常重试' }); }
+  /** 课时费明细查询（教师仅本人；管理/教务可查全部） */
+  function lessonFeesOf(opt) {
+    opt = opt || {};
+    if (session.role === 'teacher') {
+      if (opt.teacherId && opt.teacherId !== session.teacherId) throw bizError('FORBIDDEN', '只能查看本人课时费');
+      opt = { teacherId: session.teacherId, studentId: opt.studentId, courseId: opt.courseId, status: opt.status, month: opt.month, from: opt.from, to: opt.to };
+    } else if (['admin', 'ops', 'staff'].indexOf(session.role) < 0) {
+      throw bizError('FORBIDDEN', '无权查看教师课时费');
+    }
+    return db.teacherLessonFees.filter(function (f) {
+      if (opt.teacherId && f.teacherId !== opt.teacherId) return false;
+      if (opt.studentId && f.studentId !== opt.studentId) return false;
+      if (opt.courseId && f.courseId !== opt.courseId) return false;
+      if (opt.status && f.status !== opt.status) return false;
+      if (opt.month && String(f.courseDate || '').slice(0, 7) !== opt.month) return false;
+      if (opt.from && String(f.courseDate || '') < opt.from) return false;
+      if (opt.to && String(f.courseDate || '') > opt.to) return false;
+      return true;
+    }).slice().sort(function (a, b) { return (a.createdAt || '') < (b.createdAt || '') ? 1 : -1; }).map(clone);
+  }
+  /** 教师工作量与应付金额统计（分体验课/正式课） */
+  function teacherFeeStat(teacherId, month) {
+    var list = lessonFeesOf({ teacherId: teacherId, month: month });
+    var sum = function (arr) { return arr.reduce(function (n, f) { return n + Number(f.amountCents || 0); }, 0); };
+    var exp = list.filter(function (f) { return f.courseType === '体验课'; });
+    var formal = list.filter(function (f) { return f.courseType === '正式课'; });
+    return {
+      count: list.length, experienceCount: exp.length, formalCount: formal.length,
+      experienceAmountCents: sum(exp), formalAmountCents: sum(formal), totalAmountCents: sum(list),
+      pendingAmountCents: sum(list.filter(function (f) { return f.status === '待结算'; })),
+      settledAmountCents: sum(list.filter(function (f) { return f.status === '已结算'; })),
+      exceptionCount: list.filter(function (f) { return f.status === '异常'; }).length,
+      payableMinutes: list.reduce(function (n, f) { return n + Number(f.payableMinutes || 0); }, 0)
+    };
+  }
+  function lessonFeeExceptions() {
+    _payRoles(['admin', 'ops', 'staff'], '查看计费异常');
+    return db.teacherLessonFees.filter(function (f) { return f.status === '异常'; }).map(clone);
+  }
+
+  /* ================= 第十二轮：教师月度结算 ================= */
+  function _pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function _monthShift(y, m, delta) {
+    var d = new Date(y, m - 1 + delta, 1);
+    return { y: d.getFullYear(), m: d.getMonth() + 1 };
+  }
+  /** 结算周期：默认上月21–本月20，可由 db.config.teacherPay.settlementCycle 配置 */
+  function currentSettlementPeriod(ref) {
+    var d = String(ref || TODAY).slice(0, 10);
+    var y = Number(d.slice(0, 4)), m = Number(d.slice(5, 7)), day = Number(d.slice(8, 10));
+    var cfg = (db.config.teacherPay && db.config.teacherPay.settlementCycle) || { startDay: 21, endDay: 20 };
+    var ps, pe;
+    if (day <= cfg.endDay) {
+      var prev = _monthShift(y, m, -1);
+      ps = prev.y + '-' + _pad2(prev.m) + '-' + _pad2(cfg.startDay);
+      pe = y + '-' + _pad2(m) + '-' + _pad2(cfg.endDay);
+    } else {
+      var next = _monthShift(y, m, 1);
+      ps = y + '-' + _pad2(m) + '-' + _pad2(cfg.startDay);
+      pe = next.y + '-' + _pad2(next.m) + '-' + _pad2(cfg.endDay);
+    }
+    return { periodStart: ps, periodEnd: pe };
+  }
+  function settlementOf(id) { return db.teacherSettlements.filter(function (s) { return s.id === id; })[0] || null; }
+  function _assertSettlementRead(id) {
+    var s = settlementOf(id);
+    if (!s) throw bizError('NOT_FOUND', '结算单不存在');
+    if (session.role === 'teacher') {
+      if (s.teacherId !== session.teacherId) throw bizError('FORBIDDEN', '只能查看本人结算单');
+    } else if (['admin', 'ops', 'staff'].indexOf(session.role) < 0) {
+      throw bizError('FORBIDDEN', '无权查看结算单');
+    }
+    return s;
+  }
+  function settlementItemsOf(id) { _assertSettlementRead(id); return db.teacherSettlementItems.filter(function (x) { return x.settlementId === id; }).map(clone); }
+  function settlementAdjustmentsOf(id) { _assertSettlementRead(id); return db.teacherSettlementAdjustments.filter(function (x) { return x.settlementId === id; }).map(clone); }
+  function settlementDisputesOf(id) { _assertSettlementRead(id); return db.teacherSettlementDisputes.filter(function (x) { return x.settlementId === id; }).map(clone); }
+  function settlementPaymentsOf(id) { _assertSettlementRead(id); return db.teacherPayments.filter(function (x) { return x.settlementId === id; }).map(clone); }
+  /** 教师端结算详情（仅本人；admin/ops/staff 亦可） */
+  function teacherSettlementDetail(settlementId) {
+    var s = _assertSettlementRead(settlementId);
+    return {
+      settlement: clone(s), items: settlementItemsOf(settlementId),
+      adjustments: settlementAdjustmentsOf(settlementId),
+      disputes: settlementDisputesOf(settlementId), payments: settlementPaymentsOf(settlementId)
+    };
+  }
+  function _sumBy(arr, key) { return arr.reduce(function (n, x) { return n + Number(x[key] || 0); }, 0); }
+  /** 按明细 + 已审核调整 + 成功付款重算结算金额（不改变原始明细） */
+  function recomputeSettlement(id) {
+    var s = settlementOf(id);
+    if (!s) return null;
+    var items = db.teacherSettlementItems.filter(function (x) { return x.settlementId === id; });
+    var exp = items.filter(function (x) { return x.courseType === '体验课'; });
+    var formal = items.filter(function (x) { return x.courseType === '正式课'; });
+    var adj = db.teacherSettlementAdjustments.filter(function (x) { return x.settlementId === id && x.status === '已审核'; });
+    var adjSum = adj.reduce(function (n, a) { return n + (a.dir === '扣减' ? -Number(a.amountCents || 0) : Number(a.amountCents || 0)); }, 0);
+    s.experienceCount = exp.length; s.formalCount = formal.length;
+    s.experienceAmountCents = _sumBy(exp, 'amountCents');
+    s.formalAmountCents = _sumBy(formal, 'amountCents');
+    s.adjustmentAmountCents = adjSum;
+    s.totalAmountCents = s.experienceAmountCents + s.formalAmountCents + adjSum;
+    var paid = db.teacherPayments.filter(function (p) { return p.settlementId === id && p.status === '成功'; });
+    s.paidAmountCents = _sumBy(paid, 'amountCents');
+    s.unpaidAmountCents = s.totalAmountCents - s.paidAmountCents;
+    s.updatedAt = stamp();
+    /* 付款态：已确认后按金额推进；未确认前保持待教师确认 */
+    if (['待付款', '部分付款', '已付款'].indexOf(s.status) >= 0) {
+      s.status = s.paidAmountCents <= 0 ? '待付款'
+        : (s.paidAmountCents < s.totalAmountCents ? '部分付款' : '已付款');
+    }
+    return s;
+  }
+  /** 生成结算单：幂等（teacher+period 唯一）；只纳入待结算且有课程日期的明细 */
+  function generateSettlements(opt) {
+    _payRoles(['admin', 'ops'], '生成结算单');
+    opt = opt || {};
+    var p = (opt.periodStart && opt.periodEnd)
+      ? { periodStart: opt.periodStart, periodEnd: opt.periodEnd }
+      : currentSettlementPeriod(opt.refDate);
+    var fees = db.teacherLessonFees.filter(function (f) {
+      return f.status === '待结算' && !f.settlementId
+        && String(f.courseDate || '') >= p.periodStart && String(f.courseDate || '') <= p.periodEnd;
+    });
+    var byTeacher = {};
+    fees.forEach(function (f) { (byTeacher[f.teacherId] = byTeacher[f.teacherId] || []).push(f); });
+    var created = [], skipped = [];
+    Object.keys(byTeacher).forEach(function (tid) {
+      var exist = db.teacherSettlements.filter(function (s) {
+        return s.teacherId === tid && s.periodStart === p.periodStart && s.periodEnd === p.periodEnd && s.status !== '已取消';
+      })[0];
+      if (exist) { skipped.push({ teacherId: tid, settlementId: exist.id, reason: '该教师本期已有结算单' }); return; }
+      var t = teacher(tid);
+      var sid = 'TS' + p.periodStart.replace(/-/g, '').slice(0, 6) + seq('TS', 3);
+      var s = {
+        id: sid, teacherId: tid, teacherName: (t && t.name) || '', teacherCode: (t && t.code) || '',
+        periodStart: p.periodStart, periodEnd: p.periodEnd,
+        experienceCount: 0, formalCount: 0, experienceAmountCents: 0, formalAmountCents: 0,
+        adjustmentAmountCents: 0, totalAmountCents: 0, confirmedAmountCents: 0,
+        paidAmountCents: 0, unpaidAmountCents: 0, status: '待教师确认',
+        generatedAt: stamp(), generator: session.operatorName || '', version: 1,
+        teacherConfirmedAt: '', teacherConfirmedBy: '', teacherConfirmAmountCents: 0, teacherConfirmVersion: 0,
+        orgConfirmedAt: '', orgConfirmedBy: ''
+      };
+      db.teacherSettlements.push(s);
+      byTeacher[tid].forEach(function (f) {
+        db.teacherSettlementItems.push({
+          id: 'TSI' + seq('TSI', 4), settlementId: sid, feeId: f.id, courseId: f.courseId,
+          teacherId: tid, courseType: f.courseType, lessonMode: f.lessonMode, courseDate: f.courseDate,
+          payableHours: f.payableHours, payableMinutes: f.payableMinutes,
+          unitPriceCents: f.unitPriceCents, amountCents: f.amountCents, snapshot: clone(f)
+        });
+        f.status = '已结算'; f.settlementId = sid; f.settledAt = stamp();
+      });
+      recomputeSettlement(sid);
+      created.push(clone(settlementOf(sid)));
+    });
+    recordAudit({
+      module: '教师结算', action: '生成教师结算单', resourceType: 'settlement',
+      resourceId: p.periodStart + '~' + p.periodEnd, resourceName: p.periodStart + '~' + p.periodEnd,
+      beforeData: null, afterData: { period: p, createdIds: created.map(function (x) { return x.id; }), skipped: skipped.length, feeCount: fees.length },
+      reason: opt.reason || ''
+    });
+    save();
+    return { ok: true, period: p, created: created, skipped: skipped, feeCount: fees.length };
+  }
+  function settlementList(opt) {
+    opt = opt || {};
+    if (['admin', 'ops', 'staff'].indexOf(session.role) < 0) throw bizError('FORBIDDEN', '无权查看结算单');
+    return db.teacherSettlements.filter(function (s) {
+      if (opt.periodStart && s.periodStart !== opt.periodStart) return false;
+      if (opt.periodEnd && s.periodEnd !== opt.periodEnd) return false;
+      if (opt.status && s.status !== opt.status) return false;
+      if (opt.teacherId && s.teacherId !== opt.teacherId) return false;
+      if (opt.kw) { var k = String(opt.kw); if (String(s.teacherName).indexOf(k) < 0 && String(s.teacherCode).indexOf(k) < 0) return false; }
+      return true;
+    }).slice().sort(function (a, b) { return (a.generatedAt || '') < (b.generatedAt || '') ? 1 : -1; }).map(clone);
+  }
+  function settlementDetailFor(id) {
+    if (['admin', 'ops', 'staff'].indexOf(session.role) < 0) throw bizError('FORBIDDEN', '无权查看结算单');
+    var s = settlementOf(id);
+    if (!s) throw bizError('NOT_FOUND', '结算单不存在');
+    return {
+      settlement: clone(s), items: settlementItemsOf(id), adjustments: settlementAdjustmentsOf(id),
+      disputes: settlementDisputesOf(id), payments: settlementPaymentsOf(id)
+    };
+  }
+  function settlementStat(opt) {
+    var list = settlementList(opt || {});
+    var pendingConfirm = list.filter(function (s) { return s.status === '待教师确认'; });
+    return {
+      teachers: list.length,
+      totalAmountCents: _sumBy(list, 'totalAmountCents'),
+      pendingConfirm: pendingConfirm.length,
+      pendingConfirmAmountCents: _sumBy(pendingConfirm, 'totalAmountCents'),
+      unpaidAmountCents: _sumBy(list, 'unpaidAmountCents'),
+      paidAmountCents: _sumBy(list, 'paidAmountCents'),
+      exceptionCount: db.teacherLessonFees.filter(function (f) { return f.status === '异常'; }).length,
+      pendingFees: db.teacherLessonFees.filter(function (f) { return f.status === '待结算'; }).length
+    };
+  }
+  /** 机构级计费/结算参数调整（老板/管理员） */
+  function setTeacherPayConfig(patch) {
+    _payRoles(['admin', 'ops'], '修改计费参数');
+    patch = patch || {};
+    var cfg = db.config.teacherPay || {};
+    ['pricingMode', 'allowDecimalHours', 'roundMode', 'minBillMinutes', 'allowExceedScheduled', 'missingActual', 'legacyCourseType'].forEach(function (k) {
+      if (patch[k] !== undefined) cfg[k] = patch[k];
+    });
+    if (patch.settlementCycle && patch.settlementCycle.startDay && patch.settlementCycle.endDay) {
+      cfg.settlementCycle = { startDay: Number(patch.settlementCycle.startDay), endDay: Number(patch.settlementCycle.endDay) };
+    }
+    db.config.teacherPay = cfg;
+    recordAudit({ module: '教师结算', action: '修改计费参数', resourceType: 'config', resourceId: 'teacherPay', resourceName: 'teacherPay', beforeData: null, afterData: clone(cfg), reason: patch.reason || '' });
+    save();
+    return clone(cfg);
+  }
+  /* ---- 对账确认 / 调整 / 异议 / 付款 ---- */
+  function teacherSettlementsOf(teacherId) {
+    var tid = teacherId;
+    if (session.role === 'teacher') {
+      if (tid && tid !== session.teacherId) throw bizError('FORBIDDEN', '只能查看本人结算单');
+      tid = session.teacherId;
+    } else {
+      _payRoles(['admin', 'ops', 'staff'], '查看教师结算单');
+    }
+    return db.teacherSettlements.filter(function (s) { return !tid || s.teacherId === tid; })
+      .slice().sort(function (a, b) { return (a.periodStart || '') < (b.periodStart || '') ? 1 : -1; }).map(clone);
+  }
+  function teacherConfirmSettlement(settlementId) {
+    _payRoles(['teacher', 'admin', 'ops'], '确认结算单');
+    var s = settlementOf(settlementId);
+    if (!s) throw bizError('NOT_FOUND', '结算单不存在');
+    if (session.role === 'teacher' && s.teacherId !== session.teacherId) throw bizError('FORBIDDEN', '只能确认本人结算单');
+    if (s.status !== '待教师确认') throw bizError('STATUS_INVALID', '当前状态不能确认：' + s.status);
+    s.teacherConfirmedAt = stamp();
+    s.teacherConfirmedBy = session.operatorName || '';
+    s.teacherConfirmAmountCents = s.totalAmountCents;
+    s.teacherConfirmVersion = s.version || 1;
+    s.confirmedAmountCents = s.totalAmountCents;
+    s.status = '待付款';
+    recordAudit({ module: '教师结算', action: '教师确认结算', resourceType: 'settlement', resourceId: s.id, resourceName: s.teacherName + ' ' + s.periodStart + '~' + s.periodEnd, beforeData: null, afterData: { confirmedAmountCents: s.totalAmountCents, version: s.version }, reason: '' });
+    save();
+    return clone(s);
+  }
+  function orgConfirmSettlement(settlementId) {
+    _payRoles(['admin', 'ops'], '机构确认结算');
+    var s = settlementOf(settlementId);
+    if (!s) throw bizError('NOT_FOUND', '结算单不存在');
+    s.orgConfirmedAt = stamp();
+    s.orgConfirmedBy = session.operatorName || '';
+    recordAudit({ module: '教师结算', action: '机构确认结算', resourceType: 'settlement', resourceId: s.id, resourceName: s.teacherName + ' ' + s.periodStart + '~' + s.periodEnd, beforeData: null, afterData: { orgConfirmedAt: s.orgConfirmedAt }, reason: '' });
+    save();
+    return clone(s);
+  }
+  function addSettlementAdjustment(input) {
+    _payRoles(['admin', 'ops'], '创建结算调整');
+    input = input || {};
+    var s = settlementOf(input.settlementId);
+    if (!s) throw bizError('NOT_FOUND', '结算单不存在');
+    var dir = input.dir === '扣减' ? '扣减' : '补发';
+    var amt = Math.round(Number(input.amountCents || 0));
+    if (!(amt > 0)) throw bizError('AMOUNT_INVALID', '调整金额必须大于 0');
+    var a = {
+      id: 'TSA' + seq('TSA', 4), teacherId: s.teacherId, settlementId: s.id,
+      type: input.type || dir, dir: dir, amountCents: amt, reason: String(input.reason || ''),
+      status: '待审核', operator: session.operatorName || '', reviewer: '', createdAt: stamp(), reviewedAt: '', opinion: ''
+    };
+    db.teacherSettlementAdjustments.push(a);
+    recordAudit({ module: '教师结算', action: '创建结算调整', resourceType: 'adjustment', resourceId: a.id, resourceName: s.id, beforeData: null, afterData: { dir: dir, amountCents: amt, reason: a.reason }, reason: a.reason });
+    save();
+    return clone(a);
+  }
+  function reviewSettlementAdjustment(adjustId, approve, opinion) {
+    _payRoles(['admin'], '审核结算调整');
+    var a = db.teacherSettlementAdjustments.filter(function (x) { return x.id === adjustId; })[0];
+    if (!a) throw bizError('NOT_FOUND', '调整记录不存在');
+    if (a.status !== '待审核') throw bizError('STATUS_INVALID', '该调整已处理');
+    a.status = approve ? '已审核' : '已驳回';
+    a.reviewer = session.operatorName || '';
+    a.reviewedAt = stamp();
+    a.opinion = String(opinion || '');
+    recomputeSettlement(a.settlementId);
+    recordAudit({ module: '教师结算', action: approve ? '审核通过结算调整' : '驳回结算调整', resourceType: 'adjustment', resourceId: a.id, resourceName: a.settlementId, beforeData: null, afterData: { status: a.status, amountCents: a.amountCents }, reason: a.opinion });
+    save();
+    return clone(a);
+  }
+  function addSettlementDispute(input) {
+    input = input || {};
+    if (session.role !== 'teacher') throw bizError('FORBIDDEN', '仅教师可提交异议');
+    var s = settlementOf(input.settlementId);
+    if (!s) throw bizError('NOT_FOUND', '结算单不存在');
+    if (s.teacherId !== session.teacherId) throw bizError('FORBIDDEN', '只能对本人的结算单提异议');
+    var reason = String(input.reason || '').trim();
+    if (!reason) throw bizError('REASON_REQUIRED', '请填写异议原因');
+    var d = {
+      id: 'TSD' + seq('TSD', 4), settlementId: s.id, teacherId: s.teacherId,
+      courseId: input.courseId || '', feeId: input.feeId || '', type: input.type || '金额异议',
+      reason: reason, expectAmountCents: Math.round(Number(input.expectAmountCents || 0)),
+      submittedAt: stamp(), status: '待处理', handler: '', handledAt: '', opinion: '', adjustmentId: ''
+    };
+    db.teacherSettlementDisputes.push(d);
+    recordAudit({ module: '教师结算', action: '教师提交异议', resourceType: 'dispute', resourceId: d.id, resourceName: s.id, beforeData: null, afterData: { type: d.type, reason: d.reason, expectAmountCents: d.expectAmountCents }, reason: d.reason });
+    save();
+    return clone(d);
+  }
+  function handleSettlementDispute(disputeId, input) {
+    _payRoles(['admin', 'ops'], '处理结算异议');
+    input = input || {};
+    var d = db.teacherSettlementDisputes.filter(function (x) { return x.id === disputeId; })[0];
+    if (!d) throw bizError('NOT_FOUND', '异议不存在');
+    d.status = input.status || '已处理';
+    d.handler = session.operatorName || '';
+    d.handledAt = stamp();
+    d.opinion = String(input.opinion || '');
+    if (input.createAdjustment && Number(input.adjustAmountCents) > 0) {
+      var adj = addSettlementAdjustment({ settlementId: d.settlementId, dir: input.adjustDir || '补发', amountCents: input.adjustAmountCents, reason: '异议处理：' + (input.opinion || '') });
+      d.adjustmentId = adj.id;
+    }
+    recordAudit({ module: '教师结算', action: '处理结算异议', resourceType: 'dispute', resourceId: d.id, resourceName: d.settlementId, beforeData: null, afterData: { status: d.status, opinion: d.opinion, adjustmentId: d.adjustmentId }, reason: d.opinion });
+    save();
+    return clone(d);
+  }
+  function addSettlementPayment(input) {
+    _payRoles(['admin', 'ops'], '登记教师付款');
+    input = input || {};
+    var s = settlementOf(input.settlementId);
+    if (!s) throw bizError('NOT_FOUND', '结算单不存在');
+    var amt = Math.round(Number(input.amountCents || 0));
+    if (!(amt > 0)) throw bizError('AMOUNT_INVALID', '付款金额必须大于 0');
+    if (s.status === '待教师确认') throw bizError('STATUS_INVALID', '教师尚未确认结算，不能登记付款');
+    var paid = db.teacherPayments.filter(function (p) { return p.settlementId === s.id && p.status === '成功'; })
+      .reduce(function (n, p) { return n + Number(p.amountCents || 0); }, 0);
+    if (paid + amt > s.totalAmountCents) throw bizError('OVERPAY', '付款总额不能超过应付金额（应付 ' + s.totalAmountCents + ' 分，已付 ' + paid + ' 分）');
+    var p = {
+      id: 'TP' + seq('TPY', 4), settlementId: s.id, teacherId: s.teacherId,
+      amountCents: amt, paymentMethod: input.paymentMethod || '银行转账',
+      paymentDate: input.paymentDate || TODAY, transactionNo: input.transactionNo || '',
+      proofUrl: input.proofUrl || '', operator: session.operatorName || '', note: input.note || '',
+      status: input.status === '失败' ? '失败' : '成功', createdAt: stamp()
+    };
+    db.teacherPayments.push(p);
+    recomputeSettlement(s.id);
+    var s2 = settlementOf(s.id);
+    s2.status = s2.paidAmountCents <= 0 ? '待付款' : (s2.paidAmountCents < s2.totalAmountCents ? '部分付款' : '已付款');
+    recordAudit({ module: '教师结算', action: p.status === '失败' ? '教师付款失败' : '登记教师付款', resourceType: 'payment', resourceId: p.id, resourceName: s.id, beforeData: null, afterData: { amountCents: amt, method: p.paymentMethod, status: p.status }, reason: p.note });
+    save();
+    return clone(p);
   }
 
   /* ---------- 启用 / 退出前置检查 ---------- */
@@ -8689,6 +9604,10 @@
       studentId: stu.id, student: stu.name, grade: stu.grade || '',
       teacherId: tch.id, teacher: tch.name, teacherName: tch.name, teacherCode: tch.code || '',
       type: input.type || '一对一',
+      courseType: COURSE_TYPE.indexOf(input.courseType) >= 0 ? input.courseType : '待确认',
+      lessonMode: LESSON_MODE.indexOf(input.lessonMode) >= 0 ? input.lessonMode
+        : (LESSON_MODE.indexOf(input.type) >= 0 ? input.type : '一对一'),
+      teacherFeeState: FEE_STATE.NONE,
       status: COURSE_STATUS.PENDING,
       deduct: '未扣课', deductState: '未扣课',
       meetingUrl: meetingUrl, meeting: meetingUrl ? '已生成' : '未生成',
@@ -8750,6 +9669,9 @@
     c.date = date; c.start = start; c.end = end;
     c.meetingUrl = meetingUrl; c.meeting = meetingUrl ? '已生成' : '未生成';
     if (patch.note !== undefined) c.note = String(patch.note || '').trim();
+    /* 课型 / 授课形式：仅未完成课程可调整（已完成已在函数开头拦截） */
+    if (patch.courseType !== undefined && COURSE_TYPE.indexOf(patch.courseType) >= 0) c.courseType = patch.courseType;
+    if (patch.lessonMode !== undefined && LESSON_MODE.indexOf(patch.lessonMode) >= 0) c.lessonMode = patch.lessonMode;
     c.updatedAt = stamp();
     recordAudit({
       module: '教学', action: '教务调整课程', resourceType: 'course', resourceId: c.id,
@@ -8869,6 +9791,7 @@
       if (filters.studentId && c.studentId !== filters.studentId) return false;
       if (filters.grade && c.grade !== filters.grade) return false;
       if (filters.status && c.status !== filters.status) return false;
+      if (filters.deduct && (c.deductState || c.deduct || '未扣课') !== filters.deduct) return false;
       if (filters.source && (c.source || COURSE_SOURCE.MANUAL) !== filters.source) return false;
       if (filters.meeting === 'has' && !c.meetingUrl) return false;
       if (filters.meeting === 'none' && c.meetingUrl) return false;
@@ -8894,6 +9817,7 @@
         teacherId: c.teacherId, teacher: c.teacher, teacherName: c.teacherName || c.teacher,
         type: c.type, status: c.status, meetingUrl: c.meetingUrl,
         meeting: c.meetingUrl ? '已生成' : '未生成',
+        deductState: c.deductState || c.deduct || '未扣课',
         source: c.source || COURSE_SOURCE.MANUAL, sourceLabel: schedSourceLabel(c),
         seriesId: c.seriesId || '', batchId: c.batchId || '',
         anomaly: anomaly, conflictIds: ov ? ov.ids : [],
@@ -9746,7 +10670,11 @@
       return {
         rowKey: rowKey, studentId: r.studentId || '', teacherId: r.teacherId || '',
         date: r.date || '', start: r.start || '', end: r.end || '',
-        type: r.type || '一对一', meetingUrl: r.meetingUrl || '', note: r.note || '',
+        type: r.type || '一对一',
+        courseType: COURSE_TYPE.indexOf(r.courseType) >= 0 ? r.courseType : '待确认',
+        lessonMode: LESSON_MODE.indexOf(r.lessonMode) >= 0 ? r.lessonMode
+          : (LESSON_MODE.indexOf(r.type) >= 0 ? r.type : '一对一'),
+        meetingUrl: r.meetingUrl || '', note: r.note || '',
         skip: !!r.skip, result: '待处理', reason: '', courseId: '',
         hard: [], warnings: []
       };
@@ -9808,7 +10736,8 @@
       try {
         var c = createCourse({
           studentId: row.studentId, teacherId: row.teacherId, date: row.date, start: row.start, end: row.end,
-          type: row.type, meetingUrl: row.meetingUrl, note: row.note,
+          type: row.type, courseType: row.courseType, lessonMode: row.lessonMode,
+          meetingUrl: row.meetingUrl, note: row.note,
           batchId: batch.id, batchRowKey: row.rowKey, source: COURSE_SOURCE.BATCH,
           scheduleNote: '批量排课 ' + batch.id, confirmWarnings: true
         });
@@ -9852,7 +10781,7 @@
     if (!batch) throw bizError('NOT_FOUND', '批次不存在');
     var row = batch.rows.filter(function (r) { return r.rowKey === rowKey; })[0];
     if (!row) throw bizError('NOT_FOUND', '批次行不存在');
-    ['teacherId', 'date', 'start', 'end', 'meetingUrl', 'skip', 'type'].forEach(function (k) {
+    ['teacherId', 'date', 'start', 'end', 'meetingUrl', 'skip', 'type', 'courseType', 'lessonMode'].forEach(function (k) {
       if (patch && patch[k] !== undefined) row[k] = patch[k];
     });
     var checked = checkSchedulePlan([row], { strictAvailability: true });
@@ -9866,7 +10795,7 @@
 
   /* ---------------- 批量维护（改派 / 会议链接 / 取消） ---------------- */
   function batchReassignCourses(courseIds, toTeacherId, reason) {
-    assertPermission('teacher.assign');
+    assertPermission('teacher.assign_student');
     var nt = teacher(toTeacherId);
     if (!nt) throw bizError('NOT_FOUND', '接替教师不存在');
     var success = [], failed = [];
@@ -9913,7 +10842,7 @@
     return { success: success, failed: failed };
   }
   function batchCancelCourses(courseIds, reason) {
-    assertPermission('teacher.assign');
+    assertPermission('teacher.assign_student');
     var r = String(reason || '').trim();
     if (!r) throw bizError('REASON_REQUIRED', '请填写批量取消原因');
     var success = [], failed = [];
@@ -15012,6 +15941,32 @@
     teacherStat: teacherStat, teacherOverview: teacherOverview, teacherFacets: teacherFacets,
     searchTeachers: searchTeachers, teacherPool: teacherPool, teacherRanking: teacherRanking,
     teacherAlerts: teacherAlerts, availabilityText: availabilityText,
+    teacherTodayOverview: teacherTodayOverview, teacherDueReviewSummary: teacherDueReviewSummary,
+    teacherAttentionStudents: teacherAttentionStudents, teacherLessonAdvice: teacherLessonAdvice,
+    courseRecordAutoData: courseRecordAutoData,
+    eduWorkbench: eduWorkbench, coursesMissingMeeting: coursesMissingMeeting, batchFillMeeting: batchFillMeeting,
+    abnormalCourses: abnormalCourses, courseWorkNote: courseWorkNote, orderQuickStat: orderQuickStat,
+    overdueReports: overdueReports, unrepliedInquiries: unrepliedInquiries,
+    studentsWithOpenTrainTask: studentsWithOpenTrainTask, inactiveStudents: inactiveStudents,
+    setStudentEduNote: setStudentEduNote,
+    payRule: payRule, payRuleList: payRuleList, activePayRule: activePayRule,
+    createPayRule: createPayRule, updatePayRule: updatePayRule, disablePayRule: disablePayRule,
+    payRuleUsedByFees: payRuleUsedByFees,
+    generateLessonFee: generateLessonFee, retryLessonFee: retryLessonFee,
+    effectiveLessonFee: effectiveLessonFee, lessonFeesOf: lessonFeesOf,
+    teacherFeeStat: teacherFeeStat, lessonFeeExceptions: lessonFeeExceptions,
+    currentSettlementPeriod: currentSettlementPeriod, generateSettlements: generateSettlements,
+    settlementList: settlementList, settlementOf: settlementOf, settlementDetailFor: settlementDetailFor,
+    settlementStat: settlementStat, recomputeSettlement: recomputeSettlement,
+    settlementItemsOf: settlementItemsOf, settlementAdjustmentsOf: settlementAdjustmentsOf,
+    settlementDisputesOf: settlementDisputesOf, settlementPaymentsOf: settlementPaymentsOf,
+    teacherSettlementDetail: teacherSettlementDetail,
+    setTeacherPayConfig: setTeacherPayConfig,
+    teacherSettlementsOf: teacherSettlementsOf, teacherConfirmSettlement: teacherConfirmSettlement,
+    orgConfirmSettlement: orgConfirmSettlement, addSettlementAdjustment: addSettlementAdjustment,
+    reviewSettlementAdjustment: reviewSettlementAdjustment, addSettlementDispute: addSettlementDispute,
+    handleSettlementDispute: handleSettlementDispute, addSettlementPayment: addSettlementPayment,
+    COURSE_TYPE: COURSE_TYPE, LESSON_MODE: LESSON_MODE, FEE_STATE: FEE_STATE,
     accountOf: accountOf, accountStatusOf: accountStatusOf, userById: userById,
     users: users, usersOfRole: usersOfRole,
     /* 教师资源池：生命周期 */

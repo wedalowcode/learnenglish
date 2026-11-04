@@ -30,6 +30,7 @@
             <option>已提交</option>
             <option>已发布</option>
           </select>
+          <button class="btn" onclick="nextPending()">处理下一份</button>
           <a class="btn btn-primary" href="course-workbench.html">去课程工作台</a>
         </div>
       </div>
@@ -96,6 +97,13 @@ function rowsData() {
     /* 按上课时间倒序：最近的课在最上面 */
     .sort((a, b) => (b.c.date + ' ' + b.c.start).localeCompare(a.c.date + ' ' + a.c.start))
     .filter(r => (!sid || r.c.studentId === sid) && (!fst || r.st === fst));
+}
+
+/* 处理下一份：跳到第一条「编辑中 / 已提交」的报告 */
+function nextPending() {
+  const list = rowsData().filter(r => r.rp && (r.st === '编辑中' || r.st === '已提交'));
+  if (!list.length) { Proto.toast('没有待写 / 待发布的报告', 'warn'); return; }
+  location.href = 'course-report.html?report=' + list[0].rp.id;
 }
 
 function render() {

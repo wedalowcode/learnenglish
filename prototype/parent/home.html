@@ -5,6 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>家长端 · 首页</title>
 <link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .todo-grid { display:flex; flex-direction:column; gap:8px; }
+  .todo-card { display:flex; align-items:center; gap:10px; border-radius:10px; padding:11px 12px; }
+  .todo-card .ti { flex:1; font-size:13px; line-height:1.5; }
+  .todo-card .tg { font-size:16px; width:22px; text-align:center; }
+  .todo-blue { background:#eff6ff; border:1px solid #bfdbfe; }
+  .todo-amber { background:#fffbeb; border:1px solid #fde68a; }
+  .todo-red { background:#fef2f2; border:1px solid #fecaca; }
+  .todo-green { background:#ecfdf5; border:1px solid #bbf7d0; }
+  .fb-block { margin-bottom:8px; }
+  .fb-k { font-size:11px; font-weight:600; margin-bottom:2px; }
+  .fb-k.good { color:var(--success); }
+  .fb-k.warn { color:var(--warning); }
+  .fb-k.tip { color:var(--primary-dark); }
+</style>
 </head>
 <body class="mobile-bg">
 <div class="m-frame">
@@ -13,7 +28,7 @@
   <div class="m-head">
     <div class="grow">
       <div class="m-title" style="font-size:15px" id="greet">您好</div>
-      <div class="small muted">启航英语 · 城东校区</div>
+      <div class="small muted" id="headSub">启航英语 · 城东校区</div>
     </div>
     <div class="avatar" id="avatar">家</div>
   </div>
@@ -36,17 +51,15 @@
 <script src="../assets/js/data.js"></script>
 <script src="../assets/js/store.js"></script>
 <script>
-/* 家长端首页 = 家庭学习工作台。
-   统一当前孩子：切孩子写入 Store.setParentCurrentChild，五页共享；
-   每次数据读取走家长专用授权接口，越权由 Store 拒绝；
-   待办提醒全部来自真实业务数据，无业务记录不显示虚假待办。 */
+/* 家长端首页 = 家庭学习工作台（待办优先置顶）。
+   统一当前孩子，走家长专用授权接口，越权由 Store 拒绝。 */
 const S = Store;
 const PID = Proto.parentId();
 S.setSession({ role: 'parent', parentId: PID, operatorName: Proto.parentName() });
 const KIDS = S.parentChildren(PID);
 
 function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-function nl(s) { return (s || '').split('\n').filter(Boolean).map(x => `<div>${esc(x)}</div>`).join('') || '—'; }
+function nl(s) { return (s || '').split('\n').filter(Boolean).map(x => `<div>${esc(x)}</div>`).join('') || ''; }
 
 let curKid = '';
 function initKid() {
@@ -64,7 +77,6 @@ function switchKid(id) {
 function render() {
   const P = S.parent(PID) || {};
   document.getElementById('greet').textContent = (P.name || '家长') + '，您好';
-  document.getElementById('avatar').textContent = (P.name || '家').slice(0, 1);
 
   if (!KIDS.length) {
     document.getElementById('body').innerHTML =
@@ -77,7 +89,7 @@ function render() {
     return;
   }
 
-  let detail, courses, hoursRow, reports, fbs, notis, inqs;
+  let detail, courses, hoursRow, reports, fbs, notis, inqs, progress;
   try {
     detail = S.parentStudentDetail(PID, curKid);
     courses = S.parentCourses(PID, curKid, {});
@@ -86,58 +98,71 @@ function render() {
     fbs = S.parentFeedbacks(PID).filter(f => f.studentId === curKid);
     notis = S.notifications({ unread: true });
     inqs = S.parentInquiries(PID).filter(x => !x.studentId || x.studentId === curKid);
+    progress = S.parentReviewProgress(PID, curKid);
   } catch (e) {
     document.getElementById('body').innerHTML =
       `<div class="m-card"><div class="small" style="color:var(--danger)">加载失败：${esc(e.message)}</div></div>`;
     return;
   }
 
+  const cur = KIDS.filter(k => k.id === curKid)[0] || {};
+  document.getElementById('headSub').textContent = `${esc(cur.name || '')} · ${esc(cur.grade || '')} · 启航英语`;
+  document.getElementById('avatar').textContent = (cur.name || P.name || '家').slice(0, 1);
+
   const doneCount = courses.filter(c => c.status === '已完成').length;
   const review = detail.reviewSummary || { today: 0, all: 0, passed: 0 };
   const latestFb = fbs[0] || null;
   const latestReport = reports[0] || null;
-  const recentReports = reports.filter(r => {
-    const d = (r.publishedAt || '').slice(0, 10);
-    return d >= (S.TODAY.slice(0, 10).replace(/^\d{4}-\d{2}-\d{2}$/, function () {
-      return S.TODAY.slice(0, 10);
-    }) - 0) || reports.indexOf(r) === 0;
-  }).length;
+  const unreadReports = reports.filter(r => r.read === false);
+  const newDot = unreadReports.length ? '<span class="tag tag-red nodot" style="font-size:10px">新</span>' : '';
 
-  /* 家庭待办：全部来自真实业务数据 */
+  /* ---- 待办与消息（合并）---- */
   const todos = [];
-  if (review.today > 0) todos.push({ icon: '✎', text: `今日有 ${review.today} 个单词到期待复习`, href: 'review-words.html?student=' + curKid });
-  const newReports = reports.filter(r => {
-    const pub = (r.publishedAt || '').slice(0, 10);
-    const days = Math.floor((new Date(S.TODAY) - new Date(pub)) / 86400000);
-    return pub && days >= 0 && days <= 7;
-  });
-  if (newReports.length) todos.push({ icon: '▤', text: `近 7 天新发布 ${newReports.length} 份学习报告`, href: 'report.html?student=' + curKid });
-  if (hoursRow && hoursRow.lowAlert) todos.push({ icon: '◷', text: `课时余额不足（剩 ${hoursRow.totalRemain} 节）`, href: 'hours.html?kid=' + curKid });
+  if (review.today > 0) todos.push({ tone: 'blue', icon: '✎', text: `今日有 ${review.today} 个单词到期待复习`, href: 'review-words.html?student=' + curKid, action: '去复习' });
+  if (unreadReports.length) todos.push({ tone: 'amber', icon: '▤', text: `有 ${unreadReports.length} 份新学习报告待查看`, href: 'report.html?student=' + curKid, action: '看报告' });
+  if (hoursRow && hoursRow.lowAlert) todos.push({ tone: 'red', icon: '◷', text: `课时余额不足（剩 ${hoursRow.totalRemain} 节）`, href: 'hours.html?kid=' + curKid, action: '查看课时' });
   (hoursRow && hoursRow.accounts || []).forEach(a => {
-    if (a.expiring && a.daysLeft >= 0) todos.push({ icon: '◷', text: `${a.product} 套餐 ${a.daysLeft} 天后到期`, href: 'hours.html?kid=' + curKid });
+    if (a.expiring && a.daysLeft >= 0) todos.push({ tone: 'amber', icon: '◷', text: `${a.product} 套餐 ${a.daysLeft} 天后到期`, href: 'hours.html?kid=' + curKid, action: '查看课时' });
   });
   const replied = inqs.filter(x => x.status === '已回复' && x.reply);
-  if (replied.length) todos.push({ icon: '✉', text: `有 ${replied.length} 条教务回复待查看`, href: 'hours.html?kid=' + curKid + '#iq' });
+  if (replied.length) todos.push({ tone: 'green', icon: '✉', text: `有 ${replied.length} 条教务回复待查看`, href: 'hours.html?kid=' + curKid + '#iq', action: '查看回复' });
+
+  const todoHtml = todos.length ? `<div class="todo-grid">` + todos.map(t =>
+    `<div class="todo-card todo-${t.tone}"><span class="tg">${t.icon}</span><span class="ti">${esc(t.text)}</span>
+       <a class="btn btn-sm" href="${t.href}">${t.action}</a></div>`).join('') + `</div>`
+    : `<div class="todo-card todo-green"><span class="tg">✓</span><span class="ti">今天没有待办，继续保持！</span></div>`;
+
+  const notisHtml = notis.length ? `
+    <div class="flex jcb aic mt8"><span class="small muted">未读消息 ${notis.length} 条</span><a class="small" onclick="markAll()">全部已读</a></div>
+    ${notis.slice(0, 3).map(n => `<a class="m-row" href="javascript:void 0" onclick="markOne('${n.id}','${esc(n.link || 'home.html')}')" style="align-items:flex-start">
+      <div style="flex:1"><div style="font-size:13px">${esc(n.title)}</div>
+      <div class="small muted" style="margin-top:2px">${esc(n.content)} · ${esc((n.createdAt || '').slice(0, 16))}</div></div>
+      <span class="muted">›</span></a>`).join('')}` : '';
 
   document.getElementById('body').innerHTML = `
     <div class="m-seg" id="kidSeg">
       ${KIDS.map(k => `<div class="${k.id === curKid ? 'on' : ''}" onclick="switchKid('${k.id}')">${esc(k.name)}</div>`).join('')}
     </div>
 
+    <div class="m-card">
+      <div class="m-card-title">消息与待办
+        <a href="../notifications.html" class="small" style="font-weight:400">全部消息 ›</a></div>
+      ${todoHtml}
+      ${notisHtml}
+    </div>
+
     <div class="m-hero">
       <div class="flex jcb aic">
         <div>
           <div class="t">当前可用课时</div>
-          <div class="n" id="heroHours">${detail.remain}</div>
-          <div class="s">累计 ${detail.totalHours} 课时 · 已使用 ${detail.usedHours}</div>
+          <div class="n">${detail.remain}</div>
+          <div class="s">累计 ${detail.totalHours} 课时 · 已使用 ${detail.usedHours}${hoursRow && hoursRow.weeksEstimate != null ? ` · 按每周 ${hoursRow.weeklyEstimate} 节约可支撑 ${hoursRow.weeksEstimate} 周` : ''}</div>
         </div>
         <span class="m-chip">${esc(detail.status)}</span>
       </div>
       <div class="flex gap8 mt12">
-        <a href="hours.html?kid=${curKid}" style="flex:1;background:rgba(255,255,255,.18);color:#fff;text-align:center;
-          padding:7px 0;border-radius:8px;font-size:12px">课时明细</a>
-        <a href="course-records.html?student=${curKid}" style="flex:1;background:rgba(255,255,255,.18);color:#fff;text-align:center;
-          padding:7px 0;border-radius:8px;font-size:12px">课程记录</a>
+        <a href="hours.html?kid=${curKid}" style="flex:1;background:rgba(255,255,255,.18);color:#fff;text-align:center;padding:7px 0;border-radius:8px;font-size:12px">课时明细</a>
+        <a href="course-records.html?student=${curKid}" style="flex:1;background:rgba(255,255,255,.18);color:#fff;text-align:center;padding:7px 0;border-radius:8px;font-size:12px">课程记录</a>
       </div>
     </div>
 
@@ -158,41 +183,19 @@ function render() {
         <div><div class="v" style="color:var(--warning)">${review.today}</div><div class="k">今日待复习</div></div>
       </div>
       <div class="small muted mt8">指标来自真实课程记录与复习数据；待复习为当前日期到期的有效任务。</div>
+      ${progress && progress.due ? `<div class="small mt8" style="color:var(--primary-dark)">家庭复习进度：已勾选 ${progress.checked} / ${progress.due}</div>` : ''}
     </div>
 
     <div class="m-card">
-      <div class="m-card-title">最近学习反馈
+      <div class="m-card-title">最近学习反馈 ${newDot}
         <a href="report.html?student=${curKid}" class="small" style="font-weight:400">报告列表</a></div>
       ${latestFb ? `
         <div class="small muted mb8">${esc(latestFb.title)} · ${esc((latestFb.publishedAt || '').slice(0, 10))} · ${esc(latestFb.teacherName)}</div>
-        <div style="background:var(--bg);border-radius:8px;padding:9px 11px;font-size:12.5px;color:var(--text-2);line-height:1.7">
-          表现：${nl(latestFb.performance)}${latestFb.weak ? '<br>薄弱点：' + nl(latestFb.weak) : ''}${latestFb.next ? '<br>下一步：' + nl(latestFb.next) : ''}
-        </div>
+        <div class="fb-block"><div class="fb-k good">表现亮点</div><div class="small" style="color:var(--text-2);line-height:1.7">${nl(latestFb.performance) || '—'}</div></div>
+        <div class="fb-block"><div class="fb-k warn">需要加强</div><div class="small" style="color:var(--text-2);line-height:1.7">${nl(latestFb.weak) || '暂无'}</div></div>
+        <div class="fb-block"><div class="fb-k tip">家庭建议</div><div class="small" style="color:var(--text-2);line-height:1.7">${nl(latestFb.homeworkAdvice) || nl(latestFb.next) || '暂无'}</div></div>
         ${latestReport ? `<a class="btn btn-block btn-primary mt12" href="report.html?student=${curKid}&report=${latestReport.id}">查看完整报告</a>` : ''}`
         : '<div class="small muted">教师发布学习反馈后，这里会同步显示。</div>'}
-    </div>
-
-    <div class="m-card">
-      <div class="m-card-title">家庭待办</div>
-      ${todos.length ? todos.map(t => `
-        <a class="m-row" href="${t.href}" style="border-bottom:none">
-          <span class="muted" style="margin-right:8px">${t.icon}</span>
-          <span style="flex:1">${esc(t.text)}</span><span class="muted">›</span></a>`).join('')
-        : '<div class="small muted">暂无待办事项。</div>'}
-    </div>
-
-    <div class="m-card">
-      <div class="m-card-title">通知
-        ${notis.length ? `<span class="tag tag-red nodot" style="font-size:10px">${notis.length} 未读</span><a class="small" style="font-weight:400" onclick="markAll()">全部已读</a>` : '<span class="small muted">暂无新通知</span>'}
-      </div>
-      ${notis.length ? notis.slice(0, 5).map(n => `
-        <a class="m-row" href="javascript:void 0" onclick="markOne('${n.id}','${esc(n.link || 'home.html')}')" style="align-items:flex-start">
-          <div style="flex:1">
-            <div style="font-size:13px">${esc(n.title)}</div>
-            <div class="small muted" style="margin-top:2px">${esc(n.content)} · ${esc((n.createdAt || '').slice(0, 16))}</div>
-          </div>
-          <span class="muted">›</span></a>`).join('')
-        : '<div class="small muted">暂无新通知。</div>'}
     </div>
 
     <div class="m-card">
@@ -208,7 +211,6 @@ function render() {
       <div class="small muted mt8">课时只来自订单收款入账；家长端不展示收款流水与内部操作记录。</div>
     </div>`;
 
-  /* 待办中的教务回复锚点 */
   if (location.hash === '#iq') { setTimeout(() => { location.hash = ''; }, 0); }
 }
 

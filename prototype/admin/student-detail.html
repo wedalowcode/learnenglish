@@ -51,6 +51,7 @@
           <button class="tab" data-pane="p5">学习报告<span class="count">3</span></button>
           <button class="tab" data-pane="p6">操作日志</button>
           <button class="tab" data-pane="p7">词库授权<span class="count" id="wbCount">0</span></button>
+          <button class="tab" data-pane="p8">教务备注</button>
         </div>
 
         <!-- 1 基础资料 -->
@@ -302,6 +303,20 @@
           <div class="card-foot small muted" id="wbFoot"></div>
         </div>
 
+        <div class="tab-pane" id="p8">
+          <div class="card">
+            <div class="card-head"><div class="card-title">教务备注 <span class="hint">仅内部可见，家长/代理端不展示</span></div></div>
+            <div class="card-body">
+              <div class="field"><label>内部备注</label>
+                <textarea class="textarea" id="eduNote" rows="4" placeholder="家长特殊要求、交接注意点、沟通偏好等（仅教务/管理员可见）"></textarea></div>
+              <div class="flex jcb aic mt12">
+                <div class="small muted" id="eduNoteMeta">—</div>
+                <button class="btn btn-primary" onclick="saveEduNote()">保存教务备注</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </main>
   </div>
@@ -501,6 +516,24 @@ function doWbReason() {
 }
 
 renderWb();
+
+/* 第十三轮：教务备注（仅内部可见，存于学员档案 eduNote） */
+function renderEduNote() {
+  const s = S.student(SID) || {};
+  const el = document.getElementById('eduNote');
+  if (el) el.value = s.eduNote || '';
+  const meta = document.getElementById('eduNoteMeta');
+  if (meta) meta.textContent = s.eduNote ? '已保存 · 仅教务/管理员可见' : '尚未填写';
+}
+function saveEduNote() {
+  const el = document.getElementById('eduNote');
+  try {
+    S.setStudentEduNote(SID, el ? el.value : '');
+    Proto.toast('教务备注已保存（仅内部可见）', 'ok');
+    renderEduNote();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+renderEduNote();
 </script>
 </body>
 </html>

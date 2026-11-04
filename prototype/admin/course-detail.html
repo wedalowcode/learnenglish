@@ -16,141 +16,53 @@
       <div class="page-head">
         <div>
           <div class="crumb">教学管理<span class="sep">/</span><a href="course-list.html">课程记录</a><span class="sep">/</span>课程详情</div>
-          <h1 class="page-title">陈可欣 · 11-02 09:00-10:00
-            <span class="tag tag-amber" id="courseStatus" style="font-size:12px;vertical-align:middle">待上课</span></h1>
-          <div class="page-sub">C20261102001 · 李婉 · 一对一 · 创建人 教务处-小陈</div>
+          <h1 class="page-title" id="cTitle">课程详情
+            <span class="tag tag-slate" id="courseStatus" style="font-size:12px;vertical-align:middle">—</span></h1>
+          <div class="page-sub" id="cSub">—</div>
         </div>
-        <div class="page-actions">
+        <div class="page-actions" id="cActions">
           <a class="btn" href="course-list.html">返回</a>
-          <button class="btn" onclick="Proto.toast('已复制会议链接','ok')">复制会议链接</button>
-          <button class="btn" onclick="Proto.toast('打开调整预约（示意）')">调整预约</button>
+          <button class="btn" onclick="copyMeeting()">复制会议链接</button>
+          <button class="btn" onclick="openAdjust()">调整预约</button>
+          <button class="btn" onclick="openReassign()">改派教师</button>
           <button class="btn btn-danger" onclick="cancelCourse()">取消课程</button>
         </div>
       </div>
 
       <div class="grid g-2-1" style="align-items:start">
         <div>
-          <!-- 课程信息 -->
           <div class="card">
             <div class="card-head"><div class="card-title">课程信息</div>
               <span class="small muted">预约信息与实际授课时间分开记录</span></div>
             <div class="card-body">
               <div class="grid g2" style="gap:20px">
-                <div class="desc g1">
-                  <div class="desc-item"><span class="k">学员</span><span class="v">陈可欣（S2026001 · 七年级）</span></div>
-                  <div class="desc-item"><span class="k">教师</span><span class="v">李婉（T001）</span></div>
-                  <div class="desc-item"><span class="k">课程类型</span><span class="v">一对一</span></div>
-                  <div class="desc-item"><span class="k">预约时间</span><span class="v mono">2026-11-02 09:00-10:00</span></div>
-                  <div class="desc-item"><span class="k">腾讯会议</span><span class="v">
-                    <span class="tag tag-green nodot">已生成</span>
-                    <a class="btn-link" style="margin-left:6px" href="#" onclick="Proto.toast('打开会议链接（示意）');return false">meeting.tencent.com/xxx</a></span></div>
-                </div>
-                <div class="desc g1">
-                  <div class="desc-item"><span class="k">实际开始</span><span class="v mono" id="actStart">—</span></div>
-                  <div class="desc-item"><span class="k">实际结束</span><span class="v mono" id="actEnd">—</span></div>
-                  <div class="desc-item"><span class="k">课程状态</span><span class="v">
-                    <span class="tag tag-amber" id="st2">待上课</span></span></div>
-                  <div class="desc-item"><span class="k">扣课状态</span><span class="v">
-                    <span class="tag tag-slate" id="dd2">未扣课</span></span></div>
-                  <div class="desc-item"><span class="k">创建时间</span><span class="v">2026-10-31 18:20</span></div>
-                </div>
+                <div class="desc g1" id="infoLeft"></div>
+                <div class="desc g1" id="infoRight"></div>
               </div>
+              <div class="alert alert-info mt12" id="noteBox" style="display:none"></div>
             </div>
           </div>
 
-          <!-- 提交结果 -->
-          <div class="card" id="submitCard">
-            <div class="card-head"><div class="card-title">教师提交课程结果</div>
-              <span class="small muted">提交后课程才变为「已完成」</span></div>
-            <div class="card-body">
-              <div class="form-grid g3">
-                <div class="field"><label>实际开始时间 <span class="req">*</span></label>
-                  <input class="input" type="time" id="f_start" value="09:02"></div>
-                <div class="field"><label>实际结束时间 <span class="req">*</span></label>
-                  <input class="input" type="time" id="f_end" value="10:05"></div>
-                <div class="field"><label>是否完成授课 <span class="req">*</span></label>
-                  <select class="select" id="f_done"><option>已完成授课</option><option>未上课</option></select></div>
-                <div class="field full"><label>本节课教学主题 <span class="req">*</span></label>
-                  <input class="input" id="f_topic" value="Unit 1 词汇强化 + 短文听读"></div>
-                <div class="field"><label>使用的词库</label>
-                  <select class="select" id="f_book">
-                    <option>人教版 七年级上 Unit 1 词汇（23 词）</option>
-                    <option>人教版 七年级上 Unit 2 词汇（28 词）</option>
-                    <option>不使用词库</option>
-                  </select></div>
-                <div class="field"><label>使用的文章</label>
-                  <select class="select">
-                    <option>My First Day at School（8 句）</option>
-                    <option>A Trip to the Library（6 句）</option>
-                    <option>不使用文章</option>
-                  </select></div>
-                <div class="field"><label>完成情况</label>
-                  <select class="select"><option>全部完成</option><option>部分完成</option><option>未完成</option></select></div>
-                <div class="field"><label>课堂表现</label>
-                  <select class="select"><option>专注，配合度高</option><option>一般</option><option>注意力易分散</option></select></div>
-                <div class="field"><label>课后建议</label>
-                  <select class="select"><option>家长协助复习红盒单词</option><option>增加听力练习</option><option>无需额外安排</option></select></div>
-                <div class="field full"><label>下次教学建议</label>
-                  <textarea class="textarea">下次先用 10 分钟复习红盒到期单词，再进入 Unit 2 新词预筛。</textarea></div>
-                <div class="field full">
-                  <label class="check" style="color:var(--warning)">
-                    <input type="checkbox" id="f_short"> 演示分支：本次扣课时余额不足</label>
-                  <div class="tip">勾选后提交，课程将进入「待处理」而不是「已完成」，用于验证扣课异常流程</div>
-                </div>
-              </div>
-              <div id="resultBox"></div>
-              <div class="divider"></div>
-              <div class="flex jcb aic">
-                <span class="small muted">提交后自动生成家长报告草稿，教师确认后家长可见</span>
-                <div class="flex gap8">
-                  <button class="btn" onclick="Proto.toast('已保存为草稿','ok')">保存草稿</button>
-                  <button class="btn btn-primary" onclick="submitResult()">提交课程结果</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 训练结果 -->
           <div class="card">
-            <div class="card-head"><div class="card-title">本节课训练结果</div>
-              <span class="small muted" id="resultHint">提交课程结果后生成</span></div>
-            <div class="card-body" id="trainResult">
-              <div class="empty" style="padding:28px">
-                <div class="e-ico">▤</div>
-                <p>暂无训练记录</p>
-                <p class="small">教师在课堂中开启单词训练或文章训练后，结果会自动关联到本节课程</p>
-              </div>
-            </div>
+            <div class="card-head"><div class="card-title">课程结果</div>
+              <span class="small muted" id="resultHint">来自教师提交的课程记录快照</span></div>
+            <div class="card-body" id="resultBox"></div>
           </div>
         </div>
 
-        <!-- 右侧 -->
         <div>
           <div class="card">
             <div class="card-head"><div class="card-title">状态流转</div></div>
             <div class="card-body">
-              <div class="timeline" id="stateFlow">
-                <div class="tl-item on"><div class="tl-head"><b>待上课</b><span class="tl-time">预约创建</span></div></div>
-                <div class="tl-item"><div class="tl-head" style="color:var(--text-3)"><b>已开始</b>
-                  <span class="tl-time">教师进入课堂</span></div></div>
-                <div class="tl-item"><div class="tl-head" style="color:var(--text-3)"><b>已完成</b>
-                  <span class="tl-time">提交课程结果</span></div></div>
-                <div class="tl-item"><div class="tl-head" style="color:var(--text-3)"><b>扣课</b>
-                  <span class="tl-time">余额充足则自动扣</span></div></div>
-              </div>
+              <div class="timeline" id="stateFlow"></div>
               <div class="alert alert-info mt8"><span class="ico">i</span>
-                <div class="small">「已开始」不能自动代表实际上课完成；只有提交结果后才扣课时。</div></div>
+                <div class="small">「授课中」不能自动代表实际上课完成；只有教师提交结果后才扣课时。</div></div>
             </div>
           </div>
 
           <div class="card">
             <div class="card-head"><div class="card-title">课时扣除信息</div></div>
-            <div class="card-body" id="deductBox">
-              <div class="empty" style="padding:24px 8px">
-                <div class="e-ico">▤</div>
-                <p>尚未扣课</p>
-              </div>
-            </div>
+            <div class="card-body" id="deductBox"></div>
           </div>
 
           <div class="card">
@@ -158,20 +70,13 @@
             <div class="card-body">
               <div class="flex jcb aic mb8"><span class="small">报告状态</span>
                 <span class="tag tag-slate" id="rpTag">未生成</span></div>
-              <div class="small muted">课程完成后系统生成草稿，教师确认提交后家长可见。教师修订会保留修改记录。</div>
-              <a class="btn btn-sm btn-block mt12" href="../teacher/teaching-record.html">去撰写报告</a>
+              <div class="small muted">课程完成后系统生成草稿，教师确认提交后家长可见。报告状态由 Store 维护，本页不改写报告。</div>
             </div>
           </div>
 
           <div class="card">
             <div class="card-head"><div class="card-title">操作日志</div></div>
-            <div class="card-body">
-              <div class="timeline">
-                <div class="tl-item on"><div class="tl-head"><b>创建预约</b><span class="tl-time">10-31 18:20 · 教务处-小陈</span></div>
-                  <div class="tl-body">学员 陈可欣，教师 李婉，11-02 09:00-10:00。</div></div>
-                <div class="tl-item"><div class="tl-head"><b>会议链接生成</b><span class="tl-time">10-31 18:21 · 系统</span></div></div>
-              </div>
-            </div>
+            <div class="card-body"><div class="timeline" id="logs"></div></div>
           </div>
         </div>
       </div>
@@ -179,113 +84,305 @@
   </div>
 </div>
 
+<!-- 调整预约 -->
+<div class="modal-mask" id="adjustModal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head"><b>调整预约</b>
+      <button class="modal-close" onclick="Proto.closeModal('adjustModal')">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid g2">
+        <div class="field"><label>日期</label><input class="input" type="date" id="a_date"></div>
+        <div class="field"><label>开始时间</label><input class="input" type="time" id="a_start"></div>
+        <div class="field"><label>结束时间</label><input class="input" type="time" id="a_end"></div>
+        <div class="field"><label>腾讯会议链接</label><input class="input" id="a_meeting" placeholder="https://meeting.tencent.com/..."></div>
+        <div class="field full"><label>备注</label><input class="input" id="a_note"></div>
+      </div>
+      <div class="small muted mt8">保存时由 Store 校验教师 / 学员时段冲突；不会自动创建腾讯会议，链接需手工填写。</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('adjustModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveAdjust()">保存调整</button>
+    </div>
+  </div>
+</div>
+
+<!-- 改派教师 -->
+<div class="modal-mask" id="reassignModal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-head"><b>改派教师</b>
+      <button class="modal-close" onclick="Proto.closeModal('reassignModal')">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label>接替教师</label><select class="select" id="r_teacher"></select></div>
+      <div class="field mt12"><label>改派原因 <span class="req">*</span></label><input class="input" id="r_reason" placeholder="如：原教师请假"></div>
+      <div class="alert alert-info mt12"><span class="ico">i</span>
+        <div class="small">改派由 Store 逐节校验新教师时段冲突与可用时间；已完成 / 已取消 / 未上课课程不可改派。原教师与改派记录会保留。</div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('reassignModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveReassign()">确认改派</button>
+    </div>
+  </div>
+</div>
+
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'admin', active: 'course-list' });
+Store.setSession({ role: 'admin' });
+const S = Store;
+const esc = Proto.escHtml;
+const CST = { '已完成': 'tag-green', '待上课': 'tag-blue', '授课中': 'tag-cyan', '未上课': 'tag-slate', '已取消': 'tag-slate' };
+const RPT = { '未生成': 'tag-slate', '编辑中': 'tag-amber', '已提交': 'tag-blue', '已发布': 'tag-green' };
 
-function submitResult() {
-  const start = document.getElementById('f_start').value;
-  const end = document.getElementById('f_end').value;
-  const topic = document.getElementById('f_topic').value.trim();
-  const short = document.getElementById('f_short').checked;
+const courseId = new URLSearchParams(location.search).get('id') || '';
+const c = courseId ? S.course(courseId) : null;
 
-  if (!start || !end) { Proto.toast('请填写实际开始与结束时间', 'err'); return; }
-  if (start >= end) { Proto.toast('实际开始时间必须早于结束时间', 'err'); return; }
-  if (!topic) { Proto.toast('请填写本节课教学主题', 'err'); return; }
+if (!courseId) {
+  document.querySelector('.content').innerHTML =
+    '<div class="card"><div class="card-body"><div class="empty"><p>未指定课程编号</p>' +
+    '<p class="small">请从课程记录进入课程详情。</p><a class="btn mt12" href="course-list.html">返回课程记录</a></div></div></div>';
+} else if (!c) {
+  document.querySelector('.content').innerHTML =
+    '<div class="card"><div class="card-body"><div class="empty"><p>课程不存在</p>' +
+    '<p class="small">课程编号 ' + esc(courseId) + ' 在 Store 中不存在。</p>' +
+    '<a class="btn mt12" href="course-list.html">返回课程记录</a></div></div></div>';
+} else {
+  renderPage();
+}
 
-  document.getElementById('actStart').textContent = start;
-  document.getElementById('actEnd').textContent = end;
+function renderPage() {
+  const open = c.status === '待上课' || c.status === '授课中';
+  document.getElementById('cTitle').innerHTML = `${esc(c.student)} · ${esc(c.date)} ${esc(c.start)}—${esc(c.end)}
+    <span class="tag ${CST[c.status] || 'tag-slate'}" id="courseStatus" style="font-size:12px;vertical-align:middle">${esc(c.status)}</span>`;
+  document.getElementById('cSub').textContent =
+    `${c.id} · ${c.teacherName || c.teacher} · ${c.type} · 创建人 ${c.createdBy || c.creator || '—'} · 来源 ${c.source || '手动'}`;
+  document.getElementById('cActions').style.display = '';
 
-  /* 训练结果区 */
-  document.getElementById('resultHint').textContent = '本次课程产生的训练记录';
-  document.getElementById('trainResult').innerHTML = `
+  const stu = S.student(c.studentId);
+  document.getElementById('infoLeft').innerHTML = `
+    <div class="desc-item"><span class="k">学员</span><span class="v">${esc(c.student)}（${esc(c.studentId || '—')}${stu && stu.grade ? ' · ' + esc(stu.grade) : ''}）</span></div>
+    <div class="desc-item"><span class="k">教师</span><span class="v">${esc(c.teacherName || c.teacher)}（${esc(c.teacherId || '—')}）</span></div>
+    <div class="desc-item"><span class="k">课程类型</span><span class="v">${esc(c.type)}</span></div>
+    <div class="desc-item"><span class="k">预约时间</span><span class="v mono">${esc(c.date)} ${esc(c.start)}—${esc(c.end)}</span></div>
+    <div class="desc-item"><span class="k">腾讯会议</span><span class="v">${c.meetingUrl
+      ? `<a class="btn-link" href="${esc(c.meetingUrl)}" target="_blank" rel="noopener">打开会议链接</a>`
+      : '<span class="tag tag-slate nodot">未生成</span>'}</span></div>`;
+  document.getElementById('infoRight').innerHTML = `
+    <div class="desc-item"><span class="k">实际开始</span><span class="v mono">${esc(c.actualStart || '—')}</span></div>
+    <div class="desc-item"><span class="k">实际结束</span><span class="v mono">${esc(c.actualEnd || '—')}</span></div>
+    <div class="desc-item"><span class="k">课程状态</span><span class="v"><span class="tag ${CST[c.status] || 'tag-slate'}">${esc(c.status)}</span></span></div>
+    <div class="desc-item"><span class="k">扣课状态</span><span class="v"><span class="tag ${c.deductState === '已扣课' ? 'tag-green' : c.deductState === '扣课异常' ? 'tag-red' : 'tag-slate'}">${esc(c.deductState || '未扣课')}</span></span></div>
+    <div class="desc-item"><span class="k">来源 / 关联</span><span class="v small">${esc(SourceLabel())}${c.seriesId ? ' · 周期 ' + esc(c.seriesId) : ''}${c.batchId ? ' · 批次 ' + esc(c.batchId) : ''}</span></div>`;
+
+  if (c.note) {
+    document.getElementById('noteBox').style.display = '';
+    document.getElementById('noteBox').innerHTML = '<span class="ico">i</span><div>备注：' + esc(c.note) + '</div>';
+  }
+  const btns = document.getElementById('cActions').querySelectorAll('button');
+  btns[0].style.display = c.meetingUrl ? '' : 'none';
+  btns[1].style.display = open ? '' : 'none';
+  btns[2].style.display = open ? '' : 'none';
+  btns[3].style.display = open ? '' : 'none';
+
+  renderResult();
+  renderFlow();
+  renderDeduct();
+  renderReport();
+  renderLogs();
+}
+
+function SourceLabel() {
+  return c.source || '手动';
+}
+
+function renderResult() {
+  const rec = S.recordOfCourse(c.id);
+  if (!rec) {
+    document.getElementById('resultHint').textContent = c.status === '已完成' ? '本课程无聚合记录' : '教师提交课程结果后生成';
+    document.getElementById('resultBox').innerHTML = `
+      <div class="empty" style="padding:28px">
+        <div class="e-ico">▤</div>
+        <p>暂无课程结果</p>
+        <p class="small">教师在课程工作台提交结果后，结果快照会出现在这里；本页不代替教师提交。</p>
+      </div>`;
+    return;
+  }
+  const sn = rec.snapshot || {};
+  document.getElementById('resultHint').textContent = '聚合快照 ' + rec.id + ' · ' + (rec.updatedAt || rec.createdAt || '');
+  document.getElementById('resultBox').innerHTML = `
     <div class="grid g2">
       <div>
-        <div class="section-title">单词训练</div>
+        <div class="section-title">完成情况</div>
         <div class="desc g1">
-          <div class="desc-item"><span class="k">词库</span><span class="v">人教版 七上 Unit 1（23 词）</span></div>
-          <div class="desc-item"><span class="k">预筛认识</span><span class="v mono">9</span></div>
-          <div class="desc-item"><span class="k">进入强化</span><span class="v mono">14</span></div>
-          <div class="desc-item"><span class="k">最后复习通过</span><span class="v mono" style="color:var(--success)">16</span></div>
-          <div class="desc-item"><span class="k">待复习 / 不确定</span><span class="v mono" style="color:var(--warning)">7</span></div>
+          <div class="desc-item"><span class="k">课程记录</span><span class="v mono small">${esc(rec.id)}</span></div>
+          <div class="desc-item"><span class="k">实际开始 / 结束</span><span class="v mono small">${esc(rec.actualStart || '—')} / ${esc(rec.actualEnd || '—')}</span></div>
+          <div class="desc-item"><span class="k">未完成处理</span><span class="v">${esc(rec.unfinishedPolicy || '—')}</span></div>
+          <div class="desc-item"><span class="k">教师备注</span><span class="v">${esc(rec.teacherNote || '—')}</span></div>
         </div>
       </div>
       <div>
-        <div class="section-title">文章训练</div>
+        <div class="section-title">训练快照</div>
         <div class="desc g1">
-          <div class="desc-item"><span class="k">文章</span><span class="v">My First Day at School</span></div>
-          <div class="desc-item"><span class="k">总句数</span><span class="v mono">8</span></div>
-          <div class="desc-item"><span class="k">完成句数</span><span class="v mono">8</span></div>
-          <div class="desc-item"><span class="k">完整音频</span><span class="v">已听完</span></div>
-          <div class="desc-item"><span class="k">教师评价</span><span class="v">听读流畅，个别连读需加强</span></div>
+          <div class="desc-item"><span class="k">单词训练</span><span class="v mono">${Number(sn.trainWords || 0)} 词 / ${Number(sn.trainRecords || 0)} 条</span></div>
+          <div class="desc-item"><span class="k">莱特纳复习</span><span class="v mono">${Number(sn.leitnerWords || 0)} 词</span></div>
+          <div class="desc-item"><span class="k">21 天复习</span><span class="v mono">${Number(sn.plan21Words || 0)} 词</span></div>
+          <div class="desc-item"><span class="k">文章训练</span><span class="v mono">${Number(sn.articleSentences || 0)} 句</span></div>
+          <div class="desc-item"><span class="k">掌握 / 待加强</span><span class="v mono">${Number(sn.mastered || 0)} / ${Number(sn.weak || 0)}</span></div>
         </div>
       </div>
     </div>
     <div class="alert alert-info mt12"><span class="ico">i</span>
-      <div class="small">文章训练<b>不会直接改变单词掌握状态</b>；单词状态只能由单词训练与复习结果决定。</div></div>`;
-
-  document.getElementById('rpTag').className = 'tag tag-amber';
-  document.getElementById('rpTag').textContent = '草稿';
-
-  if (short) {
-    /* 余额不足分支 */
-    setStatus('待处理', 'tag-amber', '扣课异常', 'tag-red');
-    document.getElementById('deductBox').innerHTML = `
-      <div class="alert alert-danger mb12"><span class="ico">!</span>
-        <div>学员课时余额不足（ACC-2026-0001 剩余 0 课时）。<br>
-        <b>课程已保留真实授课记录</b>，但未生成扣课流水，课程进入「待处理」。</div></div>
-      <div class="desc g1">
-        <div class="desc-item"><span class="k">失败原因</span><span class="v">余额不足</span></div>
-        <div class="desc-item"><span class="k">处理人</span><span class="v">教务 / 管理员</span></div>
-        <div class="desc-item"><span class="k">处理方式</span><span class="v">补购课时后补扣，或办理续费订单</span></div>
-      </div>
-      <a class="btn btn-sm btn-block mt12" href="hour-account.html">前往课时账户处理</a>`;
-    Proto.toast('课程已提交，因余额不足进入「待处理」', 'warn');
-  } else {
-    setStatus('已完成', 'tag-green', '已扣课', 'tag-green');
-    document.getElementById('deductBox').innerHTML = `
-      <div class="alert alert-success mb12"><span class="ico">✓</span>
-        <div>扣课成功：ACC-2026-0001 · 42 → 41 课时</div></div>
-      <div class="desc g1">
-        <div class="desc-item"><span class="k">流水编号</span><span class="v mono">FL20261102011</span></div>
-        <div class="desc-item"><span class="k">业务类型</span><span class="v">正常扣课</span></div>
-        <div class="desc-item"><span class="k">变动课时</span><span class="v mono" style="color:var(--danger)">−1</span></div>
-        <div class="desc-item"><span class="k">变动前 / 后</span><span class="v mono">42 / 41</span></div>
-        <div class="desc-item"><span class="k">幂等键</span><span class="v mono small">C20261102001-deduct</span></div>
-      </div>
-      <div class="alert alert-info mt12"><span class="ico">i</span>
-        <div class="small">同一课程只能成功扣课一次；重复提交会被幂等机制拦截。</div></div>
-      <a class="btn btn-sm btn-block mt12" href="hour-flow.html">查看课时流水</a>`;
-    Proto.toast('课程结果已提交，课时已扣除', 'ok');
-  }
-
-  /* 状态流转 */
-  document.getElementById('stateFlow').innerHTML = `
-    <div class="tl-item on"><div class="tl-head"><b>待上课</b><span class="tl-time">10-31 18:20</span></div></div>
-    <div class="tl-item on"><div class="tl-head"><b>已开始</b><span class="tl-time">11-02 ${start}</span></div></div>
-    <div class="tl-item on"><div class="tl-head"><b>${short ? '待处理' : '已完成'}</b><span class="tl-time">11-02 ${end}</span></div>
-      <div class="tl-body">${short ? '扣课时余额不足，等待教务处理' : '教师提交课程结果，生成家长报告草稿'}</div></div>
-    <div class="tl-item ${short ? '' : 'on'}"><div class="tl-head" style="color:${short ? 'var(--text-3)' : 'inherit'}"><b>扣课</b>
-      <span class="tl-time">${short ? '待处理完成后生成' : 'FL20261102011'}</span></div></div>`;
+      <div class="small">课程结果由教师端提交，本页只读；排课与改派不会扣课时。</div></div>`;
 }
 
-function setStatus(text, cls, ddText, ddCls) {
-  ['courseStatus', 'st2'].forEach(id => {
-    const el = document.getElementById(id);
-    el.textContent = text;
-    el.className = 'tag ' + cls;
-    if (id === 'courseStatus') el.style.fontSize = '12px';
-  });
-  const dd = document.getElementById('dd2');
-  dd.textContent = ddText;
-  dd.className = 'tag ' + ddCls;
+function renderFlow() {
+  const items = [
+    { label: '待上课', time: c.createdAt || '预约创建', on: true },
+    { label: '授课中', time: c.actualStart || '教师进入课堂', on: c.status === '授课中' || c.status === '已完成' },
+    { label: '已完成', time: c.actualEnd || '提交课程结果', on: c.status === '已完成' },
+    { label: '扣课', time: c.deductState === '已扣课' ? '已生成扣课流水' : '余额充足则自动扣', on: c.deductState === '已扣课' }
+  ];
+  if (c.status === '已取消' || c.status === '未上课') {
+    items.splice(1, 3, { label: c.status, time: c.cancelledAt || '教务处理', on: true, desc: c.cancelReason || '' });
+  }
+  document.getElementById('stateFlow').innerHTML = items.map(it => `
+    <div class="tl-item ${it.on ? 'on' : ''}"><div class="tl-head">
+      <b style="${it.on ? '' : 'color:var(--text-3)'}">${esc(it.label)}</b>
+      <span class="tl-time">${esc(it.time)}</span></div>
+      ${it.desc ? `<div class="tl-body">${esc(it.desc)}</div>` : ''}
+    </div>`).join('');
+}
+
+function renderDeduct() {
+  const flows = S.flows().filter(f => f.courseId === c.id);
+  const box = document.getElementById('deductBox');
+  if (!flows.length) {
+    box.innerHTML = c.deductState === '扣课异常'
+      ? `<div class="alert alert-danger"><span class="ico">!</span>
+          <div>本课程已完成但未生成扣课流水（扣课异常）。<br>处理方式：补购课时后由教务在课时账户补扣。</div></div>
+         <a class="btn btn-sm btn-block mt12" href="hour-account.html">前往课时账户处理</a>`
+      : `<div class="empty" style="padding:24px 8px"><div class="e-ico">▤</div>
+          <p>${c.status === '已完成' ? '未生成扣课流水' : '尚未扣课'}</p></div>`;
+    return;
+  }
+  box.innerHTML = flows.map(f => `
+    <div class="desc g1 mb8">
+      <div class="desc-item"><span class="k">流水编号</span><span class="v mono small">${esc(f.id)}</span></div>
+      <div class="desc-item"><span class="k">业务类型</span><span class="v">${esc(f.type)}</span></div>
+      <div class="desc-item"><span class="k">变动课时</span><span class="v mono" style="color:${Number(f.delta) < 0 ? 'var(--danger)' : 'var(--success)'}">${Number(f.delta) > 0 ? '+' : ''}${Number(f.delta)}</span></div>
+      <div class="desc-item"><span class="k">变动前 / 后</span><span class="v mono">${Number(f.before)} / ${Number(f.after)}</span></div>
+      <div class="desc-item"><span class="k">时间</span><span class="v small">${esc(f.time)}</span></div>
+    </div>`).join('') +
+    `<a class="btn btn-sm btn-block mt12" href="hour-flow.html">查看课时流水</a>`;
+}
+
+function renderReport() {
+  const rp = S.reportOfCourse(c.id);
+  const tag = document.getElementById('rpTag');
+  const st = rp ? (rp.status || '未生成') : '未生成';
+  tag.className = 'tag ' + (RPT[st] || 'tag-slate');
+  tag.textContent = st;
+}
+
+function renderLogs() {
+  const items = [];
+  items.push({ title: '创建预约', time: `${c.createdAt || '—'} · ${c.createdBy || c.creator || '—'}`,
+    body: `学员 ${c.student}，教师 ${c.teacherName || c.teacher}，${c.date} ${c.start}—${c.end}。` });
+  (c.changeLogs || []).forEach(l => items.push({ title: '调整预约', time: `${l.at || ''} · ${l.by || ''}`,
+    body: `${l.date || ''} ${l.start || ''}—${l.end || ''}${l.note ? '；' + l.note : ''}` }));
+  (c.reassignLogs || []).forEach(l => items.push({ title: '改派教师', time: `${l.at || ''} · ${l.by || ''}`,
+    body: `${l.fromName || l.fromTeacherId} → ${l.toName || l.toTeacherId}${l.reason ? '；原因：' + l.reason : ''}${l.warnings && l.warnings.length ? '；提醒：' + l.warnings.join('、') : ''}` }));
+  if (c.status === '已取消') items.push({ title: '取消课程', time: `${c.cancelledAt || ''} · ${c.cancelledBy || ''}`,
+    body: (c.cancelReason || '未填写原因') + '；不扣课时，记录保留。' });
+  document.getElementById('logs').innerHTML = items.map((it, i) => `
+    <div class="tl-item ${i === 0 ? 'on' : ''}"><div class="tl-head"><b>${esc(it.title)}</b>
+      <span class="tl-time">${esc(it.time)}</span></div><div class="tl-body">${esc(it.body)}</div></div>`).join('');
+}
+
+/* ---------------- 操作 ---------------- */
+function copyMeeting() {
+  if (!c.meetingUrl) { Proto.toast('本节课程没有会议链接', 'err'); return; }
+  const url = c.meetingUrl;
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    Proto.toast(ok ? '已复制会议链接' : '复制失败，请手动复制：' + url, ok ? 'ok' : 'warn');
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(() => Proto.toast('已复制会议链接', 'ok')).catch(fallback);
+  } else fallback();
+}
+
+function openAdjust() {
+  document.getElementById('a_date').value = c.date;
+  document.getElementById('a_start').value = c.start;
+  document.getElementById('a_end').value = c.end;
+  document.getElementById('a_meeting').value = c.meetingUrl || '';
+  document.getElementById('a_note').value = c.note || '';
+  Proto.openModal('adjustModal');
+}
+
+function saveAdjust() {
+  try {
+    S.updateCourse(c.id, {
+      date: document.getElementById('a_date').value,
+      start: document.getElementById('a_start').value,
+      end: document.getElementById('a_end').value,
+      meetingUrl: document.getElementById('a_meeting').value,
+      note: document.getElementById('a_note').value
+    });
+    Proto.closeModal('adjustModal');
+    Proto.toast('预约已保存', 'ok');
+    location.reload();
+  } catch (e) {
+    Proto.toast(e.message || '保存失败', 'err');
+  }
+}
+
+function openReassign() {
+  const cur = c.teacherId;
+  const opts = S.teacherPool().map(p => p.teacher).filter(t => t.id !== cur);
+  document.getElementById('r_teacher').innerHTML = opts.map(t =>
+    `<option value="${esc(t.id)}">${esc(t.name)}（${esc(t.code)}）</option>`).join('');
+  document.getElementById('r_reason').value = '';
+  if (!opts.length) { document.getElementById('r_teacher').innerHTML = '<option value="">暂无可授课教师</option>'; }
+  Proto.openModal('reassignModal');
+}
+
+function saveReassign() {
+  const tid = document.getElementById('r_teacher').value;
+  const reason = document.getElementById('r_reason').value.trim();
+  if (!tid) { Proto.toast('暂无可授课教师', 'err'); return; }
+  if (!reason) { Proto.toast('请填写改派原因', 'err'); return; }
+  try {
+    S.reassignCourse(c.id, tid, { reason: reason });
+    Proto.closeModal('reassignModal');
+    Proto.toast('已改派教师', 'ok');
+    location.reload();
+  } catch (e) {
+    Proto.toast(e.message || '改派失败', 'err');
+  }
 }
 
 function cancelCourse() {
-  Proto.confirmBox('取消课程', `确认取消本节课程吗？<br><br>取消课程<b>不扣课时</b>；如已误扣需通过冲正流水修复，原流水保留。`,
-    '确认取消', () => { setStatus('已取消', 'tag-slate', '未扣课', 'tag-slate'); Proto.toast('课程已取消', 'ok'); });
+  Proto.confirmBox('取消课程',
+    `确认取消 <b>${esc(c.student)}</b> ${esc(c.date)} ${esc(c.start)}—${esc(c.end)} 的课程吗？<br><br>
+     取消课程<b>不扣课时</b>；如已误扣需通过冲正流水修复，原流水保留。`,
+    '确认取消', () => {
+      try {
+        S.cancelCourse(c.id, '教务在课程详情中取消');
+        Proto.toast('课程已取消，未扣课时', 'ok');
+        location.reload();
+      } catch (e) {
+        Proto.toast(e.message || '取消失败', 'err');
+      }
+    });
 }
 </script>
 </body>

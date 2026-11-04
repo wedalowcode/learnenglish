@@ -51,6 +51,8 @@ const Proto = (() => {
       { group: '财务管理', items: [
         { id: 'hour-account', label: '课时账户', href: 'admin/hour-account.html' },
         { id: 'hour-flow', label: '课时流水', href: 'admin/hour-flow.html' },
+        { id: 'teacher-pay-rules', label: '教师课时费规则', href: 'admin/teacher-pay-rules.html' },
+        { id: 'teacher-settlement', label: '教师结算', href: 'admin/teacher-settlement.html' },
       ]},
       { group: '资源中心', items: [
         { id: 'material-list', label: '教材结构', href: 'resource/material-list.html' },
@@ -68,6 +70,7 @@ const Proto = (() => {
         { id: 'course-workbench', label: '课程工作台', href: 'teacher/course-workbench.html' },
         { id: 'my-students', label: '我的学员', href: 'teacher/my-students.html' },
         { id: 'teaching-record', label: '教学记录', href: 'teacher/teaching-record.html' },
+        { id: 'my-settlements', label: '我的结算', href: 'teacher/my-settlements.html' },
       ]},
       { group: '接单中心', items: [
         { id: 'demand-open', label: '待响应需求', href: 'teacher/demand-center.html?tab=open' },
@@ -169,6 +172,8 @@ const Proto = (() => {
     'order-list': ['order.view.all', 'order.create'],
     'hour-account': ['lesson_account.view'],
     'hour-flow': ['lesson_account.view'],
+    'teacher-pay-rules': ['order.view.all', 'lesson_account.view'],
+    'teacher-settlement': ['order.view.all', 'lesson_account.view'],
     'material-list': ['wordbook.view'],
     'wordbook-list': ['wordbook.view'],
     'article-list': ['wordbook.view'],
@@ -178,6 +183,7 @@ const Proto = (() => {
     'course-workbench': ['lesson.view.own'],
     'my-students': ['student.view'],
     'teaching-record': ['lesson.view.own'],
+    'my-settlements': ['lesson.view.own'],
     'demand-open': ['demand.respond'],
     'demand-mine': ['demand.respond'],
     'demand-wbreq': ['wordbook.request'],

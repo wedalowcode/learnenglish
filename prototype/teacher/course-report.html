@@ -59,6 +59,13 @@
             <div class="card-head"><div class="card-title">教师评价</div>
               <span class="small muted">三段都必须填写才能提交</span></div>
             <div class="card-body">
+              <div class="flex gap8 mb12" style="flex-wrap:wrap">
+                <span class="small muted">常用模板：</span>
+                <button class="btn btn-sm" onclick="applyTemplate('f1','本节完成了单词与文章训练，孩子专注度较好，重点内容掌握稳定。')">表现</button>
+                <button class="btn btn-sm" onclick="applyTemplate('f2','本次仍需加强部分单词的发音与回忆稳定性，建议下节课重点复现。')">薄弱点</button>
+                <button class="btn btn-sm" onclick="applyTemplate('f3','下节课先复习本次待加强内容，再进入新的单词训练并做最后复习。')">下一步</button>
+                <button class="btn btn-sm" onclick="applyTemplate('f4','每天朗读本节课单词 5 分钟，睡前复述 3 个单词并说出中文。')">家庭建议</button>
+              </div>
               <div class="field">
                 <label class="label">本节表现<span class="req">*</span></label>
                 <textarea class="input" id="f1" rows="3" placeholder="本节完成了什么、孩子的状态、明显进步的地方…"></textarea>
@@ -70,6 +77,10 @@
               <div class="field">
                 <label class="label">下节课建议<span class="req">*</span></label>
                 <textarea class="input" id="f3" rows="3" placeholder="下节课先做什么、再做什么…"></textarea>
+              </div>
+              <div class="field">
+                <label class="label">家庭配合建议</label>
+                <textarea class="input" id="f4" rows="2" placeholder="给家长的家庭复习建议（可选，家长端会看到）"></textarea>
               </div>
               <div class="alert alert-info"><span class="ico">i</span>
                 <div>报告提交后仍不会对家长公开，需要再点一次「发布」。</div></div>
@@ -92,6 +103,12 @@
               <div class="divider"></div>
               <div class="small muted">家长端只会看到「已发布」的报告；「编辑中 / 已提交」对家长不可见。</div>
             </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">家长将看到的样子</div>
+              <span class="small muted">实时预览</span></div>
+            <div class="card-body" id="parentPreview">—</div>
           </div>
 
           <div class="card">
@@ -161,9 +178,10 @@ function render() {
 
   /* 表单 */
   const locked = rp.status === '已提交' || rp.status === '已发布';
-  ['f1', 'f2', 'f3'].forEach((id, i) => {
+  ['f1', 'f2', 'f3', 'f4'].forEach((id, i) => {
     const el = document.getElementById(id);
-    el.value = [rp.content.performance, rp.content.weak, rp.content.next][i] || '';
+    if (!el) return;
+    el.value = [rp.content.performance, rp.content.weak, rp.content.next, rp.content.homeworkAdvice][i] || '';
     el.readOnly = locked;
     el.classList.toggle('readonly', locked);
   });
@@ -190,7 +208,7 @@ function render() {
     btns.push('<button class="btn" onclick="saveDraft()">保存草稿</button>');
     btns.push('<button class="btn btn-primary" onclick="doSubmit()">提交报告</button>');
   } else if (rp.status === '已提交') {
-    btns.push('<button class="btn btn-primary" onclick="doPublish()">发布给家长</button>');
+    btns.push('<button class="btn btn-primary btn-lg" onclick="doPublish()">发布给家长</button>');
   } else {
     btns.push('<a class="btn" href="course-workbench.html?course=' + rp.courseId + '">报告已发布</a>');
   }
@@ -203,13 +221,33 @@ function render() {
       + unf.map(it => `<div class="m-row"><span class="k">${it.label}</span>
         <span class="small">${it.done} / ${it.total}　${it.status}</span></div>`).join('')
     : '<div class="small muted">本节课没有未完成的教学任务。</div>';
+
+  /* 家长预览实时更新 */
+  ['f1', 'f2', 'f3', 'f4'].forEach(id => { const el = document.getElementById(id); if (el) el.oninput = renderPreview; });
+  renderPreview();
+}
+
+function applyTemplate(targetId, text) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  el.value = el.value.trim() ? (el.value.trim() + '\n' + text) : text;
+  renderPreview();
+}
+function renderPreview() {
+  const box = document.getElementById('parentPreview');
+  if (!box) return;
+  const g = id => (document.getElementById(id) || {}).value || '';
+  const block = (val, label, tone) => `<div style="margin-bottom:8px"><div class="small" style="font-weight:600;color:var(--${tone})">${label}</div><div class="small" style="color:var(--text-2);line-height:1.7">${val ? val.split('\n').filter(Boolean).map(x => `<div>${x.replace(/</g, '&lt;')}</div>`).join('') : '<span class="muted">（未填写）</span>'}</div></div>`;
+  box.innerHTML = block(g('f1'), '本节表现', 'success') + block(g('f2'), '当前薄弱点', 'warning')
+    + block(g('f3'), '下一步教学安排', 'primary-dark') + block(g('f4'), '家庭配合建议', 'primary-dark');
 }
 
 function collect() {
   return {
     performance: document.getElementById('f1').value.trim(),
     weak: document.getElementById('f2').value.trim(),
-    next: document.getElementById('f3').value.trim()
+    next: document.getElementById('f3').value.trim(),
+    homeworkAdvice: (document.getElementById('f4') || {}).value ? document.getElementById('f4').value.trim() : ''
   };
 }
 

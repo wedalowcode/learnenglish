@@ -44,8 +44,8 @@
           </div>
 
           <div class="card">
-            <div class="card-head"><div class="card-title">最近教学记录</div>
-              <a class="btn btn-sm" href="teaching-record.html">全部</a></div>
+            <div class="card-head"><div class="card-title">需要关注的学员</div>
+              <a class="btn btn-sm" href="my-students.html">我的学员</a></div>
             <div class="card-body">
               <div class="timeline" id="recentRecords"></div>
             </div>
@@ -117,9 +117,9 @@ document.getElementById('statCards').innerHTML = `
   <div class="card stat"><div class="stat-label">已完成</div>
     <div class="stat-value" style="color:var(--success)">${stat.done}<small>节</small></div>
     <div class="stat-foot">只能查看历史记录</div></div>
-  <div class="card stat"><div class="stat-label">待写报告</div>
+  <div class="card stat" style="cursor:pointer" onclick="location.href='teaching-record.html'" title="点击查看待写 / 待发布报告"><div class="stat-label">待写报告</div>
     <div class="stat-value" style="color:var(--warning)">${rs.draft}<small>份</small></div>
-    <div class="stat-foot"><a href="teaching-record.html">去填写 →</a></div></div>
+    <div class="stat-foot">点击查看 →</div></div>
   <div class="card stat"><div class="stat-label">未上课 / 已取消</div>
     <div class="stat-value">${(stat.by['未上课'] || 0) + (stat.by['已取消'] || 0)}<small>节</small></div>
     <div class="stat-foot">不可进入正常教学流程</div></div>`;
@@ -133,12 +133,17 @@ function meetingCell(c) {
 }
 function enterCell(c) {
   if (c.status === '待上课' || c.status === '授课中') {
-    return `<a class="btn-link" href="course-workbench.html?course=${c.id}">进入课堂</a>`;
+    return `<a class="btn btn-sm btn-primary" href="course-workbench.html?course=${c.id}">${c.status === '授课中' ? '继续课堂' : '一键进入课堂'}</a>`;
   }
   if (c.status === '已完成') {
-    return `<a class="btn-link" href="course-workbench.html?course=${c.id}">回看</a>`;
+    return `<a class="btn btn-sm" href="course-workbench.html?course=${c.id}">回看</a>`;
   }
   return '<span class="small muted">不可进入</span>';
+}
+function reportQuick(rp) {
+  if (!rp) return '';
+  const label = rp.status === '编辑中' ? '写报告' : rp.status === '已提交' ? '发布' : '查看';
+  return ` <a class="btn-link" href="course-report.html?report=${rp.id}">${label}</a>`;
 }
 
 Proto.renderRows('todayCourses', today, c => {
@@ -150,7 +155,7 @@ Proto.renderRows('todayCourses', today, c => {
     <td>${s ? s.grade : '—'}</td>
     <td><span class="tag ${CTAG[c.status] || 'tag-slate'} nodot">${c.status}</span></td>
     <td>${meetingCell(c)}</td>
-    <td>${rp ? `<span class="tag ${RTAG[rp.status] || 'tag-slate'} nodot">${rp.status}</span>` : '<span class="tag tag-slate nodot">未生成</span>'}</td>
+    <td>${rp ? `<span class="tag ${RTAG[rp.status] || 'tag-slate'} nodot">${rp.status}</span>${reportQuick(rp)}` : '<span class="tag tag-slate nodot">未生成</span>'}</td>
     <td class="ops">${enterCell(c)}</td>
   </tr>`;
 }, 20, '今天没有排课');
@@ -171,35 +176,34 @@ document.querySelectorAll('[data-copy]').forEach(btn => {
 });
 
 document.getElementById('recentRecords').innerHTML = (function () {
-  const list = Store.recordsOfTeacher(TEACHER).slice(0, 4);
-  if (!list.length) return '<div class="small muted">还没有完成过课程</div>';
-  return list.map(r => {
-    const c = Store.course(r.courseId);
-    const s = Store.student(r.studentId);
-    const rp = r.reportId ? Store.report(r.reportId) : null;
-    return `<div class="tl-item on">
-      <div class="tl-head"><b>${s ? s.name : ''} · ${rp ? rp.title : '一对一课程'}</b>
-        <span class="tl-time">${(c ? c.date : '').slice(5)}</span></div>
-      <div class="tl-body">单词 ${r.snapshot ? r.snapshot.trainWords : 0} 个 · 复习 ${r.snapshot ? (r.snapshot.leitnerWords + r.snapshot.plan21Words) : 0} 个
-        · 文章 ${r.snapshot ? r.snapshot.articleSentences : 0} 句
-        ${rp ? `<span class="tag ${RTAG[rp.status] || 'tag-slate'} nodot" style="margin-left:6px">${rp.status}</span>` : ''}</div>
-    </div>`;
-  }).join('');
+  const list = Store.teacherAttentionStudents(TEACHER).slice(0, 5);
+  if (!list.length) return '<div class="small muted">今日暂无需要特别关注的学员（无到期复习、通过率正常）</div>';
+  return list.map(a => `<div class="tl-item on">
+    <div class="tl-head"><b>${a.studentName}${a.grade ? ' · ' + a.grade : ''}</b>
+      <span class="tl-time">${a.lastCourse ? (a.lastCourse + '').slice(5) : ''}</span></div>
+    <div class="tl-body">
+      ${a.dueReview ? '今日到期复习 <b>' + a.dueReview + '</b> 个' : ''}
+      ${(a.lastPassRate !== null && a.lastPassRate !== undefined) ? ' · 最近通过率 ' + a.lastPassRate + '%' : ''}
+      <a class="btn-link" href="student-profile.html?student=${a.studentId}">查看档案 →</a></div>
+  </div>`).join('');
 })();
 
 (function renderPendingReports() {
-  const list = (Store.reports() || []).filter(r => (r.teacherId || '') === (TEACHER || '') && r.status === '编辑中');
+  const list = (Store.reports() || []).filter(r => (r.teacherId || '') === (TEACHER || '') && (r.status === '编辑中' || r.status === '已提交'));
   document.getElementById('reportBadge').textContent = list.length;
   const box = document.getElementById('pendingReports');
   if (!list.length) {
-    box.innerHTML = '<div class="small muted">没有待填写的教学报告</div>';
+    box.innerHTML = '<div class="small muted">没有待写 / 待发布的报告</div>';
     return;
   }
-  box.innerHTML = list.slice(0, 5).map(r => {
-    const c = Store.course(r.courseId);
+  box.innerHTML = list.slice(0, 6).map(r => {
     const s = Store.student(r.studentId);
-    return `<div class="m-row"><span class="k">${s ? s.name : ''} · ${r.title || '教学报告'}</span>
-      <span><a class="btn-link" href="teaching-record.html?course=${c ? c.id : ''}">去填写 →</a></span></div>`;
+    const act = r.status === '已提交'
+      ? `<a class="btn-link" href="course-report.html?report=${r.id}">发布给家长</a>`
+      : `<a class="btn-link" href="course-report.html?report=${r.id}&autofill=1">带入本节数据填写</a>`;
+    return `<div class="m-row"><span class="k">${s ? s.name : ''} · ${r.title || '教学报告'}
+      <span class="tag tag-${r.status === '已提交' ? 'blue' : 'amber'} nodot" style="font-size:10px">${r.status}</span></span>
+      <span>${act}</span></div>`;
   }).join('');
 })();
 </script>

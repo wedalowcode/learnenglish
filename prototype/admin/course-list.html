@@ -17,69 +17,79 @@
         <div>
           <div class="crumb">教学管理<span class="sep">/</span>课程记录</div>
           <h1 class="page-title">课程记录</h1>
-          <div class="page-sub">已完成、已取消、未上课与待处理课程 · 扣课状态独立于课程状态</div>
+          <div class="page-sub">课程数据来自 Store（含周期 / 批量排课生成的课程）· 扣课状态独立于课程状态</div>
         </div>
         <div class="page-actions">
-          <button class="btn" onclick="Proto.toast('导出课程记录（示意）','ok')">导出</button>
-          <a class="btn" href="schedule-calendar.html">去排课</a>
+          <a class="btn" href="schedule-workbench.html">去排课总览</a>
+          <a class="btn" href="batch-schedule.html">批量排课</a>
+          <button class="btn" onclick="showAbnormal()">异常课程处理</button>
         </div>
       </div>
 
       <div class="grid g4 mb16">
-        <div class="card stat"><div class="stat-label">本月已完成</div><div class="stat-value">218<small>节</small></div></div>
-        <div class="card stat"><div class="stat-label">本月未上课</div><div class="stat-value" style="color:var(--text-2)">12<small>节</small></div>
+        <div class="card stat"><div class="stat-label">本月已完成</div><div class="stat-value" id="stDone">0<small>节</small></div></div>
+        <div class="card stat"><div class="stat-label">本月未上课</div><div class="stat-value" id="stMissed" style="color:var(--text-2)">0<small>节</small></div>
           <div class="stat-foot">不扣课时</div></div>
-        <div class="card stat"><div class="stat-label">本月已取消</div><div class="stat-value" style="color:var(--text-2)">6<small>节</small></div>
+        <div class="card stat"><div class="stat-label">本月已取消</div><div class="stat-value" id="stCancelled" style="color:var(--text-2)">0<small>节</small></div>
           <div class="stat-foot">不扣课时</div></div>
-        <div class="card stat"><div class="stat-label">待处理异常</div><div class="stat-value" style="color:var(--danger)">1<small>节</small></div>
-          <div class="stat-foot">赵一诺 · 课时不足</div></div>
+        <div class="card stat"><div class="stat-label">扣课异常</div><div class="stat-value" id="stAbnormal" style="color:var(--danger)">0<small>节</small></div>
+          <div class="stat-foot">已完成但未扣成，需教务处理</div></div>
       </div>
 
       <div class="card filter">
-        <div class="field"><label>课程编号</label><input class="input" id="kw" placeholder="C 开头" oninput="render()"></div>
-        <div class="field"><label>学员</label><input class="input" id="stu" placeholder="学员姓名" oninput="render()"></div>
+        <div class="field"><label>关键字</label><input class="input" id="kw" placeholder="课程编号 / 学员 / 教师" onkeydown="if(event.key==='Enter')render(true)"></div>
         <div class="field"><label>教师</label>
-          <select class="select" id="tc" onchange="render()"><option value="">全部</option>
-            <option>李婉</option><option>周雅</option><option>何俊</option><option>沈心怡</option></select></div>
+          <select class="select" id="tc" onchange="render(true)"><option value="">全部</option></select></div>
         <div class="field"><label>课程状态</label>
-          <select class="select" id="st" onchange="render()">
-            <option value="">全部</option><option>待上课</option><option>已开始</option><option>已完成</option>
-            <option>已取消</option><option>未上课</option><option>待处理</option>
-          </select></div>
+          <select class="select" id="st" onchange="render(true)"><option value="">全部</option></select></div>
         <div class="field"><label>扣课状态</label>
-          <select class="select" id="dd" onchange="render()">
+          <select class="select" id="dd" onchange="render(true)">
             <option value="">全部</option><option>已扣课</option><option>未扣课</option><option>扣课异常</option>
           </select></div>
-        <div class="field"><label>日期</label>
-          <div class="flex gap8">
-            <input class="input" type="date" value="2026-10-01" style="max-width:150px">
-            <input class="input" type="date" value="2026-11-02" style="max-width:150px">
-          </div></div>
-        <div class="filter-actions"><button class="btn btn-primary" onclick="render()">查询</button>
+        <div class="field"><label>日期从</label><input class="input" type="date" id="df" onchange="render(true)"></div>
+        <div class="field"><label>日期到</label><input class="input" type="date" id="dt" onchange="render(true)"></div>
+        <div class="filter-actions"><button class="btn btn-primary" onclick="render(true)">查询</button>
           <button class="btn" onclick="reset()">重置</button></div>
       </div>
 
       <div class="card mt16">
         <div class="card-head"><div class="card-title">课程列表<span class="hint" id="cnt"></span></div>
-          <div class="small muted">「已开始」不等于实际完成</div></div>
+          <div class="flex gap8 aic">
+            <span class="small muted">每页</span>
+            <select class="select" id="ps" style="width:78px" onchange="pageSize=Number(this.value);render(true)">
+              <option>10</option><option selected>20</option><option>50</option>
+            </select>
+          </div></div>
         <div class="card-body tight">
           <div class="table-wrap">
             <table class="table">
               <thead>
-                <tr><th style="width:112px">课程编号</th><th>日期</th><th>开始</th><th>结束</th><th>学员</th><th>教师</th>
-                  <th>课程类型</th><th>腾讯会议</th><th>课程状态</th><th>扣课状态</th><th>创建人</th><th style="width:190px">操作</th></tr>
+                <tr><th style="width:132px">课程编号</th><th>日期 / 星期</th><th>时间</th><th>学员</th><th>教师</th>
+                  <th>类型</th><th>来源</th><th>腾讯会议</th><th>课程状态</th><th>扣课状态</th><th>创建人</th><th style="width:170px">操作</th></tr>
               </thead>
               <tbody id="rows"></tbody>
             </table>
           </div>
-          <div class="pager"><span>共 <b id="total">14</b> 条</span>
-            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
+          <div class="pager"><span id="totalText">共 0 条</span>
+            <div class="pages" id="pages"></div>
           </div>
         </div>
       </div>
 
+      <div class="card mt16" id="abnCard" style="display:none">
+        <div class="card-head"><div class="card-title">异常课程统一处理 <span class="hint" id="abnCnt"></span></div>
+          <button class="btn btn-sm" onclick="hideAbnormal()">收起</button></div>
+        <div class="card-body tight">
+          <div class="table-wrap"><table class="table compact">
+            <thead><tr><th>课程</th><th>日期</th><th>时间</th><th>学员</th><th>教师</th><th>状态</th><th>扣课</th><th>原因</th><th>教务备注</th><th style="width:110px">操作</th></tr></thead>
+            <tbody id="abnRows"></tbody>
+          </table></div>
+        </div>
+      </div>
+
       <div class="alert alert-info mt16"><span class="ico">i</span>
-        <div>「已开始」只表示教师进入了课堂，<b>不能代表实际上课完成</b>；只有教师提交课程结果后课程才变为「已完成」，并在余额充足时生成扣课流水。</div>
+        <div>「授课中」只表示教师进入了课堂，<b>不能代表实际上课完成</b>；只有教师提交课程结果后课程才变为「已完成」，并在余额充足时生成扣课流水。
+          本页取消课程<b>不扣课时</b>，也不物理删除历史课程。</div>
       </div>
 
     </main>
@@ -89,70 +99,163 @@
 <script>window.PROTO_ROOT = '../';</script>
 <script src="../assets/js/common.js"></script>
 <script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script>
 Proto.shell({ role: 'admin', active: 'course-list' });
+Store.setSession({ role: 'admin' });
+const S = Store;
+const esc = Proto.escHtml;
 
-const CST = { '已完成': 'tag-green', '待上课': 'tag-blue', '已开始': 'tag-cyan', '待处理': 'tag-amber', '未上课': 'tag-slate', '已取消': 'tag-slate' };
+const CST = { '已完成': 'tag-green', '待上课': 'tag-blue', '授课中': 'tag-cyan', '未上课': 'tag-slate', '已取消': 'tag-slate' };
 const DST = { '已扣课': 'tag-green nodot', '未扣课': 'tag-slate nodot', '扣课异常': 'tag-red nodot' };
 
-function render() {
-  const kw = document.getElementById('kw').value.trim();
-  const stu = document.getElementById('stu').value.trim();
-  const tc = document.getElementById('tc').value;
-  const st = document.getElementById('st').value;
-  const dd = document.getElementById('dd').value;
+let page = 1;
+let pageSize = 20;
 
-  const rows = DB.courses.filter(c => {
-    if (kw && !c.id.toLowerCase().includes(kw.toLowerCase())) return false;
-    if (stu && !c.student.includes(stu)) return false;
-    if (tc && c.teacher !== tc) return false;
-    if (st && c.status !== st) return false;
-    if (dd && c.deduct !== dd) return false;
-    return true;
-  }).sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
+/* 教师筛选包含历史教师（已退出教师的课程仍能查到） */
+(function initFilters() {
+  const ts = S.teachers().slice().sort((a, b) => a.code.localeCompare(b.code));
+  document.getElementById('tc').innerHTML = '<option value="">全部</option>' +
+    ts.map(t => `<option value="${esc(t.id)}">${esc(t.name)}（${esc(t.code)}）</option>`).join('');
+  document.getElementById('st').innerHTML = '<option value="">全部</option>' +
+    Object.keys(CST).map(s => `<option>${s}</option>`).join('');
+})();
 
-  document.getElementById('cnt').textContent = `筛选结果 ${rows.length} 条`;
-  document.getElementById('total').textContent = rows.length;
+function renderStats() {
+  const month = S.TODAY.slice(0, 7);
+  const all = S.courseQuery({ dateFrom: month + '-01', dateTo: month + '-31', all: true }).allRows;
+  document.getElementById('stDone').innerHTML = all.filter(r => r.status === '已完成').length + '<small>节</small>';
+  document.getElementById('stMissed').innerHTML = all.filter(r => r.status === '未上课').length + '<small>节</small>';
+  document.getElementById('stCancelled').innerHTML = all.filter(r => r.status === '已取消').length + '<small>节</small>';
+  document.getElementById('stAbnormal').innerHTML = all.filter(r => r.deductState === '扣课异常').length + '<small>节</small>';
+}
 
-  Proto.renderRows('rows', rows, c => `
+function render(reset) {
+  if (reset) page = 1;
+  const res = S.courseQuery({
+    kw: document.getElementById('kw').value,
+    teacherId: document.getElementById('tc').value,
+    status: document.getElementById('st').value,
+    deduct: document.getElementById('dd').value,
+    dateFrom: document.getElementById('df').value,
+    dateTo: document.getElementById('dt').value,
+    page: page, pageSize: pageSize, sort: 'desc'
+  });
+  page = res.page;
+
+  document.getElementById('cnt').textContent = `筛选结果 ${res.total} 条`;
+  document.getElementById('totalText').textContent =
+    `共 ${res.total} 条 · 第 ${res.page} / ${res.pages} 页`;
+
+  Proto.renderRows('rows', res.rows, c => {
+    const open = c.status === '待上课' || c.status === '授课中';
+    return `
     <tr>
-      <td class="mono small">${c.id}</td>
-      <td>${c.date}</td>
-      <td class="mono">${c.start}</td>
-      <td class="mono">${c.end}</td>
-      <td class="strong">${c.student}</td>
-      <td>${c.teacher}</td>
-      <td class="small">${c.type}</td>
-      <td>${c.meeting === '已生成'
-        ? '<span class="tag tag-green nodot">已生成</span>'
+      <td class="mono small">${esc(c.id)}</td>
+      <td>${esc(c.date)}<div class="small muted">${esc(c.weekday)}</div></td>
+      <td class="mono small">${esc(c.start)}—${esc(c.end)}</td>
+      <td class="strong">${esc(c.student)}<div class="small muted">${esc(c.grade || '')}</div></td>
+      <td>${esc(c.teacherName || c.teacher || '未分配')}<div class="small muted">${esc(c.teacherId || '')}</div></td>
+      <td class="small">${esc(c.type)}</td>
+      <td class="small muted">${esc(c.sourceLabel)}</td>
+      <td>${c.meetingUrl
+        ? `<a class="btn-link" href="${esc(c.meetingUrl)}" target="_blank" rel="noopener">已生成</a>`
         : '<span class="tag tag-slate nodot">未生成</span>'}</td>
-      <td><span class="tag ${CST[c.status]}">${c.status}</span></td>
-      <td><span class="tag ${DST[c.deduct]}">${c.deduct}</span></td>
-      <td class="small muted">${c.creator}</td>
+      <td><span class="tag ${CST[c.status] || 'tag-slate'}">${esc(c.status)}</span>
+        ${c.anomaly ? `<div class="small" style="color:var(--warning)">${esc(c.anomaly)}</div>` : ''}</td>
+      <td><span class="tag ${DST[c.deductState] || 'tag-slate nodot'}">${esc(c.deductState)}</span></td>
+      <td class="small muted">${esc(c.createdBy || '—')}</td>
       <td class="ops">
-        <a class="btn-link" href="course-detail.html">详情</a>
-        ${['待上课', '已开始'].includes(c.status)
-          ? `<button class="btn-link" onclick="Proto.toast('打开调整预约（示意）')">调整</button>
-             <button class="btn-link danger" onclick="cancel('${c.student}')">取消</button>`
-          : `<a class="btn-link" href="hour-flow.html">扣课流水</a>`}
+        <a class="btn-link" href="course-detail.html?id=${encodeURIComponent(c.id)}">详情</a>
+        ${open ? `<a class="btn-link" href="course-detail.html?id=${encodeURIComponent(c.id)}">调整</a>
+          <button class="btn-link danger" onclick="cancelCourse('${esc(c.id)}')">取消</button>`
+        : c.status === '已完成' ? '<a class="btn-link" href="hour-flow.html">扣课流水</a>' : ''}
       </td>
-    </tr>`, 12, '没有符合条件的课程');
+    </tr>`;
+  }, 12, '没有符合条件的课程');
+
+  renderPages(res.pages);
+}
+
+function renderPages(pages) {
+  const box = document.getElementById('pages');
+  if (pages <= 1) { box.innerHTML = ''; return; }
+  let nums = [];
+  for (let i = 1; i <= pages; i++) {
+    if (i === 1 || i === pages || Math.abs(i - page) <= 2) nums.push(i);
+    else if (nums[nums.length - 1] !== '…') nums.push('…');
+  }
+  box.innerHTML = `<button class="pg" ${page <= 1 ? 'disabled' : ''} onclick="goPage(${page - 1})">‹</button>` +
+    nums.map(n => n === '…' ? '<span class="pg" style="cursor:default">…</span>'
+      : `<button class="pg ${n === page ? 'on' : ''}" onclick="goPage(${n})">${n}</button>`).join('') +
+    `<button class="pg" ${page >= pages ? 'disabled' : ''} onclick="goPage(${page + 1})">›</button>`;
+}
+
+function goPage(n) {
+  if (n < 1) return;
+  page = n;
+  render(false);
 }
 
 function reset() {
-  document.getElementById('kw').value = '';
-  document.getElementById('stu').value = '';
-  ['tc', 'st', 'dd'].forEach(id => document.getElementById(id).value = '');
-  render();
+  ['kw', 'tc', 'st', 'dd', 'df', 'dt'].forEach(id => document.getElementById(id).value = '');
+  render(true);
 }
 
-function cancel(name) {
+function cancelCourse(id) {
+  const c = S.course(id);
+  if (!c) { Proto.toast('课程不存在', 'err'); return; }
   Proto.confirmBox('取消课程',
-    `确认取消 <b>${name}</b> 的这节课程吗？<br><br>取消课程不扣课时；如已误扣，需通过冲正流水修复。`,
-    '确认取消', () => Proto.toast('课程已取消', 'ok'));
+    `确认取消 <b>${esc(c.student)}</b> ${esc(c.date)} ${esc(c.start)}—${esc(c.end)} 的课程吗？<br><br>
+     取消课程<b>不扣课时</b>；如已误扣，需通过冲正流水修复。课程记录会保留，不会物理删除。`,
+    '确认取消', () => {
+      try {
+        S.cancelCourse(id, '教务在课程记录中取消');
+        Proto.toast('课程已取消，未扣课时', 'ok');
+        render(false);
+        renderStats();
+      } catch (e) {
+        Proto.toast(e.message || '取消失败', 'err');
+      }
+    });
 }
 
-render();
+/* 第十三轮：异常课程统一处理台（未上课/已取消/扣课异常 + 处理备注） */
+function showAbnormal() {
+  const card = document.getElementById('abnCard');
+  card.style.display = '';
+  renderAbnormal();
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function hideAbnormal() { document.getElementById('abnCard').style.display = 'none'; }
+function renderAbnormal() {
+  let list = [];
+  try { list = S.abnormalCourses(); } catch (e) { Proto.toast(e.message, 'err'); return; }
+  document.getElementById('abnCnt').textContent = '共 ' + list.length + ' 节';
+  Proto.renderRows('abnRows', list, c => `<tr>
+    <td class="mono small"><a href="course-detail.html?id=${encodeURIComponent(c.id)}">${esc(c.id)}</a></td>
+    <td>${esc(c.date)}</td><td class="mono small">${esc(c.start)}—${esc(c.end)}</td>
+    <td class="strong">${esc(c.student)}</td><td>${esc(c.teacher)}</td>
+    <td><span class="tag ${CST[c.status] || 'tag-slate'}">${esc(c.status)}</span></td>
+    <td><span class="tag ${DST[c.deductState] || 'tag-slate nodot'}">${esc(c.deductState)}</span></td>
+    <td class="small muted">${esc(c.reason || '—')}</td>
+    <td><input class="input" id="abn_${esc(c.id)}" value="${esc(c.workNote || '')}" placeholder="处理备注" style="min-width:140px"></td>
+    <td class="ops"><button class="btn-link" onclick="saveAbnNote('${esc(c.id)}')">保存备注</button></td>
+  </tr>`, 10, '当前没有异常课程');
+}
+function saveAbnNote(id) {
+  const el = document.getElementById('abn_' + id);
+  try {
+    S.courseWorkNote(id, el ? el.value : '');
+    Proto.toast('异常课程备注已保存', 'ok');
+    renderAbnormal();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+render(true);
+renderStats();
+/* 从教务工作台直达：?tab=abnormal */
+if (new URLSearchParams(location.search).get('tab') === 'abnormal') showAbnormal();
 </script>
 </body>
 </html>

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>教师课时费规则</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">财务管理<span class="sep">/</span>教师课时费规则</div>
+          <h1 class="page-title">教师课时费规则</h1>
+          <div class="page-sub">按「教师 + 课型」配置单价；修改采用版本化，历史计费金额不受新规则影响。</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-primary" onclick="openCreate()">+ 新增规则</button>
+        </div>
+      </div>
+
+      <div class="card filter">
+        <div class="field"><label>教师</label>
+          <select class="select" id="fTeacher" onchange="render()"><option value="">全部教师</option></select></div>
+        <div class="field"><label>课型</label>
+          <select class="select" id="fCourseType" onchange="render()">
+            <option value="">全部</option><option>体验课</option><option>正式课</option>
+          </select></div>
+        <div class="field"><label>状态</label>
+          <select class="select" id="fStatus" onchange="render()">
+            <option value="">全部</option><option>启用</option><option>停用</option>
+          </select></div>
+        <div class="filter-actions"><button class="btn" onclick="render()">查询</button></div>
+      </div>
+
+      <div class="card mt16">
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>规则编号</th><th>教师</th><th>课型</th><th>计费方式</th><th class="right">单价(元)</th>
+                <th>生效日期</th><th>失效日期</th><th>状态</th><th>创建人</th><th style="width:180px">操作</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 <b id="total">0</b> 条</span></div>
+        </div>
+      </div>
+
+      <div class="alert alert-info mt16"><span class="ico">i</span>
+        <div>已被历史计费引用的规则<b>不能修改单价/计费方式/生效日期</b>（只能停用或新建版本）；新增同课型规则时旧版本自动截止到新规则生效前一天，历史金额保持不变。</div></div>
+
+    </main>
+  </div>
+</div>
+
+<!-- 新增/修改规则 -->
+<div class="mask" id="ruleModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title" id="ruleTitle">新增规则</div>
+      <button class="modal-close" onclick="Proto.closeModal('ruleModal')">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field"><label>教师 <span class="req">*</span></label>
+          <select class="select" id="r_teacher"></select></div>
+        <div class="field"><label>课型 <span class="req">*</span></label>
+          <select class="select" id="r_courseType"><option>体验课</option><option>正式课</option></select></div>
+        <div class="field"><label>计费方式 <span class="req">*</span></label>
+          <select class="select" id="r_pricing"><option>按小时</option><option>按节</option><option>按实际分钟</option></select></div>
+        <div class="field"><label>单价（元） <span class="req">*</span></label>
+          <input class="input" id="r_price" type="number" min="0" step="0.01" placeholder="如 80"></div>
+        <div class="field"><label>生效日期 <span class="req">*</span></label>
+          <input class="input" id="r_from" type="date"></div>
+        <div class="field"><label>失效日期（可空=长期）</label>
+          <input class="input" id="r_to" type="date"></div>
+        <div class="field full"><label>变更原因</label>
+          <input class="input" id="r_reason" placeholder="记录到规则修改记录与审计日志"></div>
+      </div>
+      <div id="ruleErr" class="small" style="color:var(--danger)"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('ruleModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveRule()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 修改记录 -->
+<div class="mask" id="historyModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">规则修改记录</div>
+      <button class="modal-close" onclick="Proto.closeModal('historyModal')">×</button></div>
+    <div class="modal-body" id="historyBody"></div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'teacher-pay-rules' });
+const S = Store;
+let editingId = '';
+
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function yuan(cents) { return (Number(cents || 0) / 100).toFixed(2); }
+function teachers() { return (S.teachers ? S.teachers() : S.db.teachers) || []; }
+
+(function initSelects() {
+  const t = document.getElementById('fTeacher');
+  const rt = document.getElementById('r_teacher');
+  const list = teachers();
+  t.innerHTML = '<option value="">全部教师</option>' + list.map(x => `<option value="${x.id}">${esc(x.name)} · ${esc(x.code || x.id)}</option>`).join('');
+  rt.innerHTML = list.map(x => `<option value="${x.id}">${esc(x.name)} · ${esc(x.code || x.id)}</option>`).join('');
+})();
+
+function render() {
+  const teacherId = document.getElementById('fTeacher').value;
+  const courseType = document.getElementById('fCourseType').value;
+  const status = document.getElementById('fStatus').value;
+  let list;
+  try { list = S.payRuleList({ teacherId, courseType, status }); }
+  catch (e) { Proto.toast(e.message, 'err'); return; }
+  document.getElementById('total').textContent = list.length;
+  document.getElementById('rows').innerHTML = list.length ? list.map(r => `
+    <tr>
+      <td class="mono small">${esc(r.id)}</td>
+      <td class="strong">${esc(r.teacherName)} <span class="small muted">${esc(r.teacherCode || '')}</span></td>
+      <td><span class="tag ${r.courseType === '体验课' ? 'tag-amber' : 'tag-blue'} nodot">${esc(r.courseType)}</span></td>
+      <td class="small">${esc(r.pricingMode)}</td>
+      <td class="right mono">${yuan(r.unitPriceCents)}</td>
+      <td class="small">${esc(r.effectiveFrom || '—')}</td>
+      <td class="small">${esc(r.effectiveTo || '长期')}</td>
+      <td><span class="tag ${r.status === '启用' ? 'tag-green' : 'tag-slate'} nodot">${esc(r.status)}</span></td>
+      <td class="small muted">${esc(r.createdBy || '—')}</td>
+      <td class="ops">
+        <button class="btn-link" onclick="openEdit('${r.id}')">修改</button>
+        <button class="btn-link" onclick="openHistory('${r.id}')">记录</button>
+        ${r.status === '启用' ? `<button class="btn-link danger" onclick="doDisable('${r.id}')">停用</button>` : ''}
+      </td>
+    </tr>`).join('') : '<tr><td colspan="10" class="empty">暂无规则，请新增</td></tr>';
+}
+
+function openCreate() {
+  editingId = '';
+  document.getElementById('ruleTitle').textContent = '新增规则';
+  document.getElementById('r_courseType').disabled = false;
+  document.getElementById('r_price').value = '';
+  document.getElementById('r_from').value = S.TODAY;
+  document.getElementById('r_to').value = '';
+  document.getElementById('r_reason').value = '';
+  document.getElementById('ruleErr').textContent = '';
+  Proto.openModal('ruleModal');
+}
+
+function openEdit(id) {
+  const r = S.payRule(id);
+  if (!r) { Proto.toast('规则不存在', 'err'); return; }
+  editingId = id;
+  document.getElementById('ruleTitle').textContent = '修改规则 · ' + id;
+  document.getElementById('r_teacher').value = r.teacherId;
+  document.getElementById('r_teacher').disabled = true;
+  document.getElementById('r_courseType').value = r.courseType;
+  document.getElementById('r_courseType').disabled = true;
+  document.getElementById('r_pricing').value = r.pricingMode;
+  document.getElementById('r_price').value = yuan(r.unitPriceCents);
+  document.getElementById('r_from').value = r.effectiveFrom || '';
+  document.getElementById('r_to').value = r.effectiveTo || '';
+  document.getElementById('r_reason').value = '';
+  document.getElementById('ruleErr').textContent = S.payRuleUsedByFees(id) ? '该规则已用于历史计费：单价/计费方式/生效日期不可改，可调整失效日期或停用。' : '';
+  Proto.openModal('ruleModal');
+}
+
+function saveRule() {
+  const teacherId = document.getElementById('r_teacher').value;
+  const courseType = document.getElementById('r_courseType').value;
+  const pricingMode = document.getElementById('r_pricing').value;
+  const priceYuan = Number(document.getElementById('r_price').value);
+  const from = document.getElementById('r_from').value;
+  const to = document.getElementById('r_to').value;
+  const reason = document.getElementById('r_reason').value.trim();
+  const err = document.getElementById('ruleErr');
+  err.textContent = '';
+  if (!(priceYuan > 0)) { err.textContent = '请输入大于 0 的单价'; return; }
+  try {
+    if (editingId) {
+      S.updatePayRule(editingId, { unitPriceCents: Math.round(priceYuan * 100), pricingMode, effectiveFrom: from, effectiveTo: to, reason });
+      Proto.toast('规则已更新（版本化留痕）', 'ok');
+    } else {
+      S.createPayRule({ teacherId, courseType, pricingMode, unitPriceCents: Math.round(priceYuan * 100), effectiveFrom: from, effectiveTo: to, reason });
+      Proto.toast('规则已创建', 'ok');
+    }
+    Proto.closeModal('ruleModal');
+    document.getElementById('r_teacher').disabled = false;
+    document.getElementById('r_courseType').disabled = false;
+    render();
+  } catch (e) { err.textContent = e.message; Proto.toast(e.message, 'err'); }
+}
+
+function doDisable(id) {
+  Proto.confirmBox('停用规则', `停用 <b>${id}</b> 后新课程将不再命中该规则；已生成的课时费金额不变。`, '确认停用', () => {
+    try { S.disablePayRule(id, '管理员停用'); Proto.toast('规则已停用', 'warn'); render(); }
+    catch (e) { Proto.toast(e.message, 'err'); }
+  });
+}
+
+function openHistory(id) {
+  const r = S.payRule(id);
+  if (!r) return;
+  const log = (r.changeLog || []).slice().reverse();
+  document.getElementById('historyBody').innerHTML = log.length ? log.map(x => `
+    <div class="m-row" style="display:block">
+      <div class="flex jcb"><b>${esc(x.action)}</b><span class="small muted">${esc(x.at || '')} · ${esc(x.by || '')}</span></div>
+      <div class="small muted">${esc(x.note || '')}</div>
+      ${x.before ? `<div class="small">变更前：${esc(JSON.stringify(x.before))}</div>` : ''}
+      ${x.after ? `<div class="small">变更后：${esc(JSON.stringify(x.after))}</div>` : ''}
+    </div>`).join('') : '<div class="small muted">暂无修改记录</div>';
+  Proto.openModal('historyModal');
+}
+
+render();
+</script>
+</body>
+</html>
