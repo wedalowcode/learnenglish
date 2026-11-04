@@ -72,29 +72,28 @@
 
       <div class="card filter mb16">
         <div class="field"><label>教师</label>
-          <select class="select" id="f_teacher" onchange="drawCal()">
-            <option value="">全部教师</option><option>李婉</option><option>周雅</option><option>何俊</option><option>沈心怡</option>
-          </select></div>
+          <select class="select" id="f_teacher" onchange="drawCal()"></select></div>
         <div class="field"><label>学员</label>
-          <select class="select" onchange="drawCal()"><option value="">全部学员</option>
-            <option>陈可欣</option><option>付嘉禾</option><option>赵一诺</option><option>林子轩</option><option>孙浩宇</option></select></div>
+          <select class="select" id="f_student" onchange="drawCal()"></select></div>
         <div class="field"><label>课程状态</label>
           <select class="select" id="f_status" onchange="drawCal()">
-            <option value="">全部</option><option>待上课</option><option>已开始</option><option>已完成</option>
-            <option>已取消</option><option>未上课</option><option>待处理</option>
+            <option value="">全部</option><option>待上课</option><option>授课中</option><option>已完成</option>
+            <option>未上课</option><option>已取消</option>
           </select></div>
         <div class="field"><label>腾讯会议</label>
-          <select class="select"><option value="">全部</option><option>已生成</option><option>未生成</option></select></div>
-        <div class="filter-actions"><button class="btn" onclick="Proto.toast('已刷新日历','ok')">刷新</button></div>
+          <select class="select" id="f_meeting" onchange="drawCal()">
+            <option value="">全部</option><option value="has">已有链接</option><option value="none">待补充</option>
+          </select></div>
+        <div class="filter-actions"><button class="btn" onclick="drawCal()">刷新</button></div>
       </div>
 
       <div class="flex jcb aic mb12">
         <div class="small muted" id="rangeLabel">2026-11-02（周一）~ 2026-11-08（周日）</div>
         <div class="flex gap8 aic small">
           <span class="tag tag-green nodot">已完成</span>
-          <span class="tag tag-blue nodot">待上课</span>
-          <span class="tag tag-amber nodot">待处理</span>
-          <span class="tag tag-slate nodot">取消 / 未上</span>
+          <span class="tag tag-blue nodot">待上课 / 授课中</span>
+          <span class="tag tag-amber nodot">未上课</span>
+          <span class="tag tag-slate nodot">已取消</span>
         </div>
       </div>
 
@@ -114,7 +113,8 @@
 
       <div class="alert alert-warn mt16"><span class="ico">!</span>
         <div><b>排课校验：</b>开始时间必须早于结束时间 · 同一教师时间段不可冲突 · 同一学员时间段不可冲突 ·
-          教师必须处于可授课状态 · 课程必须关联有效学员。<a href="#" onclick="demoConflict();return false">点此演示冲突拦截 →</a></div>
+          教师必须处于可授课状态 · 课程必须关联有效学员 · 会议链接必须是真实地址（留空则显示「待补充」，不会模拟生成）。
+          <a href="#" onclick="demoConflict();return false">点此演示冲突拦截 →</a></div>
       </div>
 
     </main>
@@ -132,17 +132,13 @@
         <div class="field"><label>学员 <span class="req">*</span></label>
           <select class="select" id="n_student">
             <option value="">请选择学员</option>
-            <option>陈可欣</option><option>付嘉禾</option><option>赵一诺</option>
-            <option>林子轩</option><option>孙浩宇</option><option>林雨萱</option>
           </select></div>
-        <div class="field"><label>教师 <span class="req">*</span></label>
+        <div class="field"><label>授课教师 <span class="req">*</span></label>
           <select class="select" id="n_teacher">
             <option value="">请选择教师</option>
-            <option>李婉</option><option>周雅</option><option>何俊</option><option>沈心怡</option>
-            <option>徐峰（已停用）</option>
           </select></div>
         <div class="field"><label>课程类型</label>
-          <select class="select"><option>一对一</option><option>补课</option><option>试听</option></select></div>
+          <select class="select" id="n_type"><option>一对一</option><option>补课</option><option>试听</option></select></div>
         <div class="field"><label>上课日期 <span class="req">*</span></label>
           <input class="input" type="date" id="n_date" value="2026-11-02"></div>
         <div class="field"><label>开始时间 <span class="req">*</span></label>
@@ -150,11 +146,11 @@
         <div class="field"><label>结束时间 <span class="req">*</span></label>
           <input class="input" type="time" id="n_end" value="10:30"></div>
         <div class="field full"><label>腾讯会议链接</label>
-          <input class="input" placeholder="粘贴会议链接，或留空由系统自动生成">
-          <div class="tip">留空将在课程保存后自动创建会议并回填链接</div></div>
-        <div class="field full"><label>教学备注</label><textarea class="textarea" placeholder="本节课计划、注意事项"></textarea></div>
-        <div class="field"><label class="check"><input type="checkbox"> 通知家长（预留）</label></div>
-        <div class="field"><label class="check"><input type="checkbox" checked> 通知教师（预留）</label></div>
+          <input class="input" id="n_meeting" placeholder="https://meeting.tencent.com/dm/…">
+          <div class="tip">必须填写真实链接；留空表示暂未确定，教师端会显示「会议链接待教务补充」</div></div>
+        <div class="field full"><label>教学备注</label><textarea class="textarea" id="n_note" placeholder="本节课计划、注意事项"></textarea></div>
+        <div class="field"><label class="check"><input type="checkbox" disabled> 通知家长（预留）</label></div>
+        <div class="field"><label class="check"><input type="checkbox" disabled> 通知教师（预留）</label></div>
       </div>
     </div>
     <div class="modal-foot">
@@ -173,7 +169,6 @@
     <div class="modal-body" id="evBody"></div>
     <div class="modal-foot">
       <button class="btn" onclick="Proto.closeModal('evModal')">关闭</button>
-      <a class="btn" href="course-detail.html">课程详情</a>
       <button class="btn btn-danger" onclick="cancelCourse()">取消课程</button>
     </div>
   </div>
@@ -209,14 +204,21 @@ Proto.shell({ role: 'admin', active: 'schedule-calendar' });
 Store.setSession({ role: 'admin' });
 const S = Store;
 
-/* 教师候选只来自 Store 的可授课资源池：暂停合作与已退出教师不会出现 */
-(function initTeacherPool() {
+/* 下拉选项全部来自 Store：学员 / 教师都用真实 ID，提交时写进课程集合 */
+(function initPickers() {
   const all = S.teachers();
   document.getElementById('f_teacher').innerHTML = '<option value="">全部教师</option>' +
-    all.map(t => `<option>${t.name}</option>`).join('');
+    all.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+
+  const stus = S.students().slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  document.getElementById('f_student').innerHTML = '<option value="">全部学员</option>' +
+    stus.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  document.getElementById('n_student').innerHTML = '<option value="">请选择学员</option>' +
+    stus.map(s => `<option value="${s.id}">${s.name} · ${s.grade || '—'}</option>`).join('');
+
   const pool = S.teacherPool();
   document.getElementById('n_teacher').innerHTML = '<option value="">请选择教师</option>' +
-    pool.map(p => `<option>${p.teacher.name}</option>`).join('');
+    pool.map(p => `<option value="${p.teacher.id}">${p.teacher.name}（当前 ${p.stat.currentStudents} 人）</option>`).join('');
 })();
 
 const DAYS = ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08'];
@@ -225,15 +227,20 @@ const START_H = 9, END_H = 21, ROW_H = 56;
 let view = 'week';
 let currentEv = null;
 
-const sCls = s => ({ '已完成': 's-done', '待上课': 's-todo', '已开始': 's-todo', '待处理': 's-warn',
+const sCls = s => ({ '已完成': 's-done', '待上课': 's-todo', '授课中': 's-todo', '已开始': 's-todo',
   '已取消': 's-off', '未上课': 's-off' })[s] || 's-todo';
 
 function filtered() {
   const t = document.getElementById('f_teacher').value;
+  const st = document.getElementById('f_student').value;
   const s = document.getElementById('f_status').value;
+  const m = document.getElementById('f_meeting').value;
   return S.courses().filter(c => {
-    if (t && c.teacher !== t) return false;
+    if (t && c.teacherId !== t) return false;
+    if (st && c.studentId !== st) return false;
     if (s && c.status !== s) return false;
+    if (m === 'has' && !c.meetingUrl) return false;
+    if (m === 'none' && c.meetingUrl) return false;
     return true;
   });
 }
@@ -305,104 +312,130 @@ function openCreate() {
   Proto.openModal('createModal');
 }
 
-/* ---------- 核心：冲突校验 ---------- */
-function toMin(t) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
-
-function checkConflict(student, teacher, date, start, end) {
-  const errs = [];
-  if (toMin(start) >= toMin(end)) {
-    errs.push({ type: 'danger', text: '开始时间必须早于结束时间。' });
-    return errs;
-  }
-  if (teacher.startsWith('徐峰')) {
-    errs.push({ type: 'danger', text: '教师「徐峰」处于<b>暂停合作</b>状态，不可排课。请选择可授课教师。' });
-    return errs;
-  }
-  /* 教师候选池只给可授课教师；这里再兜一层，防止直接改 DOM 绕过 */
-  const tObj = S.teachers().filter(t => t.name === teacher)[0];
-  if (!tObj) {
-    errs.push({ type: 'danger', text: `教师「${teacher}」不存在或已离职。` });
-    return errs;
-  }
-  if (tObj.cooperationStatus !== S.COOP.READY) {
-    errs.push({ type: 'danger', text: `教师「${teacher}」当前为<b>${tObj.cooperationStatus}</b>状态，不可创建有效排课。` });
-    return errs;
-  }
-  const s1 = toMin(start), e1 = toMin(end);
-  S.courses().forEach(c => {
-    if (c.date !== date || c.status === '已取消') return;
-    const s2 = toMin(c.start), e2 = toMin(c.end);
-    const overlap = s1 < e2 && s2 < e1;
-    if (!overlap) return;
-    if (c.teacher === teacher) {
-      errs.push({ type: 'danger',
-        text: `教师时间冲突：<b>${teacher}</b> 在 ${c.start}-${c.end} 已安排课程 <b>${c.id}</b>（学员 ${c.student}）。` });
-    }
-    if (c.student === student) {
-      errs.push({ type: 'danger',
-        text: `学员时间冲突：<b>${student}</b> 在 ${c.start}-${c.end} 已有课程 <b>${c.id}</b>（教师 ${c.teacher}）。` });
-    }
-  });
-  return errs;
+/* ---------- 提交：真实写入 Store，冲突在 Store 写入入口再次校验 ---------- */
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
 function submitCourse() {
-  const student = document.getElementById('n_student').value;
-  const teacher = document.getElementById('n_teacher').value;
+  const studentId = document.getElementById('n_student').value;
+  const teacherId = document.getElementById('n_teacher').value;
   const date = document.getElementById('n_date').value;
   const start = document.getElementById('n_start').value;
   const end = document.getElementById('n_end').value;
+  const meetingUrl = document.getElementById('n_meeting').value.trim();
+  const note = document.getElementById('n_note').value.trim();
+  const type = document.getElementById('n_type').value;
+  const box = document.getElementById('conflictBox');
 
-  if (!student || !teacher || !date || !start || !end) {
+  if (!studentId || !teacherId || !date || !start || !end) {
+    box.innerHTML = `<div class="alert alert-danger mb12"><span class="ico">!</span>
+      <div>请补全学员、授课教师、上课日期与起止时间。</div></div>`;
     Proto.toast('请补全学员、教师、日期与时间', 'err');
     return;
   }
-  const errs = checkConflict(student, teacher, date, start, end);
-  const box = document.getElementById('conflictBox');
 
-  if (errs.length) {
-    box.innerHTML = errs.map(e => `<div class="alert alert-${e.type} mb12"><span class="ico">!</span><div>${e.text}</div></div>`).join('');
-    Proto.toast('排课校验未通过，已拦截', 'err');
-    return;
+  try {
+    /* 服务端二次校验：学员/教师存在、时间合法、会议链接格式、教师与学员时段冲突 */
+    const c = S.createCourse({ studentId, teacherId, date, start, end, meetingUrl, note, type });
+    box.innerHTML = `<div class="alert alert-success mb12"><span class="ico">✓</span>
+      <div>课程 <b>${c.id}</b> 已写入课程集合：${esc(c.student)} · ${esc(c.teacher)} · ${c.date} ${c.start}—${c.end}
+        · ${c.meetingUrl ? '会议链接已保存' : '会议链接待补充'}。</div></div>`;
+    Proto.toast('课程已创建 ' + c.id + '，教师工作台可见', 'ok');
+    drawCal();
+    setTimeout(() => Proto.closeModal('createModal'), 700);
+  } catch (e) {
+    box.innerHTML = `<div class="alert alert-danger mb12"><span class="ico">!</span>
+      <div><b>排课未保存：</b>${esc(e.message)}</div></div>`;
+    Proto.toast(e.message, 'err');
   }
-  box.innerHTML = `<div class="alert alert-success mb12"><span class="ico">✓</span>
-    <div>校验通过：教师与学员时段均无冲突，正在保存预约。</div></div>`;
-  Proto.toast('课程已创建，会议链接将自动生成', 'ok');
-  setTimeout(() => Proto.closeModal('createModal'), 700);
 }
 
 function demoConflict() {
   Proto.openModal('createModal');
-  document.getElementById('n_student').value = '陈可欣';
-  document.getElementById('n_teacher').value = '李婉';
-  document.getElementById('n_date').value = '2026-11-02';
-  document.getElementById('n_start').value = '09:30';
-  document.getElementById('n_end').value = '10:30';
+  const c = S.courses().filter(x => x.status === '待上课')[0];
+  if (!c) { Proto.toast('演示数据中没有待上课的课程', 'warn'); return; }
   document.getElementById('conflictBox').innerHTML = '';
+  document.getElementById('n_student').value = c.studentId;
+  document.getElementById('n_teacher').value = c.teacherId;
+  document.getElementById('n_date').value = c.date;
+  document.getElementById('n_start').value = c.start;
+  document.getElementById('n_end').value = c.end;
+  document.getElementById('n_meeting').value = '';
   setTimeout(submitCourse, 300);
 }
 
 function openEv(c) {
   currentEv = c;
   document.getElementById('evTitle').textContent = `${c.student} · ${c.start}-${c.end}`;
+  const meeting = c.meetingUrl
+    ? `<a class="btn-link" href="${esc(c.meetingUrl)}" target="_blank" rel="noopener">打开腾讯会议</a>
+       <span class="small muted mono" style="margin-left:8px">${esc(c.meetingUrl)}</span>
+       <button class="btn btn-sm" style="margin-left:8px" onclick="copyMeeting()">复制链接</button>`
+    : '<span class="tag tag-amber nodot">会议链接待补充</span>';
+  const editable = c.status === '已完成' || c.status === '已取消';
   document.getElementById('evBody').innerHTML = `
     <div class="desc g2 mb16">
       <div class="desc-item"><span class="k">课程编号</span><span class="v mono">${c.id}</span></div>
       <div class="desc-item"><span class="k">课程状态</span><span class="v"><span class="tag tag-blue">${c.status}</span></span></div>
-      <div class="desc-item"><span class="k">学员</span><span class="v">${c.student}</span></div>
-      <div class="desc-item"><span class="k">教师</span><span class="v">${c.teacher}</span></div>
+      <div class="desc-item"><span class="k">学员</span><span class="v">${esc(c.student)}</span></div>
+      <div class="desc-item"><span class="k">教师</span><span class="v">${esc(c.teacher)}</span></div>
       <div class="desc-item"><span class="k">日期</span><span class="v">${c.date}</span></div>
       <div class="desc-item"><span class="k">时间</span><span class="v mono">${c.start}-${c.end}</span></div>
-      <div class="desc-item"><span class="k">腾讯会议</span><span class="v">${c.meeting}</span></div>
-      <div class="desc-item"><span class="k">扣课状态</span><span class="v">${c.deduct}</span></div>
+      <div class="desc-item"><span class="k">腾讯会议</span><span class="v">${meeting}</span></div>
+      <div class="desc-item"><span class="k">扣课状态</span><span class="v">${esc(c.deduct)}</span></div>
+      <div class="desc-item"><span class="k">创建人</span><span class="v">${esc(c.createdBy || c.creator || '—')}</span></div>
+      <div class="desc-item"><span class="k">创建时间</span><span class="v mono">${esc(c.createdAt || '—')}</span></div>
     </div>
-    ${c.note ? `<div class="alert alert-info"><span class="ico">i</span><div>${c.note}</div></div>` : ''}
-    <div class="mt16 flex gap8">
-      <button class="btn btn-sm" onclick="Proto.toast('打开调整时间（示意）')">调整时间</button>
-      <button class="btn btn-sm" onclick="openReassign()">调整教师</button>
-      <button class="btn btn-sm" onclick="Proto.toast('已复制会议链接','ok')">复制会议链接</button>
+    ${c.note ? `<div class="alert alert-info mb12"><span class="ico">i</span><div>${esc(c.note)}</div></div>` : ''}
+    <div class="section-title">教务维护排课信息</div>
+    <div class="form-grid g2" style="margin-bottom:6px">
+      <div class="field"><label>上课日期</label>
+        <input class="input" type="date" id="e_date" value="${c.date}" ${editable ? 'disabled' : ''}></div>
+      <div class="field"><label>开始时间</label>
+        <input class="input" type="time" id="e_start" value="${c.start}" ${editable ? 'disabled' : ''}></div>
+      <div class="field"><label>结束时间</label>
+        <input class="input" type="time" id="e_end" value="${c.end}" ${editable ? 'disabled' : ''}></div>
+      <div class="field"><label>腾讯会议链接</label>
+        <input class="input" id="e_meeting" placeholder="https://meeting.tencent.com/dm/…"
+          value="${esc(c.meetingUrl || '')}" ${editable ? 'disabled' : ''}></div>
+    </div>
+    <div class="small muted mb12">${editable
+      ? '该课程已结束，排课信息只读。'
+      : '保存时会重新校验教师与学员时段冲突；留空链接表示会议待补充。'}</div>
+    <div class="flex gap8">
+      <button class="btn btn-sm" onclick="openReassign()" ${editable ? 'disabled' : ''}>调整授课教师</button>
+      <button class="btn btn-sm btn-primary" onclick="saveEvEdit()" ${editable ? 'disabled' : ''}>保存修改</button>
     </div>`;
   Proto.openModal('evModal');
+}
+
+function copyMeeting() {
+  if (!currentEv || !currentEv.meetingUrl) { Proto.toast('该课程还没有会议链接', 'warn'); return; }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(currentEv.meetingUrl)
+      .then(() => Proto.toast('会议链接已复制', 'ok'))
+      .catch(() => Proto.toast('复制失败，请手动选择链接', 'err'));
+  } else {
+    Proto.toast('当前环境不支持自动复制，请手动选择链接', 'warn');
+  }
+}
+
+function saveEvEdit() {
+  if (!currentEv) return;
+  try {
+    S.updateCourse(currentEv.id, {
+      date: document.getElementById('e_date').value,
+      start: document.getElementById('e_start').value,
+      end: document.getElementById('e_end').value,
+      meetingUrl: document.getElementById('e_meeting').value.trim()
+    });
+    Proto.toast('排课信息已保存', 'ok');
+    drawCal();
+    openEv(S.course(currentEv.id));
+  } catch (e) {
+    Proto.toast(e.message, 'err');
+  }
 }
 
 function cancelCourse() {
