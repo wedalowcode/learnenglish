@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>周期排课</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .preview-box { max-height:420px; overflow:auto; border:1px solid var(--border); border-radius:8px; }
+  .row-bad td { background:#fef2f2; }
+  .row-warn td { background:#fffbeb; }
+  .row-skip td { opacity:.55; }
+  .row-time { width:108px; }
+  .series-item { padding:10px 12px; border-bottom:1px solid var(--border); cursor:pointer; }
+  .series-item:last-child { border-bottom:none; }
+  .series-item.on { background:var(--primary-soft); }
+  .series-item b { font-size:13px; display:block; }
+  .series-item span { font-size:11px; color:var(--text-3); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+      <div class="page-head">
+        <div>
+          <div class="crumb">排课管理<span class="sep">/</span>周期排课</div>
+          <h1 class="page-title">周期排课</h1>
+          <div class="page-sub">规则先预览，逐日生成实例；一天冲突不整体失败，可改时间 / 换教师 / 跳过 / 重校验</div>
+        </div>
+        <div class="page-actions"><a class="btn" href="schedule-workbench.html">返回排课总览</a></div>
+      </div>
+
+      <div class="split" style="display:grid;grid-template-columns:270px minmax(0,1fr);gap:16px;align-items:start">
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-weight:600;font-size:13px">已有周期</div>
+          <div id="seriesList"></div>
+        </div>
+
+        <div>
+          <div class="card mb16">
+            <div class="section-title">周期规则</div>
+            <div class="form-grid g3">
+              <div class="field"><label>学员 <span class="req">*</span></label><select class="select" id="s_student" onchange="resetPreview()"></select></div>
+              <div class="field"><label>教师 <span class="req">*</span></label><select class="select" id="s_teacher" onchange="resetPreview()"></select></div>
+              <div class="field"><label>课程类型</label><select class="select" id="s_type" onchange="resetPreview()"><option>一对一</option><option>补课</option></select></div>
+              <div class="field"><label>生效开始 <span class="req">*</span></label><input class="input" type="date" id="s_from" onchange="resetPreview()"></div>
+              <div class="field"><label>生效结束 <span class="req">*</span></label><input class="input" type="date" id="s_to" onchange="resetPreview()"></div>
+              <div class="field"><label>单节时长（分钟）</label><input class="input" type="number" id="s_duration" min="30" step="15" value="60" onchange="resetPreview()"></div>
+            </div>
+            <div class="tier-title">每周上课星期（统一开始时间）</div>
+            <div class="flex gap8 wrap mb12" id="s_weekdays"></div>
+            <div class="form-grid g3">
+              <div class="field"><label>上课开始时间</label><input class="input" type="time" id="s_start" value="19:00" onchange="resetPreview()"></div>
+              <div class="field"><label>会议链接策略</label><select class="select" id="s_policy" onchange="resetPreview()">
+                <option value="逐节填">逐节填（留空待补充）</option><option value="同一链接">同一链接</option></select></div>
+              <div class="field"><label>同一链接地址</label><input class="input" id="s_meeting" placeholder="https://meeting.tencent.com/dm/…" onchange="resetPreview()"></div>
+            </div>
+            <div class="field mt12"><label>周期备注</label><input class="input" id="s_note" placeholder="如：期中后固定周一周三晚课" onchange="resetPreview()"></div>
+            <div class="flex gap8 mt12 aic">
+              <button class="btn btn-primary" onclick="doPreview()">预览逐日实例</button>
+              <label class="check"><input type="checkbox" id="s_confirm"> 我已确认提醒项（超负荷 / 首选偏差 / 缺链接等）</label>
+              <span class="small muted" id="previewMeta"></span>
+            </div>
+          </div>
+
+          <div class="card mb16">
+            <div class="flex jcb aic mb12">
+              <div class="section-title" style="margin:0">逐日实例预览</div>
+              <div class="flex gap8">
+                <button class="btn btn-sm" onclick="recheckPreview()">重新校验</button>
+                <button class="btn btn-sm btn-primary" onclick="submitSeries()">创建周期课程</button>
+              </div>
+            </div>
+            <div id="previewSummary" class="mb12"></div>
+            <div class="preview-box">
+              <table class="table compact"><thead><tr>
+                <th>日期</th><th>星期</th><th>时间</th><th>教师</th><th>会议</th><th>校验</th><th class="right">跳过</th>
+              </tr></thead><tbody id="previewTbody"></tbody></table>
+            </div>
+            <div class="small muted mt8">冲突行可在本表内改时间或换教师，再点「重新校验」；一天冲突不会导致整批失败。已完成课程不会被覆盖。</div>
+          </div>
+
+          <div class="card" id="seriesDetail" style="display:none">
+            <div class="flex jcb aic mb12">
+              <div class="section-title" style="margin:0" id="sdTitle">周期详情</div>
+              <button class="btn btn-sm" onclick="closeSeries()">收起</button>
+            </div>
+            <div id="sdMeta" class="mb12"></div>
+            <div class="table-wrap"><table class="table compact"><thead><tr>
+              <th>日期</th><th>时间</th><th>教师</th><th>状态</th><th>来源</th><th class="right">操作</th>
+            </tr></thead><tbody id="sdTbody"></tbody></table></div>
+            <div class="section-title mt16">修改周期</div>
+            <div class="form-grid g3">
+              <div class="field"><label>修改范围</label><select class="select" id="u_scope">
+                <option value="single">仅单节</option><option value="following">本次及后续</option><option value="all">整周期</option></select></div>
+              <div class="field"><label>单节课程</label><select class="select" id="u_course"></select></div>
+              <div class="field"><label>起始日期（本次及后续）</label><input class="input" type="date" id="u_from"></div>
+              <div class="field"><label>新开始时间</label><input class="input" type="time" id="u_start"></div>
+              <div class="field"><label>新教师</label><select class="select" id="u_teacher"><option value="">不变</option></select></div>
+              <div class="field"><label>原因</label><input class="input" id="u_reason"></div>
+            </div>
+            <div class="flex gap8 mt12">
+              <button class="btn btn-primary" onclick="doUpdateSeries()">保存修改</button>
+              <button class="btn btn-danger" onclick="doCancelSeries()">取消周期课程</button>
+              <span class="small muted">已完成 / 授课中 / 已取消课程会被跳过，不覆盖历史。</span>
+            </div>
+            <div id="sdResult" class="small mt12"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'schedule-series' });
+Store.setSession({ role: 'admin' });
+const S = Store;
+const TODAY = S.TODAY;
+const WEEKDAYS = S.WEEKDAYS;
+
+const state = { weekdays: {}, rows: null, summary: null, seriesId: '', result: null };
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function addDays(date, n) {
+  const d = new Date(date + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function weekdayOf(date) {
+  const d = new Date(date + 'T00:00:00Z');
+  return WEEKDAYS[(d.getUTCDay() + 6) % 7];
+}
+
+/* ---------- 基础下拉与星期 ---------- */
+(function init() {
+  const stus = S.students().slice().sort((a, b) => a.name.localeCompare(b.name));
+  document.getElementById('s_student').innerHTML = '<option value="">请选择学员</option>' +
+    stus.map(s => `<option value="${esc(s.id)}">${esc(s.name)} · ${esc(s.grade || '—')}</option>`).join('');
+  const tch = S.teacherPool();
+  document.getElementById('s_teacher').innerHTML = '<option value="">请选择教师</option>' +
+    tch.map(p => `<option value="${esc(p.teacher.id)}">${esc(p.teacher.name)}</option>`).join('');
+  document.getElementById('s_from').value = TODAY;
+  document.getElementById('s_to').value = addDays(TODAY, 30);
+  document.getElementById('s_weekdays').innerHTML = WEEKDAYS.map(w =>
+    `<span class="chip ${state.weekdays[w] ? 'on' : ''}" onclick="toggleWeekday('${w}')">${w}</span>`).join('');
+  document.getElementById('u_teacher').innerHTML = '<option value="">不变</option>' +
+    S.teacherPool().map(p => `<option value="${esc(p.teacher.id)}">${esc(p.teacher.name)}</option>`).join('');
+  renderSeriesList();
+})();
+function toggleWeekday(w) {
+  state.weekdays[w] = !state.weekdays[w];
+  document.getElementById('s_weekdays').innerHTML = WEEKDAYS.map(x =>
+    `<span class="chip ${state.weekdays[x] ? 'on' : ''}" onclick="toggleWeekday('${x}')">${x}</span>`).join('');
+  resetPreview();
+}
+function formInput() {
+  return {
+    studentId: document.getElementById('s_student').value,
+    teacherId: document.getElementById('s_teacher').value,
+    type: document.getElementById('s_type').value,
+    effectiveFrom: document.getElementById('s_from').value,
+    effectiveTo: document.getElementById('s_to').value,
+    duration: Number(document.getElementById('s_duration').value),
+    weekdayPlans: WEEKDAYS.filter(w => state.weekdays[w]).map(w => ({
+      weekday: w, start: document.getElementById('s_start').value
+    })),
+    meetingPolicy: document.getElementById('s_policy').value,
+    meetingUrl: document.getElementById('s_meeting').value.trim(),
+    note: document.getElementById('s_note').value.trim()
+  };
+}
+function resetPreview() {
+  state.rows = null; state.summary = null;
+  document.getElementById('previewTbody').innerHTML =
+    '<tr><td colspan="7"><span class="small muted">填写规则后点「预览逐日实例」。</span></td></tr>';
+  document.getElementById('previewSummary').innerHTML = '';
+  document.getElementById('previewMeta').textContent = '';
+}
+
+/* ---------- 预览 ---------- */
+function doPreview() {
+  const input = formInput();
+  if (!input.studentId || !input.teacherId) { Proto.toast('请选择学员与教师', 'err'); return; }
+  if (!input.weekdayPlans.length) { Proto.toast('请至少选择一个每周上课星期', 'err'); return; }
+  try {
+    const r = S.previewScheduleSeries(input);
+    state.rows = r.rows; state.summary = r.summary; state.result = null;
+    renderPreview();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function recheckPreview() {
+  if (!state.rows) { doPreview(); return; }
+  const input = Object.assign(formInput(), { rows: state.rows });
+  try {
+    const r = S.previewScheduleSeries(input);
+    state.rows = r.rows; state.summary = r.summary;
+    renderPreview();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function renderPreview() {
+  const sum = state.summary || { total: 0, pass: 0, warn: 0, conflict: 0 };
+  document.getElementById('previewSummary').innerHTML = `
+    <div class="flex gap8 wrap">
+      <span class="tag tag-slate">计划 ${sum.total} 节</span>
+      <span class="tag tag-green">可提交 ${sum.pass}</span>
+      <span class="tag tag-amber">提醒 ${sum.warn}</span>
+      <span class="tag tag-red">硬冲突 ${sum.conflict}</span>
+      ${sum.conflict ? '<span class="small warn-text">硬冲突行不会创建；可改时间 / 换教师 / 跳过</span>' : ''}
+    </div>`;
+  document.getElementById('previewMeta').textContent =
+    '预览 ' + sum.total + ' 节，创建时按当前表格内容逐日生成';
+  document.getElementById('previewTbody').innerHTML = state.rows.map((r, i) => {
+    const cls = r.skip ? 'row-skip' : (!r.ok ? 'row-bad' : r.warnings.length ? 'row-warn' : '');
+    const tchOpts = S.teacherPool().map(p =>
+      `<option value="${esc(p.teacher.id)}" ${p.teacher.id === r.teacherId ? 'selected' : ''}>${esc(p.teacher.name)}</option>`).join('');
+    const indicator = r.skip ? '<span class="tag tag-slate">已跳过</span>'
+      : (!r.ok ? `<span class="tag tag-red">硬冲突</span><div class="mini-note">${esc(r.hard.map(x => x.message).join('；'))}</div>`
+        : (r.warnings.length ? `<span class="tag tag-amber">提醒</span><div class="mini-note">${esc(r.warnings.map(x => x.message).join('；'))}</div>`
+          : '<span class="tag tag-green">可提交</span>'));
+    return `<tr class="${cls}">
+      <td class="mono">${esc(r.date)}</td>
+      <td>${esc(r.weekday)}</td>
+      <td><input class="input row-time" type="time" value="${esc(r.start)}" onchange="editRow(${i},'start',this.value)"></td>
+      <td><select class="select" onchange="editRow(${i},'teacherId',this.value)">${tchOpts}</select></td>
+      <td>${r.meetingUrl ? '<span class="tag tag-green nodot">已填</span>' : '<span class="tag tag-amber nodot">待补充</span>'}</td>
+      <td>${indicator}</td>
+      <td class="right"><input type="checkbox" ${r.skip ? 'checked' : ''} onchange="editRow(${i},'skip',this.checked)"></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7"><span class="small muted">没有实例。</span></td></tr>';
+}
+function editRow(i, key, value) {
+  const r = state.rows[i];
+  if (!r) return;
+  if (key === 'start') {
+    const dur = Number(document.getElementById('s_duration').value) || 60;
+    const p = value.split(':');
+    if (p.length !== 2) return;
+    const m = Number(p[0]) * 60 + Number(p[1]) + dur;
+    r.start = value;
+    r.end = String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+    recheckPreview();
+  } else { r[key] = value; recheckPreview(); }
+}
+
+/* ---------- 创建 ---------- */
+function submitSeries() {
+  if (!state.rows) { Proto.toast('请先预览逐日实例', 'err'); return; }
+  const hard = state.rows.filter(r => !r.skip && !r.ok).length;
+  if (!hard) {
+    Proto.confirmBox('创建周期课程', `将创建 <b>${state.rows.filter(r => !r.skip && r.ok).length}</b> 节课程。
+      创建后仍可在详情里单节 / 本次及后续 / 整周期修改。注意：排课不扣课时。`, '开始创建', doSubmitSeries);
+  } else {
+    Proto.confirmBox('存在硬冲突', `当前有 <b>${hard}</b> 节硬冲突不会创建；其余可提交行照常创建（一天冲突不整体失败）。是否继续？`, '继续创建', doSubmitSeries);
+  }
+}
+function doSubmitSeries() {
+  const input = Object.assign(formInput(), {
+    rows: state.rows.map(r => ({
+      rowKey: r.rowKey, date: r.date, start: r.start, end: r.end,
+      teacherId: r.teacherId, meetingUrl: r.meetingUrl, skip: !!r.skip, type: inputType() || '一对一'
+    })),
+    confirmedWarnings: document.getElementById('s_confirm').checked,
+    reason: '周期排课页面创建'
+  });
+  try {
+    const r = S.createScheduleSeries(input);
+    state.result = r;
+    const msg = `周期 ${r.series.id}：计划 ${r.series.plannedCount} 节，已创建 ${r.series.createdCount} 节，
+      跳过 ${r.series.skippedCount} 节，冲突 ${r.series.conflictCount} 节（状态：${r.series.status}）`;
+    Proto.toast(msg, r.series.conflictCount ? 'warn' : 'ok');
+    renderResult(r);
+    renderSeriesList();
+    openSeries(r.series.id);
+    /* 只清空逐日表格，保留本次创建结果供核对 */
+    state.rows = null; state.summary = null;
+    document.getElementById('previewTbody').innerHTML =
+      '<tr><td colspan="7"><span class="small muted">已提交，规则或表格变化后可重新预览。</span></td></tr>';
+    document.getElementById('previewMeta').textContent = '';
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function inputType() { return document.getElementById('s_type').value; }
+function renderResult(r) {
+  const box = document.getElementById('previewSummary');
+  box.innerHTML = `<div class="alert ${r.series.conflictCount ? 'alert-warn' : 'alert-success'} mb12"><span class="ico">${r.series.conflictCount ? '!' : '✓'}</span>
+    <div>周期 <b>${esc(r.series.id)}</b> 已保存：已创建 ${r.created.length} 节，跳过 ${r.skipped.length} 节，冲突 ${r.conflicts.length} 节。</div></div>
+    ${r.conflicts.length ? '<div class="small muted">' + r.conflicts.map(c =>
+      `${esc(c.date)} ${esc(c.start || '')}：${esc(c.reasons.join('；'))}`).join('<br>') + '</div>' : ''}`;
+}
+
+/* ---------- 周期列表与详情 ---------- */
+function renderSeriesList() {
+  const list = S.scheduleSeriesList();
+  document.getElementById('seriesList').innerHTML = list.length ? list.map(s => `
+    <div class="series-item ${s.id === state.seriesId ? 'on' : ''}" onclick="openSeries('${esc(s.id)}')">
+      <b>${esc(s.student)} · ${esc(s.teacher)}</b>
+      <span>${esc(s.effectiveFrom)} ~ ${esc(s.effectiveTo)} · ${esc(s.status)}</span><br>
+      <span>计划 ${s.plannedCount} / 已建 ${s.courses} · ${esc(s.id)}</span>
+    </div>`).join('') : '<div style="padding:16px"><span class="small muted">暂无周期。提交后在此查看。</span></div>';
+}
+function openSeries(id) {
+  state.seriesId = id;
+  const s = S.seriesOf(id);
+  if (!s) return;
+  const courses = S.seriesCourses(id);
+  document.getElementById('seriesDetail').style.display = '';
+  document.getElementById('sdTitle').textContent = '周期 ' + s.id + ' · ' + s.student + ' / ' + s.teacher;
+  document.getElementById('sdMeta').innerHTML = `
+    <div class="desc g2">
+      <div class="desc-item"><span class="k">状态</span><span class="v">${esc(s.status)}</span></div>
+      <div class="desc-item"><span class="k">生效区间</span><span class="v">${esc(s.effectiveFrom)} ~ ${esc(s.effectiveTo)}</span></div>
+      <div class="desc-item"><span class="k">每周规则</span><span class="v">${esc(s.weekdayPlans.map(p => p.weekday + ' ' + p.start).join('、'))}</span></div>
+      <div class="desc-item"><span class="k">计数</span><span class="v">计划 ${s.plannedCount} · 已建 ${s.createdCount} · 跳过 ${s.skippedCount} · 冲突 ${s.conflictCount}</span></div>
+      <div class="desc-item"><span class="k">会议策略</span><span class="v">${esc(s.meetingPolicy)}</span></div>
+      <div class="desc-item"><span class="k">创建人</span><span class="v">${esc(s.createdBy || '—')} · ${esc(s.createdAt)}</span></div>
+    </div>`;
+  document.getElementById('sdTbody').innerHTML = courses.map(c => `
+    <tr><td class="mono">${esc(c.date)}</td><td>${esc(c.start)}—${esc(c.end)}</td>
+      <td>${esc(c.teacher)}</td>
+      <td><span class="tag ${c.status === '已完成' ? 'tag-green' : c.status === '已取消' ? 'tag-slate' : 'tag-blue'}">${esc(c.status)}</span></td>
+      <td><span class="tag tag-slate nodot">${esc(c.source || '周期')}</span></td>
+      <td class="ops right">${c.status === '已完成' || c.status === '已取消' ? '<span class="small muted">只读</span>'
+        : `<button class="btn-link" onclick="pickCourse('${esc(c.id)}','${esc(c.date)}')">选为单节修改</button>`}</td>
+    </tr>`).join('') || '<tr><td colspan="6"><span class="small muted">该周期暂无课程实例。</span></td></tr>';
+  document.getElementById('u_course').innerHTML = courses.map(c =>
+    `<option value="${esc(c.id)}">${esc(c.date)} ${esc(c.start)} · ${esc(c.status)}</option>`).join('');
+  document.getElementById('u_from').value = courses.length ? courses[0].date : s.effectiveFrom;
+  document.getElementById('u_start').value = s.weekdayPlans.length ? s.weekdayPlans[0].start : '';
+  document.getElementById('sdResult').innerHTML = '';
+  renderSeriesList();
+}
+function closeSeries() { state.seriesId = ''; document.getElementById('seriesDetail').style.display = 'none'; renderSeriesList(); }
+function pickCourse(id, date) {
+  document.getElementById('u_course').value = id;
+  document.getElementById('u_from').value = date;
+  document.getElementById('u_scope').value = 'single';
+  document.getElementById('sdResult').innerHTML = '<span class="small">已选中 ' + esc(id) + '</span>';
+}
+function doUpdateSeries() {
+  if (!state.seriesId) return;
+  const scope = document.getElementById('u_scope').value;
+  const patch = { reason: document.getElementById('u_reason').value.trim() };
+  const start = document.getElementById('u_start').value;
+  if (start) patch.start = start;
+  const tid = document.getElementById('u_teacher').value;
+  if (tid) patch.teacherId = tid;
+  if (scope === 'single') patch.courseId = document.getElementById('u_course').value;
+  if (scope === 'following') patch.fromDate = document.getElementById('u_from').value;
+  if (!patch.start && !patch.teacherId) { Proto.toast('请至少填写新开始时间或新教师', 'warn'); return; }
+  try {
+    const r = S.updateScheduleSeries(state.seriesId, scope, patch);
+    Proto.toast('周期修改完成：更新 ' + r.updated.length + ' 节', r.failed.length ? 'warn' : 'ok');
+    openSeries(state.seriesId);
+    document.getElementById('sdResult').innerHTML = `<div class="alert ${r.failed.length ? 'alert-warn' : 'alert-success'}">
+      <span class="ico">${r.failed.length ? '!' : '✓'}</span><div>更新 ${r.updated.length} 节 · 跳过 ${r.skipped.length} 节 · 失败 ${r.failed.length} 节</div></div>
+      ${r.failed.length ? '<div class="small muted">' + r.failed.map(f => esc(f.date) + '：' + esc(f.reason)).join('<br>') + '</div>' : ''}`;
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function doCancelSeries() {
+  if (!state.seriesId) return;
+  const scope = document.getElementById('u_scope').value;
+  const reasonText = document.getElementById('u_reason').value.trim() || '周期排课取消';
+  const courseId = document.getElementById('u_course').value;
+  Proto.confirmBox('取消周期课程', `范围：<b>${{ single: '仅选中单节', following: '本次及后续未完成', all: '整周期未完成' }[scope]}</b><br><br>
+    · 已完成课程保留，不覆盖<br>· 取消不扣课时<br>· 历史课程与训练数据不删除`, '确认取消', () => {
+    try {
+      const r = S.cancelScheduleSeries(state.seriesId, scope === 'single' ? { courseId: courseId, text: reasonText } : { text: reasonText }, scope);
+      Proto.toast('已取消 ' + r.cancelled.length + ' 节，跳过 ' + r.skipped.length + ' 节', 'ok');
+      openSeries(state.seriesId);
+    } catch (e) { Proto.toast(e.message, 'err'); }
+  });
+}
+</script>
+</body>
+</html>

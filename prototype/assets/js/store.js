@@ -609,6 +609,10 @@
     '已成交': [], '无效': [], '已关闭': []
   };
   var LEAD_LEVELS = ['高', '中', '低'];
+  /* 结构化跟进字段枚举（代理端跟进弹窗与数据层校验共用，集中维护不散落） */
+  var LEAD_CONCERNS = ['价格', '时间', '效果', '竞品', '家长态度', '孩子意愿', '其他'];
+  var LEAD_DECISION_MAKERS = ['父母', '孩子本人', '双方', '其他'];
+  var LEAD_NEXT_ACTIONS = ['电话', '微信', '面谈', '试听', '发送方案'];
   var LEAD_CHANNELS = ['公众号', '转介绍', '地推', '电话咨询', '代理推荐', '其他'];
 
   var ORDER = { PENDING: '待审核', REVIEWED: '待收款', CREDITED: '已入账', REFUNDED: '已退款', CANCELLED: '已取消' };
@@ -2100,6 +2104,11 @@
     /* ---- 第七轮加固域：关系 / 争议 / 收款登记 / 退款 ---- */
     d.parentStudents = d.parentStudents || [];
     d.parentInquiries = d.parentInquiries || [];
+    /* 家长端辅助记录（只读教学结果的派生辅助，不改变正式状态） */
+    d.parentReportReads = d.parentReportReads || [];
+    d.parentAdviceChecks = d.parentAdviceChecks || [];
+    d.meta.seq.PRR = Math.max(d.meta.seq.PRR || 0, d.parentReportReads.length);
+    d.meta.seq.PAC = Math.max(d.meta.seq.PAC || 0, d.parentAdviceChecks.length);
     d.leadDisputes = d.leadDisputes || [];
     d.paymentRegistrations = d.paymentRegistrations || [];
     d.refundRequests = d.refundRequests || [];
@@ -9633,7 +9642,14 @@
       if (!patch.courseId) throw bizError('COURSE_REQUIRED', '请指定要修改的单节课程');
       var one = course(patch.courseId);
       if (!one || one.seriesId !== seriesId) throw bizError('COURSE_REQUIRED', '该课程不属于此周期');
-      var c1 = updateCourse(patch.courseId, patch);
+      /* 单节改开始时间时按原时长补齐结束时间，避免只传 start 被时间校验拒绝 */
+      var onePatch = Object.assign({}, patch);
+      if (onePatch.start) {
+        var keepMin = timeToMin(one.end) - timeToMin(one.start);
+        onePatch.end = onePatch.end || schedAddMinutes(onePatch.start, keepMin > 0 ? keepMin : series.duration);
+        if (onePatch.end <= onePatch.start) onePatch.end = schedAddMinutes(onePatch.start, series.duration);
+      }
+      var c1 = updateCourse(patch.courseId, onePatch);
       return { updated: [c1.id], skipped: [], failed: [] };
     }
     var locked = list.filter(function (c) { return c.status === COURSE_STATUS.DONE || c.status === COURSE_STATUS.ONGOING; });
@@ -11807,7 +11823,9 @@
         return {
           id: o.id, type: o.type, productName: o.productName, totalHours: o.totalHours,
           amount: o.amount, paidAmount: o.paidAmount, status: o.status,
-          createdAt: o.createdAt, creditedAt: o.creditedAt
+          createdAt: o.createdAt, creditedAt: o.creditedAt,
+          rejectReason: (o.status === ORDER.CANCELLED ? (o.cancelReason || '') : ''),
+          timeline: orderTimelineFor(o)
         };
       }),
       student: s ? {
@@ -12171,16 +12189,29 @@
       to = LEAD.FOLLOWING;
     }
     var from = l.status;
+    /* 结构化跟进字段（可选）：意向等级 / 主要顾虑多选 / 决策人 / 预算 / 下次动作 */
+    var flLevel = String(input.level || '');
+    if (flLevel && LEAD_LEVELS.indexOf(flLevel) < 0) throw bizError('LEVEL_INVALID', '意向等级不合法');
+    var flConcerns = Array.isArray(input.concerns)
+      ? input.concerns.filter(function (c) { return LEAD_CONCERNS.indexOf(c) >= 0; }) : [];
+    var flDecision = String(input.decisionMaker || '');
+    if (flDecision && LEAD_DECISION_MAKERS.indexOf(flDecision) < 0) throw bizError('BAD_INPUT', '决策人不合法');
+    var flBudget = String(input.budget || '');
+    var flNextAction = String(input.nextAction || '');
+    if (flNextAction && LEAD_NEXT_ACTIONS.indexOf(flNextAction) < 0) throw bizError('BAD_INPUT', '下次动作不合法');
     var f = {
       id: nextId('LF', 'LF', 3), leadId: l.id,
       type: input.type || '电话', content: content,
       result: String(input.result || ''), nextAt: input.nextAt || '',
+      level: flLevel, concerns: flConcerns, decisionMaker: flDecision, budget: flBudget, nextAction: flNextAction,
       by: operatorNameNow(), byId: session.operatorId || '', at: stamp()
     };
     db.leadFollowUps.push(f);
     l.lastFollowAt = f.at;
     l.nextFollowAt = input.nextAt || l.nextFollowAt;
     l.updatedAt = f.at;
+    if (flLevel) l.level = flLevel;
+    if (flNextAction) l.nextAction = flNextAction;
     if (to && to !== from) {
       l.status = to;
       if (to === LEAD.INVALID || to === LEAD.CLOSED) l.invalidReason = input.invalidReason || input.reason || '';
@@ -12401,6 +12432,8 @@
       order: o, student: s, agent: a, lead: l,
       parent: o.parentId ? parent(o.parentId) : (s && s.parent ? parent(s.parent) : null),
       payments: orderPayments(o.id), logs: orderLogsOf(o.id),
+      timeline: orderTimelineFor(o),
+      rejectReason: (o.status === ORDER.CANCELLED ? (o.cancelReason || '') : ''),
       account: o.lessonAccountId ? account(o.lessonAccountId) : null,
       renewal: o.renewalOpportunityId ? renewal(o.renewalOpportunityId) : null
     };
@@ -12408,6 +12441,60 @@
   function orderLogsOf(orderId) {
     return db.orderLogs.filter(function (x) { return x.orderId === orderId; })
       .sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+  }
+  /** 订单状态时间轴（派生，不新增表）：已提交 → 待审核 → 待收款 → 已入账；取消/退款为旁支终态。 */
+  function orderTimelineFor(o) {
+    if (!o) return [];
+    var logs = orderLogsOf(o.id);
+    function atTo(status) { var x = logs.filter(function (l) { return l.to === status; })[0]; return x ? x.at : ''; }
+    var idx = [ORDER.PENDING, ORDER.REVIEWED, ORDER.CREDITED].indexOf(o.status);
+    var done = function (n) { return idx >= n; };
+    var nodes = [
+      { key: 'submitted', label: '已提交', at: o.createdAt || '', done: true },
+      { key: 'pending', label: '待审核', at: atTo(ORDER.PENDING) || o.createdAt || '', done: true },
+      { key: 'reviewed', label: '待收款', at: atTo(ORDER.REVIEWED) || o.reviewedAt || '', done: done(1) },
+      { key: 'credited', label: '已入账', at: o.creditedAt || atTo(ORDER.CREDITED) || '', done: done(2) }
+    ];
+    if (o.status === ORDER.CANCELLED || o.status === ORDER.REFUNDED) {
+      nodes.push({ key: o.status === ORDER.REFUNDED ? 'refunded' : 'cancelled', label: o.status,
+        at: atTo(o.status) || o.updatedAt || '', done: true, terminal: true });
+    }
+    return nodes;
+  }
+  /** 代理只读：订单时间轴 + 驳回/取消原因（不含收款流水明细）。 */
+  function agentOrderTimeline(orderId) {
+    var o = assertOrderAccess(orderOf(orderId));
+    return {
+      orderId: o.id, status: o.status,
+      productName: o.productName, amount: o.amount,
+      rejectReason: (o.status === ORDER.CANCELLED ? (o.cancelReason || '') : ''),
+      timeline: orderTimelineFor(o)
+    };
+  }
+  /** 代理工作台四入口：今日必跟 / 逾期 / 待提交订单(意向明确未下单) / 待确认收款(待收款订单)。 */
+  function agentWorkbench(agentId) {
+    var self = (session.role === 'agent') ? sessionAgentId() : (agentId || defaultAgentId());
+    if (session.role === 'agent') assertSelfAgent(self);
+    var rows = agentCustomers();
+    var terminal = [LEAD.DEAL, LEAD.INVALID, LEAD.CLOSED];
+    function d(t) { return String(t || '').slice(0, 10); }
+    var todayFollow = rows.filter(function (r) { return r.nextFollowAt && d(r.nextFollowAt) === TODAY && terminal.indexOf(r.status) < 0; });
+    var overdue = rows.filter(function (r) { return r.nextFollowAt && d(r.nextFollowAt) < TODAY && terminal.indexOf(r.status) < 0; });
+    var intentNoOrder = rows.filter(function (r) { return r.status === LEAD.INTENT && !r.orderCount; });
+    var pendingPayment = db.orders.filter(function (o) { return o.agentId === self && o.status === ORDER.REVIEWED; });
+    return {
+      counts: {
+        todayFollow: todayFollow.length, overdue: overdue.length,
+        intentNoOrder: intentNoOrder.length, pendingPayment: pendingPayment.length
+      },
+      todayFollow: todayFollow, overdue: overdue, intentNoOrder: intentNoOrder,
+      pendingPayment: pendingPayment.map(function (o) {
+        return {
+          id: o.id, leadId: o.leadId || '', studentId: o.studentId, productName: o.productName,
+          amount: o.amount, paidAmount: o.paidAmount, status: o.status, createdAt: o.createdAt
+        };
+      })
+    };
   }
   function orderRows(query) {
     query = query || {};
@@ -13411,9 +13498,12 @@
     return parentStudents(pid).map(function (s) {
       var accs = accountsOfStudent(s.id);
       var remainAll = accs.reduce(function (n, a) { return n + Number(a.remain || 0); }, 0);
+      var weekly = (db.organization && db.organization.weeklyLessonsDefault) || 2;
       return {
         studentId: s.id, studentName: s.name, remain: s.remain,
         totalRemain: remainAll,
+        weeklyEstimate: weekly,
+        weeksEstimate: weekly > 0 ? Math.round(remainAll / weekly * 10) / 10 : null,
         lowAlert: remainAll > 0 && remainAll <= lowTh,
         accounts: accs.map(function (a) {
           var expAt = a.expireAt || a.valid || '';
@@ -13546,17 +13636,21 @@
   function parentReports(parentId, studentId, filters) {
     var pid = assertParentChild(parentId, studentId);
     filters = filters || {};
+    var readSet = {};
+    db.parentReportReads.forEach(function (x) { if (x.parentId === pid && x.studentId === studentId) readSet[x.reportId] = true; });
     return db.reports.filter(function (r) {
       if (r.studentId !== studentId) return false;
       if (r.status !== REPORT_STATUS.PUBLISHED || r.visibleToParent === false) return false;
       if (filters.courseId && r.courseId !== filters.courseId) return false;
+      if (filters.unread && readSet[r.id]) return false;
       return true;
     }).sort(function (a, b) { return a.courseDate < b.courseDate ? 1 : -1; }).map(function (r) {
       var t = teacher(r.teacherId);
       return {
         id: r.id, courseId: r.courseId, courseDate: r.courseDate, title: r.title,
         teacherName: (t && t.name) || '教师', summary: r.content ? r.content.performance : '',
-        publishedAt: r.publishedAt || '', status: r.status
+        publishedAt: r.publishedAt || '', status: r.status,
+        read: !!readSet[r.id]
       };
     });
   }
@@ -13592,7 +13686,8 @@
         articleWeak: snap ? snap.articleWeak : 0
       },
       article: art ? { id: art.id, name: art.articleName } : null,
-      articleStat: artStat ? { mastered: artStat.mastered, weak: artStat.weak, readDone: artStat.readDone } : null
+      articleStat: artStat ? { mastered: artStat.mastered, weak: artStat.weak, readDone: artStat.readDone } : null,
+      read: db.parentReportReads.some(function (x) { return x.parentId === pid && x.studentId === studentId && x.reportId === rp.id; })
     };
   }
   /** 复习汇总（真实口径）：今日到期 / 全部待复习 / 已通过 */
@@ -13605,6 +13700,71 @@
       all: rows.length,
       passed: wordStates(studentId).filter(function (s) { return s.state === '本次通过'; }).length
     };
+  }
+  /* ---- 家长端辅助只读投影（均走 assertParentChild；只改家长辅助记录，不改正式教学状态） ---- */
+  /** 最近扣课记录（只读，近 10 条）：日期/课程主题/扣几节/扣后剩余 */
+  function parentLessonFlows(parentId, studentId) {
+    var pid = assertParentChild(parentId, studentId);
+    return db.flows.filter(function (f) { return f.studentId === studentId && Number(f.delta) < 0; })
+      .sort(function (a, b) { return (a.time || '') < (b.time || '') ? 1 : -1; })
+      .slice(0, 10)
+      .map(function (f) {
+        var c = f.courseId ? course(f.courseId) : null;
+        return {
+          id: f.id, at: f.time || '', type: f.type || '扣课',
+          topic: (c && (c.topic || c.title)) || f.note || '课程扣课',
+          delta: Number(f.delta || 0), after: Number(f.after || 0),
+          courseId: f.courseId || '', accountId: f.accountId || ''
+        };
+      });
+  }
+  function parentReportReads(parentId, studentId) {
+    var pid = assertParentChild(parentId, studentId);
+    return db.parentReportReads.filter(function (x) { return x.parentId === pid && x.studentId === studentId; })
+      .map(function (x) { return { reportId: x.reportId, readAt: x.readAt }; });
+  }
+  /** 家长标记报告已读（只读辅助，不改报告内容） */
+  function markParentReportRead(parentId, studentId, reportId) {
+    var pid = assertParentChild(parentId, studentId);
+    var rp = report(reportId);
+    if (!rp || rp.studentId !== studentId) throw bizError('REPORT_NOT_FOUND', '报告不存在');
+    if (rp.status !== REPORT_STATUS.PUBLISHED || rp.visibleToParent === false) throw bizError('FORBIDDEN', '该报告尚未对家长发布');
+    var ex = db.parentReportReads.filter(function (x) { return x.parentId === pid && x.studentId === studentId && x.reportId === reportId; })[0];
+    if (ex) return ex;
+    var rec = { id: 'PRR' + seq('PRR', 4), parentId: pid, studentId: studentId, reportId: reportId, readAt: stamp() };
+    db.parentReportReads.push(rec); save(); return rec;
+  }
+  function parentAdviceChecks(parentId, studentId, reportId) {
+    var pid = assertParentChild(parentId, studentId);
+    return db.parentAdviceChecks.filter(function (x) { return x.parentId === pid && x.studentId === studentId && x.reportId === reportId; })
+      .map(function (x) { return { id: x.id, itemKey: x.itemKey, checked: !!x.checked, at: x.at }; });
+  }
+  /** 家庭建议勾选（家长辅助记录；不改变报告、掌握状态、复习计划） */
+  function toggleParentAdviceCheck(parentId, studentId, reportId, itemKey, checked) {
+    var pid = assertParentChild(parentId, studentId);
+    var rp = report(reportId);
+    if (!rp || rp.studentId !== studentId) throw bizError('REPORT_NOT_FOUND', '报告不存在');
+    var key = String(itemKey || '').trim().slice(0, 80);
+    if (!key) throw bizError('BAD_INPUT', '建议项缺失');
+    var ex = db.parentAdviceChecks.filter(function (x) {
+      return x.parentId === pid && x.studentId === studentId && x.reportId === reportId && x.itemKey === key;
+    })[0];
+    if (ex) { ex.checked = !!checked; ex.at = stamp(); }
+    else {
+      ex = { id: 'PAC' + seq('PAC', 4), parentId: pid, studentId: studentId, reportId: reportId, itemKey: key, checked: !!checked, at: stamp() };
+      db.parentAdviceChecks.push(ex);
+    }
+    save();
+    return ex;
+  }
+  /** 家庭复习进度（今日到期清单中已勾选/总数） */
+  function parentReviewProgress(parentId, studentId) {
+    var pid = assertParentChild(parentId, studentId);
+    var due = buildParentReviewRows(studentId).filter(function (r) { return r.dueToday; });
+    var checkedSet = {};
+    db.familyChecks.forEach(function (c) { if (c.studentId === studentId && c.date === TODAY && c.checked) checkedSet[c.wordId] = true; });
+    var checked = due.filter(function (r) { return checkedSet[r.wordId]; }).length;
+    return { due: due.length, checked: checked, remaining: due.length - checked };
   }
   /** 构建家长可见的复习单词行（两套体系独立计算、按 wordId 合并） */
   function buildParentReviewRows(studentId) {
@@ -15029,6 +15189,7 @@
     leadDisputesOf: leadDisputesOf, createLeadDispute: createLeadDispute,
     resolveLeadDispute: resolveLeadDispute,
     agentCustomers: agentCustomers, agentLeadView: agentLeadView, agentStudentView: agentStudentView,
+    agentWorkbench: agentWorkbench, agentOrderTimeline: agentOrderTimeline,
     createLead: createLead, addLeadFollowUp: addLeadFollowUp, markLeadIntent: markLeadIntent,
     assignLead: assignLead, leadFollowUpsOf: leadFollowUpsOf, leadOrders: leadOrders,
     leadLogsOf: function (leadId) {
@@ -15068,6 +15229,10 @@
     parentReports: parentReports, parentReportDetail: parentReportDetail,
     parentReviewWords: parentReviewWords, parentReviewSummary: parentReviewSummary,
     parentFamilyChecks: parentFamilyChecks, parentFamilyCheckAt: parentFamilyCheckAt,
+    parentLessonFlows: parentLessonFlows, parentReportReads: parentReportReads,
+    markParentReportRead: markParentReportRead,
+    parentAdviceChecks: parentAdviceChecks, toggleParentAdviceCheck: toggleParentAdviceCheck,
+    parentReviewProgress: parentReviewProgress,
     toggleParentFamilyCheck: toggleParentFamilyCheck,
     setParentCurrentChild: setParentCurrentChild, parentCurrentChild: parentCurrentChild,
     createParentInquiry: createParentInquiry, parentInquiries: parentInquiries,
@@ -15086,6 +15251,7 @@
     parentTrainingReports: parentTrainingReports, parentReviewPlan: parentReviewPlan,
     LEAD_STATUS: LEAD_STATUS, LEAD: LEAD, LEAD_NEXT: LEAD_NEXT, LEAD_TONE: LEAD_TONE,
     LEAD_LEVELS: LEAD_LEVELS, LEAD_CHANNELS: LEAD_CHANNELS,
+    LEAD_CONCERNS: LEAD_CONCERNS, LEAD_DECISION_MAKERS: LEAD_DECISION_MAKERS, LEAD_NEXT_ACTIONS: LEAD_NEXT_ACTIONS,
     LESSON_ALERT_THRESHOLD: LESSON_ALERT_THRESHOLD, EXPIRE_ALERT_DAYS: EXPIRE_ALERT_DAYS,
     ORDER_STATUS: ORDER_STATUS, ORDER: ORDER, ORDER_TONE: ORDER_TONE, ORDER_TYPE: ORDER_TYPE,
     PAY_STATUS: PAY_STATUS, PAY: PAY, PAY_METHODS: PAY_METHODS,
