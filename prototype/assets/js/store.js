@@ -191,6 +191,32 @@
   var PERIODS = ['上午', '下午', '晚上'];
   var PERIOD_TIME = { '上午': '08:30-11:30', '下午': '13:30-17:30', '晚上': '18:30-21:00' };
 
+  /* ============================================================
+     第十一轮：规模化排课
+     ------------------------------------------------------------
+     排课对象与课程实例严格分层：
+       ScheduleSeries 周期规则   ≠ Course 实例
+       ScheduleBatch  批次日计划 ≠ Course 实例
+     每节课仍然是独立 Course；已完成课程保留原始数据；
+     排课（新建 / 周期 / 批量 / 改期 / 改派）一律不扣课时。
+     ============================================================ */
+  var COURSE_SOURCE = { MANUAL: '手动', SERIES: '周期', BATCH: '批量' };
+  var SERIES_STATUS = { DRAFT: '草稿', GENERATED: '已生成', PARTIAL: '部分生成', CANCELLED: '已取消' };
+  var BATCH_STATUS = { DRAFT: '草稿', PARTIAL: '部分生成', GENERATED: '已生成', CANCELLED: '已取消' };
+  var AVAIL_EXCEPTION = { BLOCK: '不可用', EXTRA: '可加班', LIMITED: '限定时段' };
+  var AVAIL_EXCEPTION_TYPE = [AVAIL_EXCEPTION.BLOCK, AVAIL_EXCEPTION.EXTRA, AVAIL_EXCEPTION.LIMITED];
+  var AVAIL_EXCEPTION_STATUS = { ACTIVE: '有效', REVOKED: '已撤销' };
+  var PREF_STATUS = { ACTIVE: '有效', HISTORY: '历史' };
+  /** 负荷策略默认值：奇数项均可被机构修改；默认软约束，只有 hard=true 才阻断 */
+  var LOAD_POLICY_DEFAULT = {
+    maxPerDay: 8, maxPerWeek: 30, maxMinutesPerDay: 480,
+    allowContinuous: true, breakMinutes: 10, hard: false
+  };
+  /** 单批最多行数（开放问题默认值：300；超出由调用方分批） */
+  var BATCH_MAX_ROWS = 300;
+  /** 排课时间粒度（默认 30 分钟，用于界面刻度，不强制任意分钟输入） */
+  var SCHEDULE_GRANULARITY = 30;
+
   /* 角色与权限：页面隐藏按钮只是体验层，真正拦截在 Store 的每个写操作入口 */
   var PERMS = {
     'teacher.view': ['admin', 'staff', 'ops'],
@@ -2705,7 +2731,157 @@
       c.meeting = c.meetingUrl ? '已生成' : '未生成';
       c.createdBy = c.createdBy || '';
       c.createdAt = c.createdAt || '';
+      /* 第十一轮：来源追溯（加法字段，旧课程一律兜底为「手动」） */
+      c.seriesId = c.seriesId || '';
+      c.batchId = c.batchId || '';
+      c.batchRowKey = c.batchRowKey || '';
+      c.source = [COURSE_SOURCE.MANUAL, COURSE_SOURCE.SERIES, COURSE_SOURCE.BATCH].indexOf(c.source) >= 0
+        ? c.source
+        : (c.seriesId ? COURSE_SOURCE.SERIES : c.batchId ? COURSE_SOURCE.BATCH : COURSE_SOURCE.MANUAL);
+      c.meetingPolicy = c.meetingPolicy || '';
+      c.scheduleNote = c.scheduleNote || '';
     });
+
+    /* ============================================================
+       第十一轮：排课设置四张表（全部加法集合，默认空数组，旧 key 不删除）
+       - teacherAvailabilities          固定周期精确区间
+       - teacherAvailabilityExceptions  日期例外（例外优先）
+       - teacherLoadPolicies            负荷策略（默认软约束）
+       - studentSchedulePreferences     学员长期排课偏好（首选/可用/禁止三档）
+       旧 teachers[].availability（weekday+period）保留只读兼容；
+       没有新区间记录的教师，用 PERIOD_TIME 展开一次，保证老数据不丢。
+       ============================================================ */
+    d.teacherAvailabilities = d.teacherAvailabilities || [];
+    d.teacherAvailabilityExceptions = d.teacherAvailabilityExceptions || [];
+    d.teacherLoadPolicies = d.teacherLoadPolicies || [];
+    d.studentSchedulePreferences = d.studentSchedulePreferences || [];
+
+    var tavSeq = Math.max(d.meta.seq.TAV || 0, d.teacherAvailabilities.length);
+    d.teacherAvailabilities.forEach(function (a) {
+      a.id = a.id || ('TAV' + pad(++tavSeq, 3));
+      a.teacherId = a.teacherId || '';
+      a.weekday = WEEKDAYS.indexOf(a.weekday) >= 0 ? a.weekday : WEEKDAYS[0];
+      a.start = /^\d{2}:\d{2}$/.test(a.start || '') ? a.start : '08:00';
+      a.end = /^\d{2}:\d{2}$/.test(a.end || '') ? a.end : '09:00';
+      if (timeToMin(a.end) <= timeToMin(a.start)) a.end = '09:00';
+      a.effectiveFrom = a.effectiveFrom || '';
+      a.effectiveTo = a.effectiveTo || '';
+      a.source = a.source || '手动';
+      a.note = a.note || '';
+      a.createdBy = a.createdBy || '';
+      a.createdAt = a.createdAt || '';
+    });
+    d.meta.seq.TAV = tavSeq;
+    /* 旧 availability 兜底展开：仅当该教师完全没有区间记录时才展开 */
+    var tavTeachers = {};
+    d.teacherAvailabilities.forEach(function (a) { tavTeachers[a.teacherId] = 1; });
+    (d.teachers || []).forEach(function (t) {
+      if (tavTeachers[t.id]) return;
+      (t.availability || []).forEach(function (a) {
+        var range = PERIOD_TIME[a.period];
+        if (!range) return;
+        var parts = range.split('-');
+        d.teacherAvailabilities.push({
+          id: 'TAV' + pad(++tavSeq, 3), teacherId: t.id, weekday: a.weekday,
+          start: parts[0], end: parts[1], effectiveFrom: '', effectiveTo: '',
+          source: '旧数据展开', note: a.note || '', createdBy: '系统迁移', createdAt: stamp()
+        });
+      });
+    });
+    d.meta.seq.TAV = Math.max(d.meta.seq.TAV || 0, tavSeq);
+
+    var taeSeq = Math.max(d.meta.seq.TAE || 0, d.teacherAvailabilityExceptions.length);
+    d.teacherAvailabilityExceptions.forEach(function (x) {
+      x.id = x.id || ('TAE' + pad(++taeSeq, 3));
+      x.teacherId = x.teacherId || '';
+      x.date = x.date || '';
+      x.type = AVAIL_EXCEPTION_TYPE.indexOf(x.type) >= 0 ? x.type : AVAIL_EXCEPTION.BLOCK;
+      x.start = x.start || '';
+      x.end = x.end || '';
+      x.reason = x.reason || '';
+      x.status = x.status === AVAIL_EXCEPTION_STATUS.REVOKED
+        ? AVAIL_EXCEPTION_STATUS.REVOKED : AVAIL_EXCEPTION_STATUS.ACTIVE;
+      x.createdBy = x.createdBy || '';
+      x.createdAt = x.createdAt || stamp();
+    });
+    d.meta.seq.TAE = taeSeq;
+
+    d.teacherLoadPolicies.forEach(function (p) {
+      p.teacherId = p.teacherId || '';
+      p.maxPerDay = Number(p.maxPerDay) > 0 ? Number(p.maxPerDay) : LOAD_POLICY_DEFAULT.maxPerDay;
+      p.maxPerWeek = Number(p.maxPerWeek) > 0 ? Number(p.maxPerWeek) : LOAD_POLICY_DEFAULT.maxPerWeek;
+      p.maxMinutesPerDay = Number(p.maxMinutesPerDay) > 0 ? Number(p.maxMinutesPerDay) : LOAD_POLICY_DEFAULT.maxMinutesPerDay;
+      p.allowContinuous = p.allowContinuous === undefined ? LOAD_POLICY_DEFAULT.allowContinuous : !!p.allowContinuous;
+      p.breakMinutes = p.breakMinutes === undefined ? LOAD_POLICY_DEFAULT.breakMinutes : Number(p.breakMinutes) || 0;
+      p.hard = !!p.hard;
+      p.updatedBy = p.updatedBy || '';
+      p.updatedAt = p.updatedAt || '';
+    });
+
+    var sspSeq = Math.max(d.meta.seq.SSP || 0, d.studentSchedulePreferences.length);
+    d.studentSchedulePreferences.forEach(function (p) {
+      p.id = p.id || ('SSP' + pad(++sspSeq, 3));
+      p.studentId = p.studentId || '';
+      p.preferredWeekdays = toList(p.preferredWeekdays).filter(function (w) { return WEEKDAYS.indexOf(w) >= 0; });
+      p.preferredPeriods = toList(p.preferredPeriods).filter(function (w) { return PERIODS.indexOf(w) >= 0; });
+      p.availableWeekdays = toList(p.availableWeekdays).filter(function (w) { return WEEKDAYS.indexOf(w) >= 0; });
+      p.availablePeriods = toList(p.availablePeriods).filter(function (w) { return PERIODS.indexOf(w) >= 0; });
+      if (!Array.isArray(p.unavailablePeriods)) p.unavailablePeriods = [];
+      p.unavailablePeriods = p.unavailablePeriods.filter(Boolean).map(function (u) {
+        return {
+          weekday: WEEKDAYS.indexOf(u.weekday) >= 0 ? u.weekday : '',
+          period: PERIODS.indexOf(u.period) >= 0 ? u.period : '',
+          date: u.date || '', start: u.start || '', end: u.end || '', reason: u.reason || ''
+        };
+      });
+      p.lessonDuration = Number(p.lessonDuration) > 0 ? Number(p.lessonDuration) : 60;
+      p.weeklyLessonCount = Number(p.weeklyLessonCount) >= 0 ? Number(p.weeklyLessonCount) : 0;
+      p.effectiveStartDate = p.effectiveStartDate || '';
+      p.effectiveEndDate = p.effectiveEndDate || '';
+      p.preferredTeacherId = p.preferredTeacherId || '';
+      p.remark = p.remark || '';
+      p.source = p.source || '手动';
+      p.status = p.status === PREF_STATUS.HISTORY ? PREF_STATUS.HISTORY : PREF_STATUS.ACTIVE;
+      p.createdBy = p.createdBy || '';
+      p.createdAt = p.createdAt || stamp();
+      p.updatedAt = p.updatedAt || p.createdAt;
+    });
+    d.meta.seq.SSP = sspSeq;
+
+    /* StudentDemand.expectedSchedule 一次性迁移：只做「尽力转换」并标注来源，
+       需求本身保留；已有有效偏好的学员不再重复生成。迁移后两者独立维护。 */
+    var prefStudents = {};
+    d.studentSchedulePreferences.forEach(function (p) {
+      if (p.status === PREF_STATUS.ACTIVE) prefStudents[p.studentId] = 1;
+    });
+    (d.studentDemands || []).forEach(function (dm) {
+      var es = dm.expectedSchedule;
+      if (!es || prefStudents[dm.studentId]) return;
+      var wk = Array.isArray(es.weekday) ? es.weekday : toList(es.weekday);
+      var ps = Array.isArray(es.periods) ? es.periods : toList(es.periods);
+      wk = wk.filter(function (w) { return WEEKDAYS.indexOf(w) >= 0; });
+      ps = ps.filter(function (x) { return PERIODS.indexOf(x) >= 0; });
+      if (!wk.length && !ps.length) return;
+      d.studentSchedulePreferences.push({
+        id: 'SSP' + pad(++sspSeq, 3), studentId: dm.studentId,
+        preferredWeekdays: wk, preferredPeriods: ps,
+        availableWeekdays: wk.slice(), availablePeriods: ps.slice(),
+        unavailablePeriods: [], lessonDuration: 60,
+        weeklyLessonCount: Number(es.weeklyLessons) || 0,
+        effectiveStartDate: dm.expectedStartAt || '', effectiveEndDate: '',
+        preferredTeacherId: dm.selectedTeacherId || '', remark: '由需求 ' + (dm.code || dm.id) + ' 的期望时间迁移',
+        source: '需求迁移', status: PREF_STATUS.ACTIVE,
+        createdBy: '系统迁移', createdAt: stamp(), updatedAt: stamp()
+      });
+      prefStudents[dm.studentId] = 1;
+    });
+    d.meta.seq.SSP = sspSeq;
+
+    /* 周期系列 / 排课批次（对象与课程实例分离） */
+    d.scheduleSeries = d.scheduleSeries || [];
+    d.scheduleBatches = d.scheduleBatches || [];
+    d.meta.seq.SR = Math.max(d.meta.seq.SR || 0, d.scheduleSeries.length);
+    d.meta.seq.SB = Math.max(d.meta.seq.SB || 0, d.scheduleBatches.length);
 
     /* 训练任务 */
     (d.trainTasks || []).forEach(function (t) {
@@ -8355,11 +8531,28 @@
       throw bizError('TARGET_NOT_READY', '接替教师「' + nt.name + '」当前不是可授课状态');
     }
     if (c.teacherId === nt.id) throw bizError('SAME_TEACHER', '课程已由「' + nt.name + '」授课');
+    /* 第十一轮：改派前校验新教师时段冲突与可用时间。
+       时段重叠、日期例外不可用属硬阻断；固定周期外偏差只记提醒，
+       避免影响暂停合作 / 退出合作的历史补派流程。 */
+    var teacherConflicts = courseConflicts({
+      date: c.date, start: c.start, end: c.end, teacherId: nt.id,
+      studentId: c.studentId, excludeId: c.id
+    }).filter(function (x) { return x.teacherConflict; });
+    if (teacherConflicts.length) {
+      throw bizError('TEACHER_TIME_CONFLICT',
+        '接替教师「' + nt.name + '」在 ' + c.date + ' ' + c.start + '—' + c.end + ' 已有课程：' +
+        teacherConflicts.map(function (x) { return x.id + ' ' + x.start + '—' + x.end; }).join('、'));
+    }
+    var avail = checkTeacherAvailability(nt.id, c.date, c.start, c.end);
+    if (avail.hard) throw bizError(avail.code || 'TEACHER_UNAVAILABLE', '接替教师不可用：' + avail.reason);
+    var availWarnings = [];
+    if (!avail.ok && avail.reason) availWarnings.push(avail.reason);
     var from = teacher(c.teacherId);
     c.reassignLogs.push({
       fromTeacherId: c.teacherId, fromName: from ? from.name : c.teacherName,
       toTeacherId: nt.id, toName: nt.name,
-      reason: opt.reason || '', by: session.operatorName, at: stamp()
+      reason: opt.reason || '', by: session.operatorName, at: stamp(),
+      warnings: availWarnings
     });
     c.teacherId = nt.id;
     c.teacher = nt.name;
@@ -8429,10 +8622,19 @@
     return prefix + pad(max + 1, 3);
   }
 
-  /** 教务新建课程：写入真实学员 / 教师 / 日期 / 起止时间 / 会议链接 */
+  /** 教务新建课程：写入真实学员 / 教师 / 日期 / 起止时间 / 会议链接
+   *  第十一轮：支持来源追溯（手动 / 周期 / 批量）与 batchId + batchRowKey 幂等；
+   *  排课本身不扣课时，扣课仍只由 finishCourse → deductCourse 负责。 */
   function createCourse(input) {
     assertPermission('lesson.view.all');
     input = input || {};
+    /* 幂等：同一批次同一行的重复提交 / 刷新 / 重试不重复建课 */
+    if (input.batchId && input.batchRowKey) {
+      var existedRow = db.courses.filter(function (x) {
+        return x.batchId === input.batchId && x.batchRowKey === input.batchRowKey;
+      })[0];
+      if (existedRow) return existedRow;
+    }
     var stu = student(input.studentId);
     if (!stu) throw bizError('STUDENT_NOT_FOUND', '请选择有效的学员');
     var tch = teacher(input.teacherId);
@@ -8460,6 +8662,19 @@
             (x.studentConflict ? '学员 ' + x.student + ' ' : '') + '已有课程）';
         }).join('；'));
     }
+    /* 可用时间与学员偏好：日期例外（不可用 / 限定时段）与学员禁止时间属硬阻断；
+       固定周期外偏差只记提醒，保证老数据的单节补排不被误拦。 */
+    var avail = checkTeacherAvailability(tch.id, date, start, end);
+    if (avail.hard) throw bizError(avail.code || 'TEACHER_UNAVAILABLE', avail.reason);
+    var pref = checkStudentPreference(stu.id, date, start, end);
+    if (pref.forbidden) throw bizError('STUDENT_FORBIDDEN', pref.reason);
+    var scheduleWarnings = [];
+    if (!avail.ok && avail.reason) scheduleWarnings.push(avail.reason);
+    (pref.warnings || []).forEach(function (w) { scheduleWarnings.push(w); });
+
+    var source = [COURSE_SOURCE.MANUAL, COURSE_SOURCE.SERIES, COURSE_SOURCE.BATCH].indexOf(input.source) >= 0
+      ? input.source
+      : (input.seriesId ? COURSE_SOURCE.SERIES : input.batchId ? COURSE_SOURCE.BATCH : COURSE_SOURCE.MANUAL);
     var c = {
       id: nextCourseId(date), date: date, start: start, end: end,
       studentId: stu.id, student: stu.name, grade: stu.grade || '',
@@ -8469,6 +8684,9 @@
       deduct: '未扣课', deductState: '未扣课',
       meetingUrl: meetingUrl, meeting: meetingUrl ? '已生成' : '未生成',
       note: String(input.note || '').trim(),
+      source: source, seriesId: input.seriesId || '', batchId: input.batchId || '',
+      batchRowKey: input.batchRowKey || '', meetingPolicy: input.meetingPolicy || '',
+      scheduleNote: String(input.scheduleNote || '').trim(), scheduleWarnings: scheduleWarnings,
       creator: session.operatorName || '',
       createdBy: session.operatorName || '', createdAt: stamp(),
       actualStart: '', actualEnd: '', recordId: ''
@@ -8553,6 +8771,1150 @@
     return list[0] || null;
   }
 
+
+  /* ============================================================
+     第十一轮：规模化排课（总览查询 / 可用时间 / 偏好 / 计划校验 /
+     周期 / 批次 / 批量维护 / 教师推荐）
+     所有写操作仍在本文件统一做权限与冲突校验，页面不得绕过。
+     ============================================================ */
+
+  function schedWeekday(date) {
+    var t = new Date(String(date || '') + 'T00:00:00Z');
+    if (isNaN(t.getTime())) return '';
+    return WEEKDAYS[(t.getUTCDay() + 6) % 7];
+  }
+  function schedIsWeekend(date) {
+    var w = schedWeekday(date);
+    return w === '周六' || w === '周日';
+  }
+  function schedPeriod(start) {
+    var m = timeToMin(start);
+    if (m < 0) return '晚上';
+    if (m < 12 * 60) return '上午';
+    if (m < 18 * 60) return '下午';
+    return '晚上';
+  }
+  function schedAddMinutes(hhmm, minutes) {
+    var m = timeToMin(hhmm) + Number(minutes || 0);
+    if (m < 0) m = 0;
+    return pad(Math.floor(m / 60), 2) + ':' + pad(m % 60, 2);
+  }
+  function schedWeekRange(date) {
+    var w = schedWeekday(date);
+    var idx = WEEKDAYS.indexOf(w);
+    return { from: addDays(date, -idx), to: addDays(date, 6 - idx), weekday: w };
+  }
+  function schedDates(from, to) {
+    var out = [], cur = String(from || ''), end = String(to || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(cur) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return out;
+    var guard = 0;
+    while (cur <= end && guard++ < 400) { out.push(cur); cur = addDays(cur, 1); }
+    return out;
+  }
+  function schedSourceLabel(c) {
+    if (c.source === COURSE_SOURCE.SERIES) return '周期' + (c.seriesId ? ' · ' + c.seriesId : '');
+    if (c.source === COURSE_SOURCE.BATCH) return '批量' + (c.batchId ? ' · ' + c.batchId : '');
+    return COURSE_SOURCE.MANUAL;
+  }
+  /** 同教师/同学员的课程时间重叠检测：按日期建索引，一次扫描，不做逐条全表扫描 */
+  function schedOverlapIds(list) {
+    var out = {}, byDate = {};
+    (list || []).forEach(function (c) {
+      if (c.status === COURSE_STATUS.CANCELLED || c.status === COURSE_STATUS.MISSED) return;
+      byDate[c.date] = byDate[c.date] || [];
+      byDate[c.date].push(c);
+    });
+    Object.keys(byDate).forEach(function (d) {
+      var rows = byDate[d];
+      for (var i = 0; i < rows.length; i++) {
+        for (var j = i + 1; j < rows.length; j++) {
+          var a = rows[i], b = rows[j];
+          var as = timeToMin(a.start), ae = timeToMin(a.end);
+          var bs = timeToMin(b.start), be = timeToMin(b.end);
+          if (as < 0 || bs < 0) continue;
+          if (Math.max(as, bs) >= Math.min(ae, be)) continue;
+          if (a.teacherId === b.teacherId || a.studentId === b.studentId) {
+            out[a.id] = out[a.id] || { ids: [], teacher: false, student: false };
+            out[b.id] = out[b.id] || { ids: [], teacher: false, student: false };
+            out[a.id].ids.push(b.id); out[b.id].ids.push(a.id);
+            if (a.teacherId === b.teacherId) { out[a.id].teacher = out[b.id].teacher = true; }
+            if (a.studentId === b.studentId) { out[a.id].student = out[b.id].student = true; }
+          }
+        }
+      }
+    });
+    return out;
+  }
+  function schedMissingTeacher(c) {
+    return !c.teacherId || !teacher(c.teacherId);
+  }
+
+  /** 排课总览查询：筛选 / 分组 / 排序 / 分页 / 统计全部基于真实课程集合 */
+  function courseQuery(filters) {
+    filters = filters || {};
+    var kw = String(filters.kw || '').trim().toLowerCase();
+    var list = db.courses.filter(function (c) {
+      if (filters.dateFrom && c.date < filters.dateFrom) return false;
+      if (filters.dateTo && c.date > filters.dateTo) return false;
+      if (filters.teacherId && c.teacherId !== filters.teacherId) return false;
+      if (filters.studentId && c.studentId !== filters.studentId) return false;
+      if (filters.grade && c.grade !== filters.grade) return false;
+      if (filters.status && c.status !== filters.status) return false;
+      if (filters.source && (c.source || COURSE_SOURCE.MANUAL) !== filters.source) return false;
+      if (filters.meeting === 'has' && !c.meetingUrl) return false;
+      if (filters.meeting === 'none' && c.meetingUrl) return false;
+      if (filters.dayType === 'workday' && schedIsWeekend(c.date)) return false;
+      if (filters.dayType === 'weekend' && !schedIsWeekend(c.date)) return false;
+      if (kw) {
+        var hay = [c.id, c.student, c.teacher, c.studentId, c.teacherId].join(' ').toLowerCase();
+        if (hay.indexOf(kw) < 0) return false;
+      }
+      return true;
+    });
+    var overlaps = schedOverlapIds(list);
+    var rows = list.map(function (c) {
+      var ov = overlaps[c.id];
+      var anomaly = '';
+      if (ov) anomaly = '时间冲突';
+      else if (schedMissingTeacher(c)) anomaly = '未分配教师';
+      else if (!c.meetingUrl) anomaly = '缺会议链接';
+      else if (c.needsAdjust) anomaly = '待调整';
+      return {
+        id: c.id, date: c.date, start: c.start, end: c.end, weekday: schedWeekday(c.date),
+        studentId: c.studentId, student: c.student, grade: c.grade,
+        teacherId: c.teacherId, teacher: c.teacher, teacherName: c.teacherName || c.teacher,
+        type: c.type, status: c.status, meetingUrl: c.meetingUrl,
+        meeting: c.meetingUrl ? '已生成' : '未生成',
+        source: c.source || COURSE_SOURCE.MANUAL, sourceLabel: schedSourceLabel(c),
+        seriesId: c.seriesId || '', batchId: c.batchId || '',
+        anomaly: anomaly, conflictIds: ov ? ov.ids : [],
+        createdBy: c.createdBy || c.creator || '', createdAt: c.createdAt || ''
+      };
+    });
+
+    if (filters.anomaly) {
+      var a = filters.anomaly;
+      rows = rows.filter(function (r) {
+        if (a === 'conflict') return r.anomaly === '时间冲突';
+        if (a === 'unassigned') return r.anomaly === '未分配教师';
+        if (a === 'meeting') return r.anomaly === '缺会议链接';
+        if (a === 'adjust') return r.anomaly === '待调整';
+        return true;
+      });
+    }
+
+    rows.sort(function (x, y) {
+      var kx = x.date + x.start, ky = y.date + y.start;
+      return filters.sort === 'desc' ? (kx < ky ? 1 : -1) : (kx < ky ? -1 : 1);
+    });
+
+    var stats = {
+      total: rows.length,
+      pending: 0, ongoing: 0, done: 0, missed: 0, cancelled: 0,
+      conflict: 0, unassigned: 0, missingMeeting: 0, needsAdjust: 0,
+      workday: 0, weekend: 0, today: 0, week: 0, weekendWeek: 0
+    };
+    var wr = schedWeekRange(TODAY);
+    rows.forEach(function (r) {
+      if (r.status === COURSE_STATUS.PENDING) stats.pending++;
+      else if (r.status === COURSE_STATUS.ONGOING) stats.ongoing++;
+      else if (r.status === COURSE_STATUS.DONE) stats.done++;
+      else if (r.status === COURSE_STATUS.MISSED) stats.missed++;
+      else if (r.status === COURSE_STATUS.CANCELLED) stats.cancelled++;
+      if (r.anomaly === '时间冲突') stats.conflict++;
+      if (r.anomaly === '未分配教师') stats.unassigned++;
+      if (r.anomaly === '缺会议链接') stats.missingMeeting++;
+      if (r.anomaly === '待调整') stats.needsAdjust++;
+      if (schedIsWeekend(r.date)) stats.weekend++; else stats.workday++;
+      if (r.date === TODAY) stats.today++;
+      if (r.date >= wr.from && r.date <= wr.to) {
+        stats.week++;
+        if (schedIsWeekend(r.date)) stats.weekendWeek++;
+      }
+    });
+
+    var pageSize = Number(filters.pageSize) > 0 ? Number(filters.pageSize) : 20;
+    if (pageSize > 100) pageSize = 100;
+    var total = rows.length;
+    var page = Math.max(1, Number(filters.page) || 1);
+    var pages = Math.max(1, Math.ceil(total / pageSize));
+    if (page > pages) page = pages;
+    var slice = filters.all ? rows.slice() : rows.slice((page - 1) * pageSize, page * pageSize);
+
+    /* 分组：按日期 / 按教师（分页结果内分组，便于页面直接渲染） */
+    var groups = [];
+    if (filters.group === 'teacher') {
+      var gmap = {};
+      slice.forEach(function (r) {
+        var k = r.teacherId || '__none';
+        if (!gmap[k]) { gmap[k] = { key: k, label: r.teacher || '未分配教师', rows: [] }; groups.push(gmap[k]); }
+        gmap[k].rows.push(r);
+      });
+    } else if (filters.group === 'date') {
+      var dmap = {};
+      slice.forEach(function (r) {
+        if (!dmap[r.date]) { dmap[r.date] = { key: r.date, label: r.date + '（' + r.weekday + '）', rows: [] }; groups.push(dmap[r.date]); }
+        dmap[r.date].rows.push(r);
+      });
+    } else {
+      slice.forEach(function (r) { groups.push({ key: r.id, label: r.id, rows: [r] }); });
+    }
+
+    return {
+      rows: slice, allRows: rows, total: total, page: page, pageSize: pageSize, pages: pages,
+      stats: stats, groups: groups, overlaps: overlaps
+    };
+  }
+
+  /* ---------------- 教师可用时间 / 例外 / 负荷 ---------------- */
+  function availabilityOfTeacher(teacherId) {
+    var ranges = db.teacherAvailabilities.filter(function (a) { return a.teacherId === teacherId; })
+      .sort(function (a, b) {
+        return WEEKDAYS.indexOf(a.weekday) - WEEKDAYS.indexOf(b.weekday) || (a.start < b.start ? -1 : 1);
+      });
+    var exceptions = db.teacherAvailabilityExceptions.filter(function (x) {
+      return x.teacherId === teacherId && x.status === AVAIL_EXCEPTION_STATUS.ACTIVE;
+    }).sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    var t = teacher(teacherId);
+    return {
+      teacherId: teacherId, ranges: ranges, exceptions: exceptions,
+      legacy: (t && t.availability) ? t.availability.slice() : [],
+      configured: ranges.length > 0,
+      source: ranges.length ? '新表' : ((t && t.availability && t.availability.length) ? '旧字段' : '未配置')
+    };
+  }
+  function activeRangesOn(teacherId, date) {
+    var w = schedWeekday(date);
+    return db.teacherAvailabilities.filter(function (a) {
+      if (a.teacherId !== teacherId || a.weekday !== w) return false;
+      if (a.effectiveFrom && date < a.effectiveFrom) return false;
+      if (a.effectiveTo && date > a.effectiveTo) return false;
+      return true;
+    });
+  }
+  /**
+   * 单教师单日单时段的可用性判定（例外优先于固定周期）：
+   * - 例外「不可用」→ 阻断；「限定时段」→ 必须落在例外区间内；「可加班」→ 放行
+   * - 否则看固定周期区间是否覆盖该时段
+   * - 完全没有配置 → 不阻断，只提醒（老数据语义）
+   * 返回值 hard 表示必须阻断。
+   */
+  function checkTeacherAvailability(teacherId, date, start, end) {
+    var s = timeToMin(start), e = timeToMin(end);
+    if (s < 0 || e <= s) return { ok: false, hard: true, code: 'TIME_INVALID', reason: '起止时间不合法' };
+    var exs = db.teacherAvailabilityExceptions.filter(function (x) {
+      return x.teacherId === teacherId && x.date === date && x.status === AVAIL_EXCEPTION_STATUS.ACTIVE;
+    });
+    for (var i = 0; i < exs.length; i++) {
+      var x = exs[i];
+      if (x.type === AVAIL_EXCEPTION.BLOCK) {
+        if (!x.start || !x.end) {
+          return { ok: false, hard: true, code: 'TEACHER_EXCEPTION_BLOCK',
+            reason: '教师 ' + (teacher(teacherId) ? teacher(teacherId).name : teacherId) +
+              ' 在 ' + date + ' 有「不可用」例外' + (x.reason ? '（' + x.reason + '）' : '') };
+        }
+        var xs = timeToMin(x.start), xe = timeToMin(x.end);
+        if (s < xe && e > xs) {
+          return { ok: false, hard: true, code: 'TEACHER_EXCEPTION_BLOCK',
+            reason: '教师 ' + (teacher(teacherId) ? teacher(teacherId).name : teacherId) +
+              ' 在 ' + date + ' ' + x.start + '—' + x.end + ' 不可用' + (x.reason ? '（' + x.reason + '）' : '') };
+        }
+      }
+      if (x.type === AVAIL_EXCEPTION.LIMITED) {
+        var ls = timeToMin(x.start || '00:00'), le = timeToMin(x.end || '23:59');
+        if (s < ls || e > le) {
+          return { ok: false, hard: true, code: 'TEACHER_EXCEPTION_LIMITED',
+            reason: '教师 ' + date + ' 仅允许 ' + x.start + '—' + x.end + ' 授课（限定时段例外）' };
+        }
+        return { ok: true, hard: false, reason: '命中限定时段例外', source: '例外' };
+      }
+      if (x.type === AVAIL_EXCEPTION.EXTRA && (!x.start || !x.end || (s >= timeToMin(x.start) && e <= timeToMin(x.end)))) {
+        return { ok: true, hard: false, reason: '命中临时加班例外', source: '例外' };
+      }
+    }
+    var ranges = activeRangesOn(teacherId, date);
+    if (!ranges.length) {
+      var t = teacher(teacherId);
+      if (t && (t.availability || []).length) {
+        var w = schedWeekday(date), p = schedPeriod(start);
+        var hit = t.availability.some(function (a) { return a.weekday === w && a.period === p; });
+        if (hit) return { ok: true, hard: false, source: '旧字段' };
+        return { ok: false, hard: false, code: 'TEACHER_OUTSIDE_AVAIL',
+          reason: '该时段不在教师「' + w + ' ' + p + '」的旧版可授课时间' };
+      }
+      return { ok: true, hard: false, unconfigured: true,
+        reason: '教师未配置可用时间，按「不阻断仅提醒」处理' };
+    }
+    var covered = ranges.some(function (a) {
+      return s >= timeToMin(a.start) && e <= timeToMin(a.end);
+    });
+    if (covered) return { ok: true, hard: false, source: '固定周期' };
+    return { ok: false, hard: false, code: 'TEACHER_OUTSIDE_AVAIL',
+      reason: '该时段不在教师固定可用时间（' + ranges.map(function (a) { return a.start + '—' + a.end; }).join('、') + '）' };
+  }
+
+  function loadPolicyOf(teacherId) {
+    var p = db.teacherLoadPolicies.filter(function (x) { return x.teacherId === teacherId; })[0];
+    if (p) return clone(p);
+    var out = clone(LOAD_POLICY_DEFAULT);
+    out.teacherId = teacherId;
+    return out;
+  }
+  function saveLoadPolicy(teacherId, input) {
+    assertPermission('lesson.view.all');
+    var t = teacher(teacherId);
+    if (!t) throw bizError('NOT_FOUND', '教师不存在');
+    input = input || {};
+    var p = db.teacherLoadPolicies.filter(function (x) { return x.teacherId === teacherId; })[0];
+    if (!p) {
+      p = clone(LOAD_POLICY_DEFAULT);
+      p.teacherId = teacherId;
+      db.teacherLoadPolicies.push(p);
+    }
+    ['maxPerDay', 'maxPerWeek', 'maxMinutesPerDay', 'breakMinutes'].forEach(function (k) {
+      if (input[k] !== undefined) {
+        var n = Number(input[k]);
+        if (!isFinite(n) || n < 0) throw bizError('BAD_POLICY', '负荷参数必须是非负数字');
+        p[k] = n;
+      }
+    });
+    if (input.allowContinuous !== undefined) p.allowContinuous = !!input.allowContinuous;
+    if (input.hard !== undefined) p.hard = !!input.hard;
+    p.updatedBy = session.operatorName || '';
+    p.updatedAt = stamp();
+    recordAudit({
+      module: '排课设置', action: '保存教师负荷策略', resourceType: 'teacher', resourceId: teacherId,
+      resourceName: t.name, beforeData: null, afterData: clone(p), reason: input.reason || ''
+    });
+    save();
+    return clone(p);
+  }
+  function availabilityTextOf(teacherId) {
+    var info = availabilityOfTeacher(teacherId);
+    if (!info.configured && info.legacy.length) return availabilityText(teacherId);
+    if (!info.configured) return '未配置';
+    return info.ranges.map(function (a) {
+      return a.weekday + ' ' + a.start + '—' + a.end;
+    }).join('；');
+  }
+  /** 保存固定周期可用时间：整体替换（旧记录保留为历史审计，不物理删除） */
+  function saveTeacherAvailability(teacherId, ranges, opt) {
+    assertPermission('lesson.view.all');
+    opt = opt || {};
+    var t = teacher(teacherId);
+    if (!t) throw bizError('NOT_FOUND', '教师不存在');
+    ranges = (ranges || []).map(function (r) {
+      var w = r.weekday, s = String(r.start || '').trim(), e = String(r.end || '').trim();
+      if (WEEKDAYS.indexOf(w) < 0) throw bizError('BAD_RANGE', '可用时间的星期不合法');
+      if (timeToMin(s) < 0 || timeToMin(e) < 0 || timeToMin(e) <= timeToMin(s)) {
+        throw bizError('BAD_RANGE', '可用时间区间必须结束晚于开始');
+      }
+      return { weekday: w, start: s, end: e };
+    });
+    /* 同星期重叠区间合并，避免同一时段两份互相矛盾的记录 */
+    var merged = [];
+    WEEKDAYS.forEach(function (w) {
+      var list = ranges.filter(function (r) { return r.weekday === w; })
+        .sort(function (a, b) { return timeToMin(a.start) - timeToMin(b.start); });
+      list.forEach(function (r) {
+        var last = merged[merged.length - 1];
+        if (last && last.weekday === w && timeToMin(r.start) <= timeToMin(last.end)) {
+          if (timeToMin(r.end) > timeToMin(last.end)) last.end = r.end;
+        } else merged.push(clone(r));
+      });
+    });
+    db.teacherAvailabilities = db.teacherAvailabilities.filter(function (a) { return a.teacherId !== teacherId; });
+    merged.forEach(function (r) {
+      db.teacherAvailabilities.push({
+        id: 'TAV' + seq('TAV', 3), teacherId: teacherId, weekday: r.weekday,
+        start: r.start, end: r.end, effectiveFrom: opt.effectiveFrom || '', effectiveTo: opt.effectiveTo || '',
+        source: '手动', note: opt.note || '', createdBy: session.operatorName || '', createdAt: stamp()
+      });
+    });
+    recordAudit({
+      module: '排课设置', action: '保存教师可用时间', resourceType: 'teacher', resourceId: teacherId,
+      resourceName: t.name, beforeData: null, afterData: { ranges: merged }, reason: opt.reason || ''
+    });
+    save();
+    return merged;
+  }
+  function addAvailabilityException(teacherId, input) {
+    assertPermission('lesson.view.all');
+    input = input || {};
+    var t = teacher(teacherId);
+    if (!t) throw bizError('NOT_FOUND', '教师不存在');
+    var date = String(input.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw bizError('DATE_INVALID', '请选择例外日期');
+    var type = input.type || AVAIL_EXCEPTION.BLOCK;
+    if (AVAIL_EXCEPTION_TYPE.indexOf(type) < 0) throw bizError('BAD_EXCEPTION', '例外类型不合法');
+    if (type === AVAIL_EXCEPTION.LIMITED &&
+      (timeToMin(input.start) < 0 || timeToMin(input.end) < 0 || timeToMin(input.end) <= timeToMin(input.start))) {
+      throw bizError('BAD_EXCEPTION', '限定时段必须填写正确的起止时间');
+    }
+    var x = {
+      id: 'TAE' + seq('TAE', 3), teacherId: teacherId, date: date, type: type,
+      start: type === AVAIL_EXCEPTION.LIMITED ? input.start : (input.start || ''),
+      end: type === AVAIL_EXCEPTION.LIMITED ? input.end : (input.end || ''),
+      reason: String(input.reason || '').trim(),
+      status: AVAIL_EXCEPTION_STATUS.ACTIVE,
+      createdBy: session.operatorName || '', createdAt: stamp()
+    };
+    db.teacherAvailabilityExceptions.push(x);
+    recordAudit({
+      module: '排课设置', action: '新增可用时间例外', resourceType: 'teacher', resourceId: teacherId,
+      resourceName: t.name, beforeData: null, afterData: clone(x), reason: x.reason
+    });
+    save();
+    return x;
+  }
+  function revokeAvailabilityException(id, reason) {
+    assertPermission('lesson.view.all');
+    var x = db.teacherAvailabilityExceptions.filter(function (a) { return a.id === id; })[0];
+    if (!x) throw bizError('NOT_FOUND', '例外记录不存在');
+    if (x.status === AVAIL_EXCEPTION_STATUS.REVOKED) return x;
+    x.status = AVAIL_EXCEPTION_STATUS.REVOKED;
+    x.revokedBy = session.operatorName || '';
+    x.revokedAt = stamp();
+    recordAudit({
+      module: '排课设置', action: '撤销可用时间例外', resourceType: 'teacher', resourceId: x.teacherId,
+      resourceName: (teacher(x.teacherId) || {}).name || x.teacherId, beforeData: null,
+      afterData: clone(x), reason: reason || x.reason || ''
+    });
+    save();
+    return x;
+  }
+
+  /* ---------------- 学员排课偏好 ---------------- */
+  function studentPreferenceOf(studentId) {
+    var list = db.studentSchedulePreferences.filter(function (p) {
+      return p.studentId === studentId && p.status === PREF_STATUS.ACTIVE;
+    });
+    return list.length ? clone(list[list.length - 1]) : null;
+  }
+  function saveStudentPreference(studentId, input) {
+    assertPermission('lesson.view.all');
+    input = input || {};
+    var s = student(studentId);
+    if (!s) throw bizError('STUDENT_NOT_FOUND', '学员不存在');
+    var cur = db.studentSchedulePreferences.filter(function (p) {
+      return p.studentId === studentId && p.status === PREF_STATUS.ACTIVE;
+    })[0];
+    if (cur) { cur.status = PREF_STATUS.HISTORY; cur.updatedAt = stamp(); }
+    var p = {
+      id: 'SSP' + seq('SSP', 3), studentId: studentId,
+      preferredWeekdays: toList(input.preferredWeekdays).filter(function (w) { return WEEKDAYS.indexOf(w) >= 0; }),
+      preferredPeriods: toList(input.preferredPeriods).filter(function (w) { return PERIODS.indexOf(w) >= 0; }),
+      availableWeekdays: toList(input.availableWeekdays).filter(function (w) { return WEEKDAYS.indexOf(w) >= 0; }),
+      availablePeriods: toList(input.availablePeriods).filter(function (w) { return PERIODS.indexOf(w) >= 0; }),
+      unavailablePeriods: (Array.isArray(input.unavailablePeriods) ? input.unavailablePeriods : []).filter(Boolean).map(function (u) {
+        return {
+          weekday: WEEKDAYS.indexOf(u.weekday) >= 0 ? u.weekday : '',
+          period: PERIODS.indexOf(u.period) >= 0 ? u.period : '',
+          date: u.date || '', start: u.start || '', end: u.end || '', reason: u.reason || ''
+        };
+      }),
+      lessonDuration: Number(input.lessonDuration) > 0 ? Number(input.lessonDuration) : 60,
+      weeklyLessonCount: Number(input.weeklyLessonCount) >= 0 ? Number(input.weeklyLessonCount) : 0,
+      effectiveStartDate: input.effectiveStartDate || '',
+      effectiveEndDate: input.effectiveEndDate || '',
+      preferredTeacherId: input.preferredTeacherId || '',
+      remark: String(input.remark || '').trim(),
+      source: input.source || '手动', status: PREF_STATUS.ACTIVE,
+      createdBy: session.operatorName || '', createdAt: stamp(), updatedAt: stamp()
+    };
+    db.studentSchedulePreferences.push(p);
+    recordAudit({
+      module: '排课设置', action: '保存学员排课偏好', resourceType: 'student', resourceId: studentId,
+      resourceName: s.name, beforeData: cur ? clone(cur) : null, afterData: clone(p), reason: input.reason || ''
+    });
+    save();
+    return clone(p);
+  }
+  /** 学员偏好校验：禁止时间硬阻断；可用范围外与首选偏差仅提醒 */
+  function checkStudentPreference(studentId, date, start, end) {
+    var p = studentPreferenceOf(studentId);
+    if (!p) return { ok: true, warnings: [], preferred: false, forbidden: false };
+    var w = schedWeekday(date), per = schedPeriod(start);
+    var expired = (p.effectiveStartDate && date < p.effectiveStartDate) ||
+      (p.effectiveEndDate && date > p.effectiveEndDate);
+    if (expired) return { ok: true, warnings: ['偏好已过生效期，按无偏好处理'], preferred: false, forbidden: false };
+    var s = timeToMin(start), e = timeToMin(end);
+    for (var i = 0; i < p.unavailablePeriods.length; i++) {
+      var u = p.unavailablePeriods[i];
+      var hit = false;
+      if (u.date && u.start && u.end) {
+        hit = u.date === date && s < timeToMin(u.end) && e > timeToMin(u.start);
+      } else if (u.date) {
+        hit = u.date === date;
+      } else if (u.weekday && u.period) {
+        hit = u.weekday === w && u.period === per;
+      } else if (u.weekday) {
+        hit = u.weekday === w;
+      }
+      if (hit) {
+        return { ok: false, forbidden: true, preferred: false, warnings: [],
+          reason: '学员在 ' + date + ' ' + start + '—' + end + ' 属于禁止时间' + (u.reason ? '（' + u.reason + '）' : '') };
+      }
+    }
+    var warns = [];
+    if (p.availableWeekdays.length && p.availableWeekdays.indexOf(w) < 0) warns.push('不在学员可用星期（' + w + '）');
+    if (p.availablePeriods.length && p.availablePeriods.indexOf(per) < 0) warns.push('不在学员可用时段（' + per + '）');
+    var pref = false;
+    if (p.preferredWeekdays.length || p.preferredPeriods.length) {
+      var wOk = !p.preferredWeekdays.length || p.preferredWeekdays.indexOf(w) >= 0;
+      var pOk = !p.preferredPeriods.length || p.preferredPeriods.indexOf(per) >= 0;
+      pref = wOk && pOk;
+      if (!pref) warns.push('不符合学员首选时间');
+    }
+    return { ok: true, forbidden: false, preferred: pref, warnings: warns, preference: p };
+  }
+
+  /* ---------------- 统一计划校验（同批次内存计算，不逐条全表扫描） ---------------- */
+  function loadFindings(teacherId, date, rows, policy) {
+    var day = rows.filter(function (r) { return r.teacherId === teacherId && r.date === date; });
+    var dayCount = day.length;
+    var dayMin = day.reduce(function (n, r) { return n + Math.max(0, timeToMin(r.end) - timeToMin(r.start)); }, 0);
+    var week = schedWeekRange(date);
+    var weekCount = rows.filter(function (r) {
+      return r.teacherId === teacherId && r.date >= week.from && r.date <= week.to;
+    }).length;
+    var warns = [], hard = [];
+    var push = function (arr, code, msg) { arr.push({ code: code, message: msg }); };
+    if (dayCount > policy.maxPerDay) {
+      (policy.hard ? hard : warns).push({ code: 'LOAD_DAY', message: '教师当日 ' + dayCount + ' 节，超过负荷上限 ' + policy.maxPerDay + ' 节' });
+    }
+    if (weekCount > policy.maxPerWeek) {
+      (policy.hard ? hard : warns).push({ code: 'LOAD_WEEK', message: '教师本周 ' + weekCount + ' 节，超过负荷上限 ' + policy.maxPerWeek + ' 节' });
+    }
+    if (dayMin > policy.maxMinutesPerDay) {
+      (policy.hard ? hard : warns).push({ code: 'LOAD_MINUTES', message: '教师当日 ' + dayMin + ' 分钟，超过上限 ' + policy.maxMinutesPerDay + ' 分钟' });
+    }
+    if (!policy.allowContinuous && dayCount > 1) {
+      var sorted = day.slice().sort(function (a, b) { return timeToMin(a.start) - timeToMin(b.start); });
+      for (var i = 1; i < sorted.length; i++) {
+        var gap = timeToMin(sorted[i].start) - timeToMin(sorted[i - 1].end);
+        if (gap < policy.breakMinutes) {
+          warns.push({ code: 'LOAD_BREAK', message: '连续课程间隔不足 ' + policy.breakMinutes + ' 分钟' });
+          break;
+        }
+      }
+    }
+    return { hard: hard, warnings: warns, dayCount: dayCount, weekCount: weekCount, dayMinutes: dayMin };
+  }
+
+  /**
+   * 批量计划校验：一次性按日期建索引，所有行在内存里统一计算。
+   * rows: [{rowKey, studentId, teacherId, date, start, end, meetingUrl}]
+   * opt.strictAvailability=true 时「不在固定可用时间」升级为硬冲突（批量/周期使用）。
+   */
+  function checkSchedulePlan(rows, opt) {
+    opt = opt || {};
+    rows = rows || [];
+    var existing = {}, existingAll = {};
+    db.courses.forEach(function (c) {
+      existingAll[c.id] = 1;
+      if (c.status === COURSE_STATUS.CANCELLED || c.status === COURSE_STATUS.MISSED) return;
+      existing[c.date] = existing[c.date] || [];
+      existing[c.date].push(c);
+    });
+    var planned = {};
+    var results = [];
+    rows.forEach(function (r, idx) {
+      var rowKey = r.rowKey || (r.studentId + '|' + r.date + '|' + r.start);
+      var hard = [], warns = [];
+      var s = timeToMin(r.start), e = timeToMin(r.end);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(r.date || ''))) {
+        hard.push({ code: 'DATE_INVALID', message: '日期格式不合法' });
+      } else if (s < 0 || e <= s) {
+        hard.push({ code: 'TIME_INVALID', message: '结束时间必须晚于开始时间' });
+      }
+      var stu = student(r.studentId);
+      if (!stu) hard.push({ code: 'STUDENT_NOT_FOUND', message: '学员不存在' });
+      var tch = teacher(r.teacherId);
+      if (!tch) hard.push({ code: 'TEACHER_NOT_FOUND', message: '未分配教师' });
+      else if (tch.cooperationStatus !== COOP.READY) {
+        hard.push({ code: 'TEACHER_NOT_READY', message: '教师「' + tch.name + '」当前为「' + (tch.cooperationStatus || '未知') + '」' });
+      }
+      /* 已有课程冲突（同一日期索引，只扫当天） */
+      if (s >= 0 && e > s) {
+        (existing[r.date] || []).forEach(function (c) {
+          if (opt.excludeId && c.id === opt.excludeId) return;
+          var cs = timeToMin(c.start), ce = timeToMin(c.end);
+          if (cs < 0 || Math.max(s, cs) >= Math.min(e, ce)) return;
+          if (r.teacherId && c.teacherId === r.teacherId) {
+            hard.push({ code: 'TEACHER_CONFLICT', message: '教师 ' + (c.teacher || r.teacherId) + ' 在 ' + r.date + ' ' + c.start + '—' + c.end + ' 已有课程 ' + c.id });
+          }
+          if (r.studentId && c.studentId === r.studentId) {
+            hard.push({ code: 'STUDENT_CONFLICT', message: '学员 ' + (c.student || r.studentId) + ' 在 ' + r.date + ' ' + c.start + '—' + c.end + ' 已有课程 ' + c.id });
+          }
+        });
+        /* 同批次内互相冲突 */
+        (planned[r.date] || []).forEach(function (p) {
+          var ps = timeToMin(p.start), pe = timeToMin(p.end);
+          if (Math.max(s, ps) >= Math.min(e, pe)) return;
+          if (p.teacherId === r.teacherId) {
+            hard.push({ code: 'BATCH_TEACHER_CONFLICT', message: '与本批次 ' + p.rowKey + ' 的教师时段重叠' });
+          }
+          if (p.studentId === r.studentId) {
+            hard.push({ code: 'BATCH_STUDENT_CONFLICT', message: '与本批次 ' + p.rowKey + ' 的学员时段重叠' });
+          }
+        });
+      }
+      if (r.teacherId && s >= 0 && e > s && /^\d{4}-\d{2}-\d{2}$/.test(String(r.date || ''))) {
+        var av = checkTeacherAvailability(r.teacherId, r.date, r.start, r.end);
+        if (av.hard) hard.push({ code: av.code || 'TEACHER_UNAVAILABLE', message: av.reason });
+        else if (!av.ok) {
+          if (opt.strictAvailability) hard.push({ code: av.code || 'TEACHER_OUTSIDE_AVAIL', message: av.reason });
+          else warns.push({ code: av.code || 'TEACHER_OUTSIDE_AVAIL', message: av.reason });
+        } else if (av.unconfigured) {
+          warns.push({ code: 'TEACHER_AVAIL_UNCONFIGURED', message: av.reason });
+        }
+      }
+      if (r.studentId && stu && s >= 0 && e > s && /^\d{4}-\d{2}-\d{2}$/.test(String(r.date || ''))) {
+        var pref = checkStudentPreference(r.studentId, r.date, r.start, r.end);
+        if (pref.forbidden) hard.push({ code: 'STUDENT_FORBIDDEN', message: pref.reason });
+        else {
+          (pref.warnings || []).forEach(function (m) { warns.push({ code: 'STUDENT_PREF', message: m }); });
+          if (pref.preferred) warns._preferred = true;
+        }
+        var rel = activeRelationOfStudent(r.studentId);
+        if (r.teacherId && (!rel || rel.teacherId !== r.teacherId)) {
+          warns.push({ code: 'NOT_RESPONSIBLE_TEACHER', message: '该教师不是学员当前负责教师' + (rel ? '（当前 ' + ((teacher(rel.teacherId) || {}).name || rel.teacherId) + '）' : '（学员未分配）') });
+        }
+        if (tch && stu) {
+          if (stu.grade && (tch.grades || []).indexOf(stu.grade) < 0) {
+            warns.push({ code: 'GRADE_MISMATCH', message: '教师年级方向不含 ' + stu.grade });
+          }
+          var book = stu.book || stu.textbook;
+          if (book && (tch.textbooks || []).indexOf(book) < 0) {
+            warns.push({ code: 'TEXTBOOK_MISMATCH', message: '教师教材方向不含 ' + book });
+          }
+        }
+      }
+      if (!r.meetingUrl) warns.push({ code: 'MEETING_MISSING', message: '会议链接待补充' });
+      if (tch) {
+        var policy = loadPolicyOf(tch.id);
+        var lf = loadFindings(tch.id, r.date, rows, policy);
+        lf.hard.forEach(function (x) { hard.push(x); });
+        lf.warnings.forEach(function (x) { warns.push(x); });
+      }
+      var result = { rowKey: rowKey, index: idx, studentId: r.studentId, teacherId: r.teacherId,
+        date: r.date, start: r.start, end: r.end, hard: hard, warnings: warns,
+        ok: hard.length === 0, status: hard.length ? '硬冲突' : (warns.length ? '提醒' : '通过') };
+      results.push(result);
+      if (!hard.length) {
+        planned[r.date] = planned[r.date] || [];
+        planned[r.date].push({ rowKey: rowKey, teacherId: r.teacherId, studentId: r.studentId, start: r.start, end: r.end });
+      }
+    });
+    return results;
+  }
+  function checkSlotConflicts(input) {
+    var r = checkSchedulePlan([input], { excludeId: input.excludeId, strictAvailability: !!input.strictAvailability })[0];
+    return r;
+  }
+
+  /* ---------------- 教师匹配与推荐（可解释评分，仅建议） ---------------- */
+  function teacherCandidatesFor(slot) {
+    slot = slot || {};
+    var list = db.teachers.filter(function (t) {
+      if (t.cooperationStatus !== COOP.READY) return false;
+      if (slot.teacherId && t.id === slot.teacherId) return false;
+      var av = checkTeacherAvailability(t.id, slot.date, slot.start, slot.end);
+      if (av.hard) return false;
+      if (slot.studentId) {
+        var pref = checkStudentPreference(slot.studentId, slot.date, slot.start, slot.end);
+        if (pref.forbidden) return false;
+      }
+      var plan = checkSchedulePlan([{ studentId: slot.studentId, teacherId: t.id,
+        date: slot.date, start: slot.start, end: slot.end }], { strictAvailability: false })[0];
+      var hard = plan.hard.filter(function (x) {
+        return x.code === 'TEACHER_CONFLICT' || x.code === 'STUDENT_CONFLICT' || x.code === 'LOAD_DAY' || x.code === 'LOAD_WEEK';
+      });
+      return hard.length === 0;
+    });
+    var stu = slot.studentId ? student(slot.studentId) : null;
+    var rel = slot.studentId ? activeRelationOfStudent(slot.studentId) : null;
+    var pref = slot.studentId ? studentPreferenceOf(slot.studentId) : null;
+    var week = slot.date ? schedWeekRange(slot.date) : null;
+    var out = list.map(function (t) {
+      var score = 0, reasons = [], warns = [];
+      if (rel && rel.teacherId === t.id) { score += 30; reasons.push('当前负责教师'); }
+      if (pref && pref.preferredTeacherId && pref.preferredTeacherId === t.id) { score += 20; reasons.push('学员首选教师'); }
+      if (stu && stu.grade && (t.grades || []).indexOf(stu.grade) >= 0) { score += 10; reasons.push('年级匹配（' + stu.grade + '）'); }
+      else if (stu && stu.grade) warns.push('年级方向不含 ' + stu.grade);
+      var book = stu ? (stu.book || stu.textbook) : '';
+      if (book && (t.textbooks || []).indexOf(book) >= 0) { score += 6; reasons.push('教材匹配（' + book + '）'); }
+      else if (book) warns.push('教材方向不含 ' + book);
+      var av = checkTeacherAvailability(t.id, slot.date, slot.start, slot.end);
+      if (av.ok && !av.unconfigured) { score += 2; reasons.push('该时段可用' + (av.source === '固定周期' ? '（固定周期）' : '')); }
+      if (av.unconfigured) warns.push('教师未配置可用时间');
+      var dayCount = db.courses.filter(function (c) { return c.teacherId === t.id && c.date === slot.date && c.status !== COURSE_STATUS.CANCELLED && c.status !== COURSE_STATUS.MISSED; }).length;
+      var weekCount = week ? db.courses.filter(function (c) { return c.teacherId === t.id && c.date >= week.from && c.date <= week.to && c.status !== COURSE_STATUS.CANCELLED && c.status !== COURSE_STATUS.MISSED; }).length : 0;
+      if (dayCount <= 3) { score += 6; reasons.push('当日负荷较低（' + dayCount + ' 节）'); }
+      else warns.push('当日已排 ' + dayCount + ' 节');
+      if (weekCount <= 12) { score += 6; reasons.push('本周负荷较低（' + weekCount + ' 节）'); }
+      else warns.push('本周已排 ' + weekCount + ' 节');
+      var avg = db.teachers.filter(function (x) { return x.cooperationStatus === COOP.READY; })
+        .reduce(function (n, x) {
+          return n + db.courses.filter(function (c) { return c.teacherId === x.id && week && c.date >= week.from && c.date <= week.to && c.status !== COURSE_STATUS.CANCELLED && c.status !== COURSE_STATUS.MISSED; }).length;
+        }, 0) / Math.max(1, db.teachers.filter(function (x) { return x.cooperationStatus === COOP.READY; }).length);
+      if (weekCount <= avg) { score += 4; reasons.push('周均衡度良好'); }
+      var stat = teacherStat(t.id);
+      return { teacherId: t.id, name: t.name, code: t.code, score: score, reasons: reasons,
+        warnings: warns, available: av.ok, availability: av, dayCount: dayCount, weekCount: weekCount,
+        currentStudents: stat.currentStudents, isResponsible: !!(rel && rel.teacherId === t.id) };
+    });
+    out.sort(function (a, b) { return b.score - a.score || a.currentStudents - b.currentStudents; });
+    return out.slice(0, Number(slot.limit) > 0 ? Number(slot.limit) : 10);
+  }
+
+  /* ---------------- 周期排课 ---------------- */
+  function normalizeWeekdayPlans(input) {
+    var plans = [];
+    if (Array.isArray(input.weekdayPlans)) {
+      input.weekdayPlans.forEach(function (p) {
+        if (WEEKDAYS.indexOf(p.weekday) >= 0 && timeToMin(p.start) >= 0) {
+          plans.push({ weekday: p.weekday, start: p.start });
+        }
+      });
+    }
+    if (!plans.length && Array.isArray(input.weekdays)) {
+      input.weekdays.forEach(function (w) {
+        if (WEEKDAYS.indexOf(w) >= 0) plans.push({ weekday: w, start: input.start || '19:00' });
+      });
+    }
+    var sort = function (a, b) { return WEEKDAYS.indexOf(a.weekday) - WEEKDAYS.indexOf(b.weekday); };
+    return plans.sort(sort);
+  }
+  function expandSeriesRows(input) {
+    input = input || {};
+    var from = String(input.effectiveFrom || input.dateFrom || ''), to = String(input.effectiveTo || input.dateTo || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from) {
+      throw bizError('DATE_INVALID', '请填写正确的生效起始与结束日期');
+    }
+    var plans = normalizeWeekdayPlans(input);
+    if (!plans.length) throw bizError('WEEKDAY_REQUIRED', '请至少选择一个每周上课星期');
+    var duration = Number(input.duration) > 0 ? Number(input.duration) : 60;
+    var policy = input.meetingPolicy || '逐节填';
+    var rows = [];
+    schedDates(from, to).forEach(function (d) {
+      var w = schedWeekday(d);
+      plans.forEach(function (p) {
+        if (p.weekday !== w) return;
+        var start = p.start;
+        rows.push({
+          rowKey: d + '|' + start, date: d, weekday: w, start: start,
+          end: schedAddMinutes(start, duration),
+          studentId: input.studentId, teacherId: input.teacherId,
+          type: input.type || '一对一',
+          meetingUrl: policy === '同一链接' ? (input.meetingUrl || '') : '',
+          meetingPolicy: policy, note: input.note || '', skip: false
+        });
+      });
+    });
+    if (rows.length > 400) throw bizError('SERIES_TOO_LARGE', '周期实例超过 400 节，请缩短生效区间');
+    return rows;
+  }
+  function previewScheduleSeries(input) {
+    assertPermission('lesson.view.all');
+    var rows = input && input.rows ? input.rows.slice() : expandSeriesRows(input);
+    var checked = checkSchedulePlan(rows, { strictAvailability: true });
+    return {
+      rows: rows.map(function (r, i) {
+        var res = checked[i];
+        return {
+          rowKey: r.rowKey, date: r.date, weekday: r.weekday, start: r.start, end: r.end,
+          studentId: r.studentId, student: (student(r.studentId) || {}).name || '',
+          teacherId: r.teacherId, teacher: (teacher(r.teacherId) || {}).name || '',
+          meetingUrl: r.meetingUrl || '', meeting: r.meetingUrl ? '已生成' : '未生成',
+          ok: res.ok, status: res.status, hard: res.hard, warnings: res.warnings, skip: !!r.skip
+        };
+      }),
+      summary: {
+        total: checked.length,
+        pass: checked.filter(function (x) { return x.ok && !x.warnings.length; }).length,
+        warn: checked.filter(function (x) { return x.ok && x.warnings.length; }).length,
+        conflict: checked.filter(function (x) { return !x.ok; }).length
+      }
+    };
+  }
+  function createScheduleSeries(input) {
+    assertPermission('lesson.view.all');
+    input = input || {};
+    var stu = student(input.studentId);
+    if (!stu) throw bizError('STUDENT_NOT_FOUND', '请选择有效学员');
+    var tch = teacher(input.teacherId);
+    if (!tch) throw bizError('TEACHER_NOT_FOUND', '请选择有效教师');
+    if (tch.cooperationStatus !== COOP.READY) throw bizError('TEACHER_NOT_READY', '教师当前不是可授课状态');
+    var rows = input.rows && input.rows.length ? input.rows.slice() : expandSeriesRows(input);
+    var checked = checkSchedulePlan(rows.map(function (r) {
+      return { rowKey: r.rowKey, studentId: input.studentId, teacherId: r.teacherId || input.teacherId,
+        date: r.date, start: r.start, end: r.end, meetingUrl: r.meetingUrl };
+    }), { strictAvailability: true });
+    var confirmed = input.confirmedWarnings === true;
+    var series = {
+      id: 'SR' + seq('SR', 3), seriesNo: 'SR' + String(TODAY).replace(/-/g, '') + seq('SR', 3),
+      studentId: stu.id, student: stu.name, grade: stu.grade || '',
+      teacherId: tch.id, teacher: tch.name,
+      type: input.type || '一对一', duration: Number(input.duration) || 60,
+      weekdayPlans: normalizeWeekdayPlans(input),
+      effectiveFrom: String(input.effectiveFrom || input.dateFrom || ''),
+      effectiveTo: String(input.effectiveTo || input.dateTo || ''),
+      meetingPolicy: input.meetingPolicy || '逐节填', meetingUrl: input.meetingUrl || '',
+      note: String(input.note || '').trim(),
+      status: SERIES_STATUS.GENERATED,
+      plannedCount: rows.length, createdCount: 0, skippedCount: 0, conflictCount: 0,
+      createdBy: session.operatorName || '', createdAt: stamp(), updatedAt: stamp()
+    };
+    db.scheduleSeries.push(series);
+    var created = [], skipped = [], conflicts = [];
+    rows.forEach(function (r, i) {
+      var res = checked[i];
+      if (r.skip) { skipped.push({ rowKey: r.rowKey, date: r.date, reason: '手动跳过' }); return; }
+      if (!res.ok) {
+        conflicts.push({ rowKey: r.rowKey, date: r.date, start: r.start, end: r.end,
+          reasons: res.hard.map(function (x) { return x.message; }) });
+        return;
+      }
+      if (res.warnings.length && !confirmed) {
+        skipped.push({ rowKey: r.rowKey, date: r.date, reason: '存在提醒未确认：' + res.warnings.map(function (x) { return x.message; }).join('；') });
+        return;
+      }
+      try {
+        var c = createCourse({
+          studentId: stu.id, teacherId: r.teacherId || tch.id, date: r.date, start: r.start, end: r.end,
+          meetingUrl: r.meetingUrl || '', type: r.type || series.type, note: r.note || series.note,
+          seriesId: series.id, source: COURSE_SOURCE.SERIES, meetingPolicy: series.meetingPolicy,
+          scheduleNote: '周期排课 ' + series.id, confirmWarnings: true
+        });
+        created.push(c);
+      } catch (e) {
+        conflicts.push({ rowKey: r.rowKey, date: r.date, start: r.start, end: r.end, reasons: [e.message] });
+      }
+    });
+    series.createdCount = created.length;
+    series.skippedCount = skipped.length;
+    series.conflictCount = conflicts.length;
+    series.status = conflicts.length ? (created.length ? SERIES_STATUS.PARTIAL : SERIES_STATUS.DRAFT) : SERIES_STATUS.GENERATED;
+    series.updatedAt = stamp();
+    recordAudit({
+      module: '排课', action: '创建周期排课', resourceType: 'scheduleSeries', resourceId: series.id,
+      resourceName: series.student + ' · ' + series.teacher + ' · ' + series.effectiveFrom + '~' + series.effectiveTo,
+      beforeData: null, afterData: { planned: rows.length, created: created.length, skipped: skipped.length, conflicts: conflicts.length },
+      reason: input.reason || ''
+    });
+    save();
+    return { series: clone(series), created: created.map(function (c) { return clone(c); }), skipped: skipped, conflicts: conflicts };
+  }
+  function seriesOf(id) {
+    var s = db.scheduleSeries.filter(function (x) { return x.id === id; })[0];
+    return s ? clone(s) : null;
+  }
+  function seriesCourses(id) {
+    return db.courses.filter(function (c) { return c.seriesId === id; })
+      .sort(function (a, b) { return (a.date + a.start) < (b.date + b.start) ? -1 : 1; });
+  }
+  function scheduleSeriesList() {
+    return db.scheduleSeries.slice().map(function (s) {
+      var out = clone(s);
+      out.courses = seriesCourses(s.id).length;
+      return out;
+    }).sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+  }
+  /** 系列修改：single / following / all；已完成与授课中一律跳过，不覆盖历史 */
+  function updateScheduleSeries(seriesId, scope, patch) {
+    assertPermission('lesson.view.all');
+    patch = patch || {};
+    var series = db.scheduleSeries.filter(function (x) { return x.id === seriesId; })[0];
+    if (!series) throw bizError('NOT_FOUND', '周期不存在');
+    var list = seriesCourses(seriesId);
+    if (scope === 'single') {
+      if (!patch.courseId) throw bizError('COURSE_REQUIRED', '请指定要修改的单节课程');
+      var one = course(patch.courseId);
+      if (!one || one.seriesId !== seriesId) throw bizError('COURSE_REQUIRED', '该课程不属于此周期');
+      var c1 = updateCourse(patch.courseId, patch);
+      return { updated: [c1.id], skipped: [], failed: [] };
+    }
+    var locked = list.filter(function (c) { return c.status === COURSE_STATUS.DONE || c.status === COURSE_STATUS.ONGOING; });
+    if (scope === 'all' && locked.length) {
+      throw bizError('SERIES_HAS_STARTED',
+        '周期内已有 ' + locked.length + ' 节开始/完成，不能整体修改；请选择「本次及后续」', { locked: locked.map(function (c) { return c.id; }) });
+    }
+    var fromDate = patch.fromDate || '';
+    if (scope === 'following' && !/^\d{4}-\d{2}-\d{2}$/.test(fromDate)) {
+      throw bizError('DATE_INVALID', '「本次及后续」需要指定起始课程日期');
+    }
+    var updated = [], skipped = [], failed = [];
+    list.forEach(function (c) {
+      if (c.status === COURSE_STATUS.DONE || c.status === COURSE_STATUS.ONGOING || c.status === COURSE_STATUS.CANCELLED) {
+        skipped.push({ courseId: c.id, date: c.date, reason: '已完成/授课中/已取消课程不覆盖' });
+        return;
+      }
+      if (scope === 'following' && c.date < fromDate) {
+        skipped.push({ courseId: c.id, date: c.date, reason: '早于本次起始日期' });
+        return;
+      }
+      var delta = patch.start && c.start !== patch.start
+        ? (timeToMin(patch.end || patch.start) - timeToMin(patch.start)) : 0;
+      var p = {};
+      if (patch.teacherId) p.teacherId = patch.teacherId;
+      if (patch.start) {
+        p.start = patch.start;
+        p.end = patch.end || schedAddMinutes(patch.start, timeToMin(c.end) - timeToMin(c.start) || series.duration);
+        if (p.end <= p.start) p.end = schedAddMinutes(p.start, series.duration);
+      }
+      if (patch.type) p.type = patch.type;
+      if (patch.note !== undefined) p.note = patch.note;
+      if (patch.meetingUrl !== undefined) p.meetingUrl = patch.meetingUrl;
+      try {
+        var u = updateCourse(c.id, p);
+        updated.push(u.id);
+        c.seriesId = seriesId;
+      } catch (e) {
+        failed.push({ courseId: c.id, date: c.date, reason: e.message });
+      }
+    });
+    if (patch.start) {
+      series.weekdayPlans = series.weekdayPlans.map(function (p) { return { weekday: p.weekday, start: patch.start }; });
+    }
+    if (patch.teacherId) {
+      series.teacherId = patch.teacherId;
+      series.teacher = (teacher(patch.teacherId) || {}).name || series.teacher;
+    }
+    series.updatedAt = stamp();
+    recordAudit({
+      module: '排课', action: '修改周期排课', resourceType: 'scheduleSeries', resourceId: series.id,
+      resourceName: series.student + ' · ' + series.teacher, beforeData: null,
+      afterData: { scope: scope, updated: updated.length, skipped: skipped.length, failed: failed.length },
+      reason: patch.reason || ''
+    });
+    save();
+    return { updated: updated, skipped: skipped, failed: failed };
+  }
+  function cancelScheduleSeries(seriesId, reason, scope) {
+    assertPermission('lesson.view.all');
+    var series = db.scheduleSeries.filter(function (x) { return x.id === seriesId; })[0];
+    if (!series) throw bizError('NOT_FOUND', '周期不存在');
+    var list = seriesCourses(seriesId);
+    var cancelled = [], skipped = [];
+    list.forEach(function (c) {
+      if (c.status === COURSE_STATUS.DONE) { skipped.push({ courseId: c.id, date: c.date, reason: '已完成课程保留' }); return; }
+      if (c.status === COURSE_STATUS.CANCELLED) { skipped.push({ courseId: c.id, date: c.date, reason: '已取消' }); return; }
+      if (scope === 'single' && reason && reason.courseId && c.id !== reason.courseId) return;
+      cancelCourse(c.id, (reason && reason.text) || '周期排课取消');
+      cancelled.push(c.id);
+    });
+    if (!list.filter(function (c) { return c.status !== COURSE_STATUS.DONE && c.status !== COURSE_STATUS.CANCELLED; }).length) {
+      series.status = SERIES_STATUS.CANCELLED;
+    }
+    series.updatedAt = stamp();
+    save();
+    return { cancelled: cancelled, skipped: skipped };
+  }
+
+  /* ---------------- 批量排课 ---------------- */
+  function batchNoOf() {
+    return 'SB' + String(TODAY).replace(/-/g, '') + seq('SB', 3);
+  }
+  function createScheduleBatch(input) {
+    assertPermission('lesson.view.all');
+    input = input || {};
+    var rowsIn = Array.isArray(input.rows) ? input.rows : [];
+    if (!rowsIn.length) throw bizError('ROW_REQUIRED', '请至少安排一行课程');
+    if (rowsIn.length > BATCH_MAX_ROWS) throw bizError('BATCH_TOO_LARGE', '单批最多 ' + BATCH_MAX_ROWS + ' 行，请分批提交');
+    var batchId = batchNoOf();
+    var rows = rowsIn.map(function (r) {
+      var rowKey = r.rowKey || ((r.studentId || '') + '|' + (r.date || '') + '|' + (r.start || ''));
+      return {
+        rowKey: rowKey, studentId: r.studentId || '', teacherId: r.teacherId || '',
+        date: r.date || '', start: r.start || '', end: r.end || '',
+        type: r.type || '一对一', meetingUrl: r.meetingUrl || '', note: r.note || '',
+        skip: !!r.skip, result: '待处理', reason: '', courseId: '',
+        hard: [], warnings: []
+      };
+    });
+    var checked = checkSchedulePlan(rows, { strictAvailability: true });
+    rows.forEach(function (r, i) {
+      r.hard = checked[i].hard; r.warnings = checked[i].warnings;
+      r.result = checked[i].ok ? (checked[i].warnings.length ? '待确认' : '可提交') : '硬冲突';
+      r.reason = checked[i].hard.length ? checked[i].hard.map(function (x) { return x.message; }).join('；') : '';
+    });
+    var dates = rows.map(function (r) { return r.date; }).sort();
+    var batch = {
+      id: batchId, batchNo: batchId,
+      createdBy: session.operatorName || '', operatorId: session.operatorId || '',
+      createdAt: stamp(), dateFrom: dates[0] || '', dateTo: dates[dates.length - 1] || '',
+      plannedCount: rows.length, createdCount: 0, conflictCount: rows.filter(function (r) { return r.hard.length; }).length,
+      failedCount: 0, skippedCount: 0, warningCount: rows.filter(function (r) { return !r.hard.length && r.warnings.length; }).length,
+      status: BATCH_STATUS.DRAFT, note: input.note || '', rows: rows
+    };
+    db.scheduleBatches.push(batch);
+    save();
+    return clone(batch);
+  }
+  function batchOf(id) {
+    var b = db.scheduleBatches.filter(function (x) { return x.id === id; })[0];
+    return b ? clone(b) : null;
+  }
+  function batchList() {
+    return db.scheduleBatches.slice().map(clone).sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+  }
+  function commitBatchRows(batch, opts) {
+    opts = opts || {};
+    var created = [], failed = [], skipped = [], pending = [];
+    var confirmed = opts.confirmedRowKeys || [];
+    batch.rows.forEach(function (row) {
+      if (row.result === '已创建' && row.courseId) { skipped.push({ rowKey: row.rowKey, courseId: row.courseId, reason: '已创建（幂等跳过）' }); return; }
+      if (row.skip || row.result === '跳过') { row.result = '跳过'; row.reason = row.reason || '手动跳过'; skipped.push({ rowKey: row.rowKey, reason: row.reason }); return; }
+      /* 重复提交 / 刷新 / 重试：同批次同 rowKey 不重复建课 */
+      var dup = db.courses.filter(function (c) { return c.batchId === batch.id && c.batchRowKey === row.rowKey; })[0];
+      if (dup) {
+        row.result = '已创建'; row.courseId = dup.id;
+        skipped.push({ rowKey: row.rowKey, courseId: dup.id, reason: '已存在，按幂等跳过' });
+        return;
+      }
+      if (row.hard && row.hard.length) {
+        row.result = '硬冲突'; row.reason = row.hard.map(function (x) { return x.message; }).join('；');
+        failed.push({ rowKey: row.rowKey, reasons: row.hard.map(function (x) { return x.message; }) });
+        return;
+      }
+      if (row.warnings && row.warnings.length && !opts.confirmWarnings) {
+        if (confirmed.indexOf(row.rowKey) < 0) {
+          row.result = '待确认'; row.reason = row.warnings.map(function (x) { return x.message; }).join('；');
+          pending.push({ rowKey: row.rowKey, warnings: row.warnings });
+          return;
+        }
+      }
+      try {
+        var c = createCourse({
+          studentId: row.studentId, teacherId: row.teacherId, date: row.date, start: row.start, end: row.end,
+          type: row.type, meetingUrl: row.meetingUrl, note: row.note,
+          batchId: batch.id, batchRowKey: row.rowKey, source: COURSE_SOURCE.BATCH,
+          scheduleNote: '批量排课 ' + batch.id, confirmWarnings: true
+        });
+        row.result = '已创建'; row.courseId = c.id; row.reason = '';
+        created.push({ rowKey: row.rowKey, courseId: c.id, date: c.date, start: c.start, end: c.end });
+      } catch (e) {
+        row.result = '失败'; row.reason = e.message;
+        failed.push({ rowKey: row.rowKey, reasons: [e.message] });
+      }
+    });
+    batch.createdCount = batch.rows.filter(function (r) { return r.result === '已创建'; }).length;
+    batch.failedCount = failed.length;
+    batch.skippedCount = skipped.length + pending.length;
+    batch.conflictCount = batch.rows.filter(function (r) { return r.hard && r.hard.length; }).length;
+    batch.status = batch.failedCount || pending.length
+      ? (batch.createdCount ? BATCH_STATUS.PARTIAL : BATCH_STATUS.DRAFT)
+      : BATCH_STATUS.GENERATED;
+    batch.updatedAt = stamp();
+    batch.lastCommitAt = stamp();
+    batch.lastCommitBy = session.operatorName || '';
+    return { batch: batch, created: created, failed: failed, skipped: skipped, pending: pending };
+  }
+  function commitScheduleBatch(batchId, opts) {
+    assertPermission('lesson.view.all');
+    var batch = db.scheduleBatches.filter(function (x) { return x.id === batchId; })[0];
+    if (!batch) throw bizError('NOT_FOUND', '批次不存在');
+    var r = commitBatchRows(batch, opts || {});
+    recordAudit({
+      module: '排课', action: '提交批量排课', resourceType: 'scheduleBatch', resourceId: batch.id,
+      resourceName: batch.batchNo, beforeData: null,
+      afterData: { created: r.created.length, failed: r.failed.length, skipped: r.skipped.length, pending: r.pending.length, status: batch.status },
+      reason: (opts && opts.reason) || ''
+    });
+    save();
+    return { batch: clone(batch), created: r.created, failed: r.failed, skipped: r.skipped, pending: r.pending };
+  }
+  /** 失败行单独修正并重试：只重算这一行，不影响其他行 */
+  function retryBatchRow(batchId, rowKey, patch) {
+    assertPermission('lesson.view.all');
+    var batch = db.scheduleBatches.filter(function (x) { return x.id === batchId; })[0];
+    if (!batch) throw bizError('NOT_FOUND', '批次不存在');
+    var row = batch.rows.filter(function (r) { return r.rowKey === rowKey; })[0];
+    if (!row) throw bizError('NOT_FOUND', '批次行不存在');
+    ['teacherId', 'date', 'start', 'end', 'meetingUrl', 'skip', 'type'].forEach(function (k) {
+      if (patch && patch[k] !== undefined) row[k] = patch[k];
+    });
+    var checked = checkSchedulePlan([row], { strictAvailability: true });
+    row.hard = checked[0].hard; row.warnings = checked[0].warnings;
+    row.result = checked[0].ok ? (checked[0].warnings.length ? '待确认' : '可提交') : '硬冲突';
+    row.reason = row.hard.length ? row.hard.map(function (x) { return x.message; }).join('；') : '';
+    if (row.result === '待确认' && patch && patch.confirmWarnings) row.result = '可提交';
+    save();
+    return clone(row);
+  }
+
+  /* ---------------- 批量维护（改派 / 会议链接 / 取消） ---------------- */
+  function batchReassignCourses(courseIds, toTeacherId, reason) {
+    assertPermission('teacher.assign');
+    var nt = teacher(toTeacherId);
+    if (!nt) throw bizError('NOT_FOUND', '接替教师不存在');
+    var success = [], failed = [];
+    (courseIds || []).forEach(function (id) {
+      try {
+        var c = reassignCourse(id, toTeacherId, { reason: reason || '批量改派' });
+        success.push({ courseId: id, fromTeacherId: c.reassignLogs[c.reassignLogs.length - 1].fromTeacherId,
+          toTeacherId: c.teacherId, date: c.date, start: c.start, end: c.end });
+      } catch (e) {
+        var old = course(id);
+        failed.push({ courseId: id, date: old ? old.date : '', fromTeacherId: old ? old.teacherId : '',
+          toTeacherId: toTeacherId, reason: e.message });
+      }
+    });
+    recordAudit({
+      module: '排课', action: '批量改派课程', resourceType: 'course', resourceId: (courseIds || []).join(','),
+      resourceName: '批量改派 ' + (courseIds || []).length + ' 节', beforeData: null,
+      afterData: { success: success.length, failed: failed.length }, reason: reason || ''
+    });
+    save();
+    return { success: success, failed: failed };
+  }
+  function batchSetMeetingUrl(courseIds, url, reason) {
+    assertPermission('lesson.view.all');
+    var u = String(url || '').trim();
+    if (u && !/^https?:\/\//i.test(u)) throw bizError('MEETING_URL_INVALID', '腾讯会议链接需以 http:// 或 https:// 开头');
+    var success = [], failed = [];
+    (courseIds || []).forEach(function (id) {
+      var c = course(id);
+      if (!c) { failed.push({ courseId: id, reason: '课程不存在' }); return; }
+      if (c.status === COURSE_STATUS.DONE) { failed.push({ courseId: id, reason: '已完成课程不改会议链接' }); return; }
+      if (c.status === COURSE_STATUS.CANCELLED) { failed.push({ courseId: id, reason: '已取消课程不改会议链接' }); return; }
+      c.meetingUrl = u;
+      c.meeting = u ? '已生成' : '未生成';
+      c.updatedAt = stamp();
+      success.push({ courseId: id, meetingUrl: u });
+    });
+    recordAudit({
+      module: '排课', action: u ? '批量设置会议链接' : '批量清空会议链接', resourceType: 'course',
+      resourceId: (courseIds || []).join(','), resourceName: '批量会议链接 ' + (courseIds || []).length + ' 节',
+      beforeData: null, afterData: { success: success.length, failed: failed.length, url: u }, reason: reason || ''
+    });
+    save();
+    return { success: success, failed: failed };
+  }
+  function batchCancelCourses(courseIds, reason) {
+    assertPermission('teacher.assign');
+    var r = String(reason || '').trim();
+    if (!r) throw bizError('REASON_REQUIRED', '请填写批量取消原因');
+    var success = [], failed = [];
+    (courseIds || []).forEach(function (id) {
+      try {
+        var c = course(id);
+        if (!c) throw bizError('NOT_FOUND', '课程不存在');
+        if (c.status === COURSE_STATUS.DONE) throw bizError('COURSE_DONE', '已完成课程不能取消');
+        var out = cancelCourse(id, r);
+        success.push({ courseId: id, date: out.date, start: out.start, student: out.student, teacher: out.teacher });
+      } catch (e) { failed.push({ courseId: id, reason: e.message }); }
+    });
+    recordAudit({
+      module: '排课', action: '批量取消课程', resourceType: 'course', resourceId: (courseIds || []).join(','),
+      resourceName: '批量取消 ' + (courseIds || []).length + ' 节', beforeData: null,
+      afterData: { success: success.length, failed: failed.length }, reason: r
+    });
+    save();
+    return { success: success, failed: failed };
+  }
 
   /* ---------- 历史查询 ---------- */
   function cooperationsOf(id) {
@@ -13616,6 +14978,27 @@
     courses: courses, course: course, coursesOf: coursesOf, coursesOfTeacher: coursesOfTeacher,
     createCourse: createCourse, updateCourse: updateCourse, courseConflicts: courseConflicts,
     courseStat: courseStat, courseRecord: courseRecord, recordOfCourse: recordOfCourse,
+    /* ---------- 第十一轮：规模化排课 ---------- */
+    courseQuery: courseQuery,
+    availabilityOfTeacher: availabilityOfTeacher, saveTeacherAvailability: saveTeacherAvailability,
+    addAvailabilityException: addAvailabilityException, revokeAvailabilityException: revokeAvailabilityException,
+    availabilityTextOf: availabilityTextOf, loadPolicyOf: loadPolicyOf, saveLoadPolicy: saveLoadPolicy,
+    studentPreferenceOf: studentPreferenceOf, saveStudentPreference: saveStudentPreference,
+    checkTeacherAvailability: checkTeacherAvailability, checkStudentPreference: checkStudentPreference,
+    checkSchedulePlan: checkSchedulePlan, checkSlotConflicts: checkSlotConflicts,
+    teacherCandidatesFor: teacherCandidatesFor,
+    previewScheduleSeries: previewScheduleSeries, createScheduleSeries: createScheduleSeries,
+    seriesOf: seriesOf, seriesCourses: seriesCourses, scheduleSeriesList: scheduleSeriesList,
+    updateScheduleSeries: updateScheduleSeries, cancelScheduleSeries: cancelScheduleSeries,
+    createScheduleBatch: createScheduleBatch, batchOf: batchOf, batchList: batchList,
+    commitScheduleBatch: commitScheduleBatch, retryBatchRow: retryBatchRow,
+    batchReassignCourses: batchReassignCourses, batchSetMeetingUrl: batchSetMeetingUrl,
+    batchCancelCourses: batchCancelCourses,
+    COURSE_SOURCE: COURSE_SOURCE, SERIES_STATUS: SERIES_STATUS, BATCH_STATUS: BATCH_STATUS,
+    AVAIL_EXCEPTION: AVAIL_EXCEPTION, AVAIL_EXCEPTION_TYPE: AVAIL_EXCEPTION_TYPE,
+    AVAIL_EXCEPTION_STATUS: AVAIL_EXCEPTION_STATUS, PREF_STATUS: PREF_STATUS,
+    LOAD_POLICY_DEFAULT: LOAD_POLICY_DEFAULT, BATCH_MAX_ROWS: BATCH_MAX_ROWS,
+    SCHEDULE_GRANULARITY: SCHEDULE_GRANULARITY,
     recordsOfTeacher: recordsOfTeacher, openCourse: openCourse, linkTask: linkTask,
     recordSummary: recordSummary, recordView: recordView, courseUnfinished: courseUnfinished,
     finishCourse: finishCourse, deductCourse: deductCourse,

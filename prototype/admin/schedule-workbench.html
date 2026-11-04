@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>排课总览</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .stat-grid { display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); gap:10px; }
+  .stat-grid .stat { background:#fff; border:1px solid var(--border); border-radius:8px; }
+  .stat-grid .stat-value { font-size:22px; }
+  .cal { border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#fff; }
+  .cal-head { display:flex; border-bottom:1px solid var(--border); background:#f8fafc; }
+  .cal-gutter { width:58px; flex:0 0 58px; border-right:1px solid var(--border); }
+  .cal-day-h { flex:1; text-align:center; padding:8px 4px; font-size:12px; color:var(--text-2); border-right:1px solid var(--border); }
+  .cal-day-h:last-child { border-right:none; }
+  .cal-day-h b { display:block; font-size:13px; color:var(--text); }
+  .cal-day-h.today { background:var(--primary-soft); }
+  .cal-day-h.today b { color:var(--primary-dark); }
+  .cal-day-h span { font-size:11px; color:var(--text-3); }
+  .cal-body { display:flex; max-height:560px; overflow-y:auto; }
+  .cal-times { width:58px; flex:0 0 58px; border-right:1px solid var(--border); }
+  .cal-times div { height:52px; font-size:11px; color:var(--text-3); text-align:right; padding:2px 6px 0 0; }
+  .cal-cols { flex:1; display:flex; }
+  .cal-col { flex:1; position:relative; border-right:1px solid var(--border);
+    background-image:repeating-linear-gradient(to bottom, transparent 0, transparent 51px, #eef2f7 51px, #eef2f7 52px); }
+  .cal-col:last-child { border-right:none; }
+  .cal-col.today { background-color:#fbfdff; }
+  .ev { position:absolute; left:3px; right:3px; border-radius:5px; padding:4px 6px; font-size:11px; line-height:1.35;
+    cursor:pointer; overflow:hidden; border-left:3px solid; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.08); }
+  .ev:hover { box-shadow:0 3px 10px rgba(15,23,42,.14); z-index:5; }
+  .ev b { display:block; font-size:11.5px; color:var(--text); font-weight:600; }
+  .ev .t { color:var(--text-3); font-size:10.5px; }
+  .ev.s-done { border-color:#16a34a; background:#f0fdf4; }
+  .ev.s-todo { border-color:#2563eb; background:#eff6ff; }
+  .ev.s-warn { border-color:#f59e0b; background:#fffbeb; }
+  .ev.s-off { border-color:#94a3b8; background:#f8fafc; }
+  .ev.s-bad { border-color:#dc2626; background:#fef2f2; }
+  .month-grid { display:grid; grid-template-columns:repeat(7,1fr); border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#fff; }
+  .month-grid .mh { background:#f8fafc; padding:8px; text-align:center; font-size:12px; color:var(--text-2); border-bottom:1px solid var(--border); }
+  .month-grid .md { min-height:86px; border-right:1px solid var(--border); border-bottom:1px solid var(--border); padding:6px; font-size:11px; cursor:pointer; }
+  .month-grid .md:nth-child(7n) { border-right:none; }
+  .month-grid .md .dnum { color:var(--text-3); font-weight:600; }
+  .month-grid .md.today .dnum { color:var(--primary-dark); }
+  .month-grid .md.today { background:#fbfdff; }
+  .md-count { display:inline-block; margin-top:4px; padding:1px 6px; border-radius:10px; background:var(--primary-soft); color:var(--primary-dark); }
+  .group-row td { background:#f8fafc; font-weight:600; color:var(--text-2); font-size:12px; }
+  .sel-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .mini-note { font-size:11px; color:var(--text-3); }
+  .warn-text { color:#b45309; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">排课管理<span class="sep">/</span>排课总览</div>
+          <h1 class="page-title">排课总览</h1>
+          <div class="page-sub" id="pageSub">按日期 / 教师查看全部课程，支持筛选、分组、多选与批量维护</div>
+        </div>
+        <div class="page-actions">
+          <div class="btn-group">
+            <button class="btn on" id="v-week" onclick="setView('week')">周</button>
+            <button class="btn" id="v-day" onclick="setView('day')">日</button>
+            <button class="btn" id="v-month" onclick="setView('month')">月</button>
+          </div>
+          <a class="btn" href="schedule-settings.html">排课设置</a>
+          <a class="btn" href="schedule-series.html">周期排课</a>
+          <a class="btn" href="batch-schedule.html">批量排课</a>
+          <button class="btn btn-primary" onclick="openCreate()">+ 新增课程</button>
+        </div>
+      </div>
+
+      <div class="stat-grid mb16" id="statGrid"></div>
+
+      <div class="card filter mb16">
+        <div class="field"><label>开始日期</label><input class="input" type="date" id="f_from"></div>
+        <div class="field"><label>结束日期</label><input class="input" type="date" id="f_to"></div>
+        <div class="field"><label>教师</label><select class="select" id="f_teacher"></select></div>
+        <div class="field"><label>学员</label><select class="select" id="f_student"></select></div>
+        <div class="field"><label>年级</label><select class="select" id="f_grade"></select></div>
+        <div class="field"><label>状态</label><select class="select" id="f_status"></select></div>
+        <div class="field"><label>会议链接</label><select class="select" id="f_meeting">
+          <option value="">全部</option><option value="has">已有链接</option><option value="none">待补充</option></select></div>
+        <div class="field"><label>工作日 / 周末</label><select class="select" id="f_dayType">
+          <option value="">全部</option><option value="workday">工作日</option><option value="weekend">周末</option></select></div>
+        <div class="field"><label>异常</label><select class="select" id="f_anomaly">
+          <option value="">全部</option><option value="conflict">时间冲突</option><option value="unassigned">未分配教师</option>
+          <option value="meeting">缺会议链接</option><option value="adjust">待调整</option></select></div>
+        <div class="field"><label>关键字</label><input class="input" id="f_kw" placeholder="课程编号 / 学员 / 教师"></div>
+        <div class="field"><label>分组</label><select class="select" id="f_group">
+          <option value="">不分组</option><option value="date">按日期</option><option value="teacher">按教师</option></select></div>
+        <div class="field"><label>排序</label><select class="select" id="f_sort">
+          <option value="asc">时间从早到晚</option><option value="desc">时间从晚到早</option></select></div>
+        <div class="field"><label>每页</label><select class="select" id="f_pageSize">
+          <option value="10">10 条</option><option value="20" selected>20 条</option><option value="50">50 条</option><option value="100">100 条</option></select></div>
+        <div class="filter-actions">
+          <button class="btn btn-primary" onclick="applyFilters()">查询</button>
+          <button class="btn" onclick="resetFilters()">重置</button>
+        </div>
+      </div>
+
+      <div class="card mb16">
+        <div class="flex jcb aic mb12">
+          <div class="sel-bar">
+            <label class="check"><input type="checkbox" id="ckAll" onclick="toggleAll(this.checked)"> 全选本页</label>
+            <span class="small muted" id="selCount">已选 0 节</span>
+            <button class="btn btn-sm" onclick="openBulkReassign()">批量改派</button>
+            <button class="btn btn-sm" onclick="openBulkMeeting()">批量会议链接</button>
+            <button class="btn btn-sm btn-danger" onclick="openBulkCancel()">批量取消</button>
+          </div>
+          <div class="flex gap8 aic small">
+            <span class="tag tag-red nodot">时间冲突</span>
+            <span class="tag tag-amber nodot">缺会议链接 / 待调整</span>
+            <span class="tag tag-slate nodot">未分配教师</span>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table compact">
+            <thead><tr>
+              <th style="width:34px"></th><th>日期</th><th>时间</th><th>学员</th><th>年级</th>
+              <th>教师</th><th>状态</th><th>来源</th><th>会议链接</th><th>异常</th><th class="right">操作</th>
+            </tr></thead>
+            <tbody id="courseTbody"></tbody>
+          </table>
+        </div>
+        <div class="pager mt12" id="pager"></div>
+      </div>
+
+      <div class="flex jcb aic mb12">
+        <div class="small muted" id="rangeLabel"></div>
+        <div class="flex gap8 aic">
+          <input class="input" type="date" id="calDate" style="width:150px" onchange="jumpCalendar(this.value)">
+          <button class="btn btn-sm" id="btnPrev" onclick="stepCalendar(-1)">上一周</button>
+          <button class="btn btn-sm" onclick="goToday()">今天</button>
+          <button class="btn btn-sm" id="btnNext" onclick="stepCalendar(1)">下一周</button>
+        </div>
+      </div>
+
+      <div id="weekView" class="mb16">
+        <div class="cal">
+          <div class="cal-head" id="calHead"></div>
+          <div class="cal-body">
+            <div class="cal-times" id="calTimes"></div>
+            <div class="cal-cols" id="calCols"></div>
+          </div>
+        </div>
+      </div>
+      <div id="monthView" class="hidden mb16"><div class="month-grid" id="monthGrid"></div></div>
+
+      <div class="alert alert-info"><span class="ico">i</span>
+        <div><b>排课口径：</b>排课（新建 / 周期 / 批量 / 改期 / 改派）本身<b>不扣课时</b>，扣课仍只由「完成课程」触发；
+          已完成与已取消课程只读；批量创建以「批次 + 行键」幂等，重复提交不会重复建课。</div></div>
+
+    </main>
+  </div>
+</div>
+
+<div class="mask" id="createModal">
+  <div class="modal wide">
+    <div class="modal-head"><div class="modal-title">新增课程预约</div>
+      <button class="modal-close" onclick="Proto.closeModal('createModal')">×</button></div>
+    <div class="modal-body">
+      <div id="conflictBox"></div>
+      <div class="form-grid g3">
+        <div class="field"><label>学员 <span class="req">*</span></label><select class="select" id="n_student"></select></div>
+        <div class="field"><label>授课教师 <span class="req">*</span></label><select class="select" id="n_teacher"></select></div>
+        <div class="field"><label>课程类型</label><select class="select" id="n_type"><option>一对一</option><option>补课</option><option>试听</option></select></div>
+        <div class="field"><label>上课日期 <span class="req">*</span></label><input class="input" type="date" id="n_date"></div>
+        <div class="field"><label>开始时间 <span class="req">*</span></label><input class="input" type="time" id="n_start" value="09:00"></div>
+        <div class="field"><label>结束时间 <span class="req">*</span></label><input class="input" type="time" id="n_end" value="10:00"></div>
+        <div class="field full"><label>腾讯会议链接</label><input class="input" id="n_meeting" placeholder="https://meeting.tencent.com/dm/…">
+          <div class="tip">留空表示待补充，不会自动生成</div></div>
+        <div class="field full"><label>教学备注</label><textarea class="textarea" id="n_note"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('createModal')">取消</button>
+      <button class="btn btn-primary" onclick="submitCourse()">保存预约</button>
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="detailModal">
+  <div class="modal wide">
+    <div class="modal-head"><div class="modal-title" id="detailTitle">课程详情</div>
+      <button class="modal-close" onclick="Proto.closeModal('detailModal')">×</button></div>
+    <div class="modal-body" id="detailBody"></div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('detailModal')">关闭</button>
+      <button class="btn btn-danger" onclick="cancelCurrent()">取消课程</button>
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="reassignModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">改派授课教师</div>
+      <button class="modal-close" onclick="Proto.closeModal('reassignModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb12"><span class="ico">i</span><div id="reassignInfo"></div></div>
+      <div class="field mb12"><label>接替教师 <span class="req">*</span></label><select class="select" id="r_teacher"></select></div>
+      <div class="field"><label>改派原因</label><textarea class="textarea" id="r_reason"></textarea></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('reassignModal')">取消</button>
+      <button class="btn btn-primary" onclick="doReassign()">确认改派</button>
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="bulkReassignModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">批量改派</div>
+      <button class="modal-close" onclick="Proto.closeModal('bulkReassignModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-warn mb12"><span class="ico">!</span>
+        <div>逐节校验接替教师的时间冲突与可用时间；失败行保留原教师并列出原因，已完成课程不可改派。</div></div>
+      <div class="field mb12"><label>接替教师 <span class="req">*</span></label><select class="select" id="br_teacher"></select></div>
+      <div class="field"><label>原因 <span class="req">*</span></label><textarea class="textarea" id="br_reason"></textarea></div>
+      <div id="brResult" class="small mt12"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('bulkReassignModal')">取消</button>
+      <button class="btn btn-primary" onclick="doBulkReassign()">执行批量改派</button>
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="bulkMeetingModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">批量会议链接</div>
+      <button class="modal-close" onclick="Proto.closeModal('bulkMeetingModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb12"><span class="ico">i</span>
+        <div>不假定所有课程共用同一会议室：默认「逐节保留」，也可统一设置同一链接或清空。已完成 / 已取消课程不改。</div></div>
+      <div class="field mb12"><label>会议链接</label>
+        <input class="input" id="bm_url" placeholder="https://meeting.tencent.com/dm/…"></div>
+      <div id="bmResult" class="small"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('bulkMeetingModal')">取消</button>
+      <button class="btn" onclick="doBulkMeeting(true)">清空链接</button>
+      <button class="btn btn-primary" onclick="doBulkMeeting(false)">应用链接</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'schedule-workbench' });
+Store.setSession({ role: 'admin' });
+const S = Store;
+const TODAY = S.TODAY;
+
+const state = { view: 'week', anchor: TODAY, page: 1, selected: {}, currentId: '', reassignId: '' };
+const HOURS = Array.from({ length: 12 }, (_, i) => 9 + i); // 09:00 - 20:00
+const ROW_H = 52;
+const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+const STATUSES = ['待上课', '授课中', '已完成', '未上课', '已取消'];
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function addDays(date, n) {
+  const d = new Date(date + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function weekdayOf(date) {
+  const d = new Date(date + 'T00:00:00Z');
+  return WEEKDAYS[(d.getUTCDay() + 6) % 7];
+}
+function weekRange(date) {
+  const idx = WEEKDAYS.indexOf(weekdayOf(date));
+  return { from: addDays(date, -idx), to: addDays(date, 6 - idx) };
+}
+function monthRange(date) {
+  const d = new Date(date + 'T00:00:00Z');
+  const y = d.getUTCFullYear(), m = d.getUTCMonth();
+  const first = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
+  const nextFirst = new Date(Date.UTC(y, m + 1, 1)).toISOString().slice(0, 10);
+  return { from: first, to: addDays(nextFirst, -1), month: m + 1, year: y };
+}
+function statusTag(s) {
+  return { '待上课': 'tag-blue', '授课中': 'tag-green', '已完成': 'tag-green',
+    '未上课': 'tag-amber', '已取消': 'tag-slate' }[s] || 'tag-slate';
+}
+function eventClass(r) {
+  if (r.anomaly === '时间冲突') return 's-bad';
+  if (r.anomaly === '未分配教师') return 's-warn';
+  if (r.status === '已完成') return 's-done';
+  if (r.status === '已取消' || r.status === '未上课') return 's-off';
+  return 's-todo';
+}
+
+/* ---------------- 初始化下拉 ---------------- */
+(function initPickers() {
+  const teachers = S.teachers().slice().sort((a, b) => a.id.localeCompare(b.id));
+  document.getElementById('f_teacher').innerHTML = '<option value="">全部教师</option>' +
+    teachers.map(t => `<option value="${esc(t.id)}">${esc(t.name)} · ${esc(t.id)}</option>`).join('');
+  const stus = S.students().slice().sort((a, b) => a.name.localeCompare(b.name));
+  document.getElementById('f_student').innerHTML = '<option value="">全部学员</option>' +
+    stus.map(s => `<option value="${esc(s.id)}">${esc(s.name)} · ${esc(s.id)}</option>`).join('');
+  const grades = Array.from(new Set(stus.map(s => s.grade).filter(Boolean))).sort();
+  document.getElementById('f_grade').innerHTML = '<option value="">全部年级</option>' +
+    grades.map(g => `<option>${esc(g)}</option>`).join('');
+  document.getElementById('f_status').innerHTML = '<option value="">全部状态</option>' +
+    STATUSES.map(s => `<option>${s}</option>`).join('');
+  document.getElementById('n_student').innerHTML = '<option value="">请选择学员</option>' +
+    stus.map(s => `<option value="${esc(s.id)}">${esc(s.name)} · ${esc(s.grade || '—')}</option>`).join('');
+  document.getElementById('n_teacher').innerHTML = '<option value="">请选择教师</option>' +
+    S.teacherPool().map(p => `<option value="${esc(p.teacher.id)}">${esc(p.teacher.name)}（当前 ${p.stat.currentStudents} 人）</option>`).join('');
+  document.getElementById('n_date').value = TODAY;
+  const rank = S.teachers().filter(t => t.cooperationStatus === '可授课');
+  document.getElementById('r_teacher').innerHTML = '<option value="">请选择教师</option>' +
+    rank.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+  document.getElementById('br_teacher').innerHTML = '<option value="">请选择教师</option>' +
+    rank.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+})();
+
+function filters() {
+  return {
+    dateFrom: document.getElementById('f_from').value,
+    dateTo: document.getElementById('f_to').value,
+    teacherId: document.getElementById('f_teacher').value,
+    studentId: document.getElementById('f_student').value,
+    grade: document.getElementById('f_grade').value,
+    status: document.getElementById('f_status').value,
+    meeting: document.getElementById('f_meeting').value,
+    dayType: document.getElementById('f_dayType').value,
+    anomaly: document.getElementById('f_anomaly').value,
+    kw: document.getElementById('f_kw').value,
+    group: document.getElementById('f_group').value,
+    sort: document.getElementById('f_sort').value
+  };
+}
+function pageSize() { return Number(document.getElementById('f_pageSize').value) || 20; }
+function applyFilters() { state.page = 1; drawAll(); }
+function resetFilters() {
+  ['f_from', 'f_to', 'f_teacher', 'f_student', 'f_grade', 'f_status', 'f_meeting',
+    'f_dayType', 'f_anomaly', 'f_kw', 'f_group'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('f_sort').value = 'asc';
+  document.getElementById('f_pageSize').value = '20';
+  state.page = 1;
+  drawAll();
+}
+['f_teacher', 'f_student', 'f_grade', 'f_status', 'f_meeting', 'f_dayType', 'f_anomaly', 'f_sort', 'f_group'].forEach(id => {
+  document.getElementById(id).addEventListener('change', applyFilters);
+});
+document.getElementById('f_kw').addEventListener('keydown', e => { if (e.key === 'Enter') applyFilters(); });
+
+/* ---------------- 统计与列表 ---------------- */
+function renderStats(st) {
+  const cells = [
+    ['全部', st.total, '当前筛选'],
+    ['待上课', st.pending, '含授课中 ' + st.ongoing],
+    ['已完成', st.done, '只读'],
+    ['时间冲突', st.conflict, '硬冲突'],
+    ['缺会议链接', st.missingMeeting, '待补充'],
+    ['本周', st.week, '周末 ' + st.weekendWeek],
+    ['今日', st.today, TODAY],
+    ['异常合计', st.conflict + st.unassigned + st.missingMeeting + st.needsAdjust, '冲突/未分配/缺链接/待调整']
+  ];
+  document.getElementById('statGrid').innerHTML = cells.map(([k, v, foot]) => `
+    <div class="stat"><div class="stat-label">${k}</div>
+      <div class="stat-value">${v}<small> 节</small></div>
+      <div class="stat-foot">${foot}</div></div>`).join('');
+}
+
+function rowHtml(r) {
+  const checked = state.selected[r.id] ? 'checked' : '';
+  return `<tr data-id="${esc(r.id)}">
+    <td><input type="checkbox" ${checked} onclick="toggleRow('${esc(r.id)}',this.checked)"></td>
+    <td class="mono">${esc(r.date)}<div class="mini-note">${esc(r.weekday)}</div></td>
+    <td class="mono">${esc(r.start)}—${esc(r.end)}</td>
+    <td class="strong">${esc(r.student)}<div class="mini-note">${esc(r.studentId)}</div></td>
+    <td>${esc(r.grade || '—')}</td>
+    <td>${esc(r.teacher || '未分配')}<div class="mini-note">${esc(r.teacherId || '')}</div></td>
+    <td><span class="tag ${statusTag(r.status)}">${esc(r.status)}</span></td>
+    <td><span class="tag tag-slate nodot">${esc(r.sourceLabel)}</span></td>
+    <td>${r.meetingUrl ? '<span class="tag tag-green nodot">已生成</span>' : '<span class="tag tag-amber nodot">待补充</span>'}</td>
+    <td>${r.anomaly ? `<span class="warn-text">${esc(r.anomaly)}</span>` : '<span class="muted">—</span>'}</td>
+    <td class="ops right"><button class="btn-link" onclick="openDetail('${esc(r.id)}')">详情</button></td>
+  </tr>`;
+}
+
+function renderList(q) {
+  const tb = document.getElementById('courseTbody');
+  const ids = q.rows.map(r => r.id);
+  if (!q.rows.length) {
+    tb.innerHTML = '<tr><td colspan="11"><div class="empty"><div class="e-ico">▤</div><p>当前筛选没有课程</p></div></td></tr>';
+    return;
+  }
+  if (document.getElementById('f_group').value) {
+    tb.innerHTML = q.groups.map(g => `
+      <tr class="group-row"><td colspan="11">${esc(g.label)} · ${g.rows.length} 节</td></tr>
+      ${g.rows.map(rowHtml).join('')}`).join('');
+  } else {
+    tb.innerHTML = q.rows.map(rowHtml).join('');
+  }
+  const allChecked = ids.length > 0 && ids.every(id => state.selected[id]);
+  document.getElementById('ckAll').checked = allChecked;
+}
+
+function renderPager(q) {
+  const nums = [];
+  const start = Math.max(1, q.page - 2), end = Math.min(q.pages, start + 4);
+  for (let i = start; i <= end; i++) nums.push(i);
+  document.getElementById('pager').innerHTML = `
+    <span class="small muted">共 <b>${q.total}</b> 节 · 第 ${q.page}/${q.pages} 页 · 每页 ${q.pageSize} 条</span>
+    <div class="pages">
+      <button class="pg" ${q.page <= 1 ? 'disabled' : ''} onclick="gotoPage(1)">首页</button>
+      <button class="pg" ${q.page <= 1 ? 'disabled' : ''} onclick="gotoPage(${q.page - 1})">上一页</button>
+      ${nums.map(n => `<button class="pg ${n === q.page ? 'on' : ''}" onclick="gotoPage(${n})">${n}</button>`).join('')}
+      <button class="pg" ${q.page >= q.pages ? 'disabled' : ''} onclick="gotoPage(${q.page + 1})">下一页</button>
+      <button class="pg" ${q.page >= q.pages ? 'disabled' : ''} onclick="gotoPage(${q.pages})">末页</button>
+    </div>`;
+}
+function gotoPage(p) { state.page = p; drawAll(); }
+
+function toggleRow(id, on) { if (on) state.selected[id] = true; else delete state.selected[id]; updateSelCount(); }
+function toggleAll(on) {
+  const rows = Array.from(document.querySelectorAll('#courseTbody tr[data-id]')).map(tr => tr.dataset.id);
+  rows.forEach(id => { if (on) state.selected[id] = true; else delete state.selected[id]; });
+  document.querySelectorAll('#courseTbody input[type=checkbox]').forEach(c => { c.checked = on; });
+  updateSelCount();
+}
+function selectedIds() {
+  return Object.keys(state.selected).filter(id => S.course(id));
+}
+function updateSelCount() {
+  document.getElementById('selCount').textContent = '已选 ' + selectedIds().length + ' 节';
+}
+
+/* ---------------- 日历 ---------------- */
+function setView(v) {
+  state.view = v;
+  ['week', 'day', 'month'].forEach(k => {
+    document.getElementById('v-' + k).classList.toggle('on', k === v);
+  });
+  document.getElementById('weekView').classList.toggle('hidden', v === 'month');
+  document.getElementById('monthView').classList.toggle('hidden', v !== 'month');
+  const unit = v === 'week' ? '周' : v === 'day' ? '天' : '月';
+  document.getElementById('btnPrev').textContent = '上一' + unit;
+  document.getElementById('btnNext').textContent = '下一' + unit;
+  drawAll();
+}
+function caliberRows() {
+  return S.courseQuery(Object.assign(filters(), { all: true })).allRows;
+}
+function eventsIn(from, to) {
+  return caliberRows().filter(r => r.date >= from && r.date <= to);
+}
+function eventBox(r) {
+  const sh = Number(r.start.slice(0, 2)), sm = Number(r.start.slice(3, 5));
+  const eh = Number(r.end.slice(0, 2)), em = Number(r.end.slice(3, 5));
+  const top = (sh - HOURS[0]) * ROW_H + (sm / 60) * ROW_H;
+  const h = ((eh * 60 + em) - (sh * 60 + sm)) / 60 * ROW_H - 3;
+  const topClamped = Math.max(0, top);
+  return `<div class="ev ${eventClass(r)}" style="top:${topClamped}px;height:${Math.max(26, Math.min(h, 220))}px"
+    onclick="openDetail('${esc(r.id)}')" title="${esc(r.student)} ${esc(r.start)}—${esc(r.end)} ${esc(r.teacher)}">
+    <b>${esc(r.student)}</b><span class="t">${esc(r.start)}-${esc(r.end)}</span>
+    <span class="t">${esc(r.teacher)}</span></div>`;
+}
+function drawWeek() {
+  const wr = weekRange(state.anchor);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(wr.from, i));
+  const list = eventsIn(wr.from, wr.to);
+  document.getElementById('calHead').innerHTML = '<div class="cal-gutter"></div>' + days.map(d => `
+    <div class="cal-day-h ${d === TODAY ? 'today' : ''}"><b>${weekdayOf(d)}</b><span>${d.slice(5)}</span></div>`).join('');
+  document.getElementById('calTimes').innerHTML =
+    HOURS.map(h => `<div>${String(h).padStart(2, '0')}:00</div>`).join('');
+  document.getElementById('calCols').innerHTML = days.map(d => `
+    <div class="cal-col ${d === TODAY ? 'today' : ''}">
+      ${list.filter(r => r.date === d).sort((a, b) => a.start.localeCompare(b.start)).map(eventBox).join('')}
+    </div>`).join('');
+  document.getElementById('rangeLabel').textContent =
+    `${wr.from}（${weekdayOf(wr.from)}）~ ${wr.to}（${weekdayOf(wr.to)}）· 本周 ${list.length} 节`;
+}
+function drawDay() {
+  const d = state.anchor;
+  const chosen = document.getElementById('f_teacher').value;
+  const teachers = S.teachers().filter(t => t.cooperationStatus === '可授课' && (!chosen || t.id === chosen));
+  const list = eventsIn(d, d).filter(r => teachers.some(t => t.id === r.teacherId));
+  document.getElementById('calHead').innerHTML = '<div class="cal-gutter"></div>' + teachers.map(t => `
+    <div class="cal-day-h"><b>${esc(t.name)}</b><span>${esc(t.id)}</span></div>`).join('');
+  document.getElementById('calTimes').innerHTML =
+    HOURS.map(h => `<div>${String(h).padStart(2, '0')}:00</div>`).join('');
+  document.getElementById('calCols').innerHTML = teachers.map(t => `
+    <div class="cal-col" data-teacher="${esc(t.id)}">
+      ${list.filter(r => r.teacherId === t.id).sort((a, b) => a.start.localeCompare(b.start)).map(eventBox).join('')}
+    </div>`).join('');
+  document.getElementById('rangeLabel').textContent = `${d}（${weekdayOf(d)}）· 按教师分栏 · ${list.length} 节`;
+}
+function drawMonth() {
+  const mr = monthRange(state.anchor);
+  const firstWeekday = WEEKDAYS.indexOf(weekdayOf(mr.from));
+  const days = Number(mr.to.slice(8, 10));
+  const list = eventsIn(mr.from, mr.to);
+  let html = WEEKDAYS.map(w => `<div class="mh">${w}</div>`).join('');
+  for (let i = 0; i < firstWeekday; i++) html += '<div class="md" style="background:#fafbfc"></div>';
+  for (let day = 1; day <= days; day++) {
+    const date = mr.from.slice(0, 8) + String(day).padStart(2, '0');
+    const n = list.filter(r => r.date === date).length;
+    html += `<div class="md ${date === TODAY ? 'today' : ''}" onclick="jumpCalendar('${date}');setView('day')">
+      <div class="dnum">${day}</div>
+      ${n ? `<span class="md-count">${n} 节</span>` : '<div class="mini-note">无课</div>'}</div>`;
+  }
+  document.getElementById('monthGrid').innerHTML = html;
+  document.getElementById('rangeLabel').textContent =
+    `${mr.year} 年 ${mr.month} 月 · 共 ${list.length} 节（点击日期进入日视图）`;
+}
+function stepCalendar(dir) {
+  if (state.view === 'week') state.anchor = addDays(state.anchor, dir * 7);
+  else if (state.view === 'day') state.anchor = addDays(state.anchor, dir);
+  else {
+    const d = new Date(state.anchor + 'T00:00:00Z');
+    d.setUTCMonth(d.getUTCMonth() + dir);
+    state.anchor = d.toISOString().slice(0, 10);
+  }
+  drawAll();
+}
+function jumpCalendar(date) { if (date) state.anchor = date; drawAll(); }
+function goToday() { state.anchor = TODAY; drawAll(); }
+
+/* ---------------- 总绘制 ---------------- */
+function drawAll() {
+  const q = S.courseQuery(Object.assign(filters(), { page: state.page, pageSize: pageSize() }));
+  renderStats(q.stats);
+  renderList(q);
+  renderPager(q);
+  updateSelCount();
+  document.getElementById('calDate').value = state.anchor;
+  if (state.view === 'day') drawDay(); else if (state.view === 'month') drawMonth(); else drawWeek();
+  document.getElementById('pageSub').textContent =
+    `筛选后 ${q.total} 节 · 第 ${q.page}/${q.pages} 页 · 当前视图：${{ week: '周', day: '日', month: '月' }[state.view]}`;
+}
+
+/* ---------------- 详情 / 编辑 / 改派 / 取消 ---------------- */
+function openDetail(id) {
+  const c = S.course(id);
+  if (!c) return;
+  state.currentId = id;
+  const editable = c.status !== '已完成' && c.status !== '已取消';
+  document.getElementById('detailTitle').textContent = c.student + ' · ' + c.date + ' ' + c.start + '—' + c.end;
+  document.getElementById('detailBody').innerHTML = `
+    <div class="desc g2 mb12">
+      <div class="desc-item"><span class="k">课程编号</span><span class="v mono">${esc(c.id)}</span></div>
+      <div class="desc-item"><span class="k">状态</span><span class="v"><span class="tag ${statusTag(c.status)}">${esc(c.status)}</span></span></div>
+      <div class="desc-item"><span class="k">学员</span><span class="v">${esc(c.student)} · ${esc(c.studentId)}</span></div>
+      <div class="desc-item"><span class="k">教师</span><span class="v">${esc(c.teacher || '未分配')} · ${esc(c.teacherId || '—')}</span></div>
+      <div class="desc-item"><span class="k">来源</span><span class="v">${esc(c.source || '手动')}${c.seriesId ? ' · ' + esc(c.seriesId) : ''}${c.batchId ? ' · ' + esc(c.batchId) : ''}</span></div>
+      <div class="desc-item"><span class="k">扣课状态</span><span class="v">${esc(c.deduct || '未扣课')}</span></div>
+      <div class="desc-item"><span class="k">会议链接</span><span class="v">${c.meetingUrl
+        ? `<a class="btn-link" href="${esc(c.meetingUrl)}" target="_blank" rel="noopener">打开会议</a>`
+        : '<span class="tag tag-amber nodot">待补充</span>'}</span></div>
+      <div class="desc-item"><span class="k">创建人</span><span class="v">${esc(c.createdBy || c.creator || '—')}</span></div>
+    </div>
+    ${c.scheduleWarnings && c.scheduleWarnings.length ? `<div class="alert alert-warn mb12"><span class="ico">!</span>
+      <div>${esc(c.scheduleWarnings.join('；'))}</div></div>` : ''}
+    ${c.note ? `<div class="alert alert-info mb12"><span class="ico">i</span><div>${esc(c.note)}</div></div>` : ''}
+    <div class="section-title">教务维护排课信息</div>
+    <div class="form-grid g3">
+      <div class="field"><label>日期</label><input class="input" type="date" id="e_date" value="${esc(c.date)}" ${editable ? '' : 'disabled'}></div>
+      <div class="field"><label>开始</label><input class="input" type="time" id="e_start" value="${esc(c.start)}" ${editable ? '' : 'disabled'}></div>
+      <div class="field"><label>结束</label><input class="input" type="time" id="e_end" value="${esc(c.end)}" ${editable ? '' : 'disabled'}></div>
+      <div class="field full"><label>腾讯会议链接</label><input class="input" id="e_meeting" value="${esc(c.meetingUrl || '')}" ${editable ? '' : 'disabled'}></div>
+    </div>
+    <div class="flex gap8 mt12">
+      <button class="btn btn-sm btn-primary" onclick="saveDetail()" ${editable ? '' : 'disabled'}>保存修改</button>
+      <button class="btn btn-sm" onclick="openReassign('${esc(c.id)}')" ${editable ? '' : 'disabled'}>调整授课教师</button>
+      <span class="small muted">${editable ? '保存会重新校验冲突与可用时间。' : '已完成 / 已取消课程只读。'}</span>
+    </div>`;
+  Proto.openModal('detailModal');
+}
+function saveDetail() {
+  if (!state.currentId) return;
+  try {
+    S.updateCourse(state.currentId, {
+      date: document.getElementById('e_date').value,
+      start: document.getElementById('e_start').value,
+      end: document.getElementById('e_end').value,
+      meetingUrl: document.getElementById('e_meeting').value.trim()
+    });
+    Proto.toast('排课信息已保存', 'ok');
+    Proto.closeModal('detailModal');
+    drawAll();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function cancelCurrent() {
+  const c = state.currentId ? S.course(state.currentId) : null;
+  if (!c) return;
+  Proto.closeModal('detailModal');
+  Proto.confirmBox('取消课程', `确认取消 <b>${esc(c.student)}</b> 的课程吗？<br><br>
+    · 取消课程<b>不扣课时</b>，历史课程保留<br>· 已完成课程不能取消`, '确认取消', () => {
+    try {
+      S.cancelCourse(c.id, '教务在排课总览手动取消');
+      Proto.toast('课程已取消，未扣课', 'ok');
+      drawAll();
+    } catch (e) { Proto.toast(e.message, 'err'); }
+  });
+}
+function openReassign(id) {
+  const c = S.course(id);
+  if (!c) return;
+  state.reassignId = id;
+  const cand = S.teacherCandidatesFor({ studentId: c.studentId, date: c.date, start: c.start, end: c.end, teacherId: c.teacherId, limit: 20 });
+  document.getElementById('reassignInfo').innerHTML = `课程 <b>${esc(c.id)}</b> · ${esc(c.date)} ${esc(c.start)}—${esc(c.end)} · 当前教师 ${esc(c.teacher)}<br>
+    推荐顺序已按「负责教师 / 学员首选 / 年级教材 / 可用时间 / 负荷均衡」计算，仅供建议，不会自动修改师生长期关系。`;
+  document.getElementById('r_teacher').innerHTML = '<option value="">请选择教师</option>' + (cand.length ? cand.map(x => `
+    <option value="${esc(x.teacherId)}">${esc(x.name)}（推荐分 ${x.score}：${esc(x.reasons.join('、') || '暂无加分')}）</option>`).join('')
+    : S.teacherPool().filter(p => p.teacher.id !== c.teacherId).map(p => `<option value="${esc(p.teacher.id)}">${esc(p.teacher.name)}</option>`).join(''));
+  document.getElementById('r_reason').value = '';
+  Proto.openModal('reassignModal');
+}
+function doReassign() {
+  const tid = document.getElementById('r_teacher').value;
+  if (!tid) { Proto.toast('请选择接替教师', 'err'); return; }
+  try {
+    S.reassignCourse(state.reassignId, tid, { reason: document.getElementById('r_reason').value.trim() });
+    Proto.closeModal('reassignModal');
+    Proto.toast('课程已改派，操作已留痕', 'ok');
+    drawAll();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+/* ---------------- 新增课程 ---------------- */
+function openCreate() {
+  document.getElementById('conflictBox').innerHTML = '';
+  document.getElementById('n_date').value = state.anchor;
+  Proto.openModal('createModal');
+}
+function submitCourse() {
+  const box = document.getElementById('conflictBox');
+  const input = {
+    studentId: document.getElementById('n_student').value,
+    teacherId: document.getElementById('n_teacher').value,
+    date: document.getElementById('n_date').value,
+    start: document.getElementById('n_start').value,
+    end: document.getElementById('n_end').value,
+    meetingUrl: document.getElementById('n_meeting').value.trim(),
+    note: document.getElementById('n_note').value.trim(),
+    type: document.getElementById('n_type').value
+  };
+  if (!input.studentId || !input.teacherId || !input.date || !input.start || !input.end) {
+    box.innerHTML = '<div class="alert alert-danger mb12"><span class="ico">!</span><div>请补全学员、教师、日期与起止时间。</div></div>';
+    return;
+  }
+  try {
+    const c = S.createCourse(input);
+    box.innerHTML = `<div class="alert alert-success mb12"><span class="ico">✓</span>
+      <div>课程 <b>${esc(c.id)}</b> 已写入：${esc(c.student)} · ${esc(c.teacher)} · ${esc(c.date)} ${esc(c.start)}—${esc(c.end)}
+      ${c.scheduleWarnings && c.scheduleWarnings.length ? '；提醒：' + esc(c.scheduleWarnings.join('；')) : ''}</div></div>`;
+    Proto.toast('课程已创建 ' + c.id, 'ok');
+    drawAll();
+    setTimeout(() => Proto.closeModal('createModal'), 600);
+  } catch (e) {
+    box.innerHTML = `<div class="alert alert-danger mb12"><span class="ico">!</span><div><b>排课未保存：</b>${esc(e.message)}</div></div>`;
+    Proto.toast(e.message, 'err');
+  }
+}
+
+/* ---------------- 批量维护 ---------------- */
+function requireSelection() {
+  const ids = selectedIds();
+  if (!ids.length) { Proto.toast('请先选择至少一节课程', 'warn'); return []; }
+  return ids;
+}
+function openBulkReassign() {
+  if (!requireSelection().length) return;
+  document.getElementById('brResult').innerHTML = '';
+  document.getElementById('br_reason').value = '';
+  Proto.openModal('bulkReassignModal');
+}
+function doBulkReassign() {
+  const ids = requireSelection();
+  if (!ids.length) return;
+  const tid = document.getElementById('br_teacher').value;
+  const reason = document.getElementById('br_reason').value.trim();
+  if (!tid || !reason) { Proto.toast('请填写接替教师与原因', 'err'); return; }
+  const r = S.batchReassignCourses(ids, tid, reason);
+  document.getElementById('brResult').innerHTML = `
+    <div class="alert ${r.failed.length ? 'alert-warn' : 'alert-success'}"><span class="ico">${r.failed.length ? '!' : '✓'}</span>
+      <div>成功 <b>${r.success.length}</b> 节 · 失败 <b>${r.failed.length}</b> 节</div></div>
+    ${r.failed.length ? '<div class="small muted" style="margin-top:8px">' +
+      r.failed.map(f => `${esc(f.courseId)}（${esc(f.date)}）：${esc(f.reason)}`).join('<br>') + '</div>' : ''}`;
+  r.success.forEach(x => { delete state.selected[x.courseId]; });
+  Proto.toast('批量改派完成：成功 ' + r.success.length + ' / 失败 ' + r.failed.length, r.failed.length ? 'warn' : 'ok');
+  drawAll();
+}
+function openBulkMeeting() {
+  if (!requireSelection().length) return;
+  document.getElementById('bmResult').innerHTML = '';
+  document.getElementById('bm_url').value = '';
+  Proto.openModal('bulkMeetingModal');
+}
+function doBulkMeeting(clear) {
+  const ids = requireSelection();
+  if (!ids.length) return;
+  const url = clear ? '' : document.getElementById('bm_url').value.trim();
+  if (!clear && !url) { Proto.toast('请填写会议链接；如需清空请点「清空链接」', 'err'); return; }
+  const r = S.batchSetMeetingUrl(ids, url, clear ? '批量清空会议链接' : '批量设置会议链接');
+  document.getElementById('bmResult').innerHTML = `
+    <div class="alert ${r.failed.length ? 'alert-warn' : 'alert-success'}"><span class="ico">${r.failed.length ? '!' : '✓'}</span>
+      <div>成功 <b>${r.success.length}</b> 节 · 失败 <b>${r.failed.length}</b> 节</div></div>
+    ${r.failed.length ? '<div class="small muted" style="margin-top:8px">' +
+      r.failed.map(f => `${esc(f.courseId)}：${esc(f.reason)}`).join('<br>') + '</div>' : ''}`;
+  Proto.toast('会议链接已更新 ' + r.success.length + ' 节', 'ok');
+  drawAll();
+}
+function openBulkCancel() {
+  const ids = requireSelection();
+  if (!ids.length) return;
+  Proto.confirmBox('批量取消课程', `将取消已选的 <b>${ids.length}</b> 节课程。<br><br>
+    · 取消<b>不扣课时</b>，不物理删除历史课程<br>· 已完成课程会被跳过并列出原因<br>· 请填写取消原因后才能执行`, '继续填写原因', () => {
+    const reason = prompt('请填写批量取消原因（必填）');
+    if (!reason || !reason.trim()) { Proto.toast('未填写原因，已取消操作', 'warn'); return; }
+    const r = S.batchCancelCourses(ids, reason.trim());
+    const failedText = r.failed.map(f => `${f.courseId}：${f.reason}`).join('；');
+    Proto.toast('批量取消：成功 ' + r.success.length + ' / 失败 ' + r.failed.length +
+      (failedText ? ' · ' + failedText : ''), r.failed.length ? 'warn' : 'ok');
+    r.success.forEach(x => { delete state.selected[x.courseId]; });
+    drawAll();
+  });
+}
+
+drawAll();
+</script>
+</body>
+</html>
