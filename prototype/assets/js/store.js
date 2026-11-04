@@ -9761,8 +9761,10 @@
       id: batchId, batchNo: batchId,
       createdBy: session.operatorName || '', operatorId: session.operatorId || '',
       createdAt: stamp(), dateFrom: dates[0] || '', dateTo: dates[dates.length - 1] || '',
-      plannedCount: rows.length, createdCount: 0, conflictCount: rows.filter(function (r) { return r.hard.length; }).length,
-      failedCount: 0, skippedCount: 0, warningCount: rows.filter(function (r) { return !r.hard.length && r.warnings.length; }).length,
+      plannedCount: rows.length, createdCount: 0,
+      conflictCount: rows.filter(function (r) { return !r.skip && r.hard.length; }).length,
+      failedCount: 0, skippedCount: 0,
+      warningCount: rows.filter(function (r) { return !r.skip && !r.hard.length && r.warnings.length; }).length,
       status: BATCH_STATUS.DRAFT, note: input.note || '', rows: rows
     };
     db.scheduleBatches.push(batch);
@@ -9819,7 +9821,7 @@
     batch.createdCount = batch.rows.filter(function (r) { return r.result === '已创建'; }).length;
     batch.failedCount = failed.length;
     batch.skippedCount = skipped.length + pending.length;
-    batch.conflictCount = batch.rows.filter(function (r) { return r.hard && r.hard.length; }).length;
+    batch.conflictCount = batch.rows.filter(function (r) { return !r.skip && r.hard && r.hard.length; }).length;
     batch.status = batch.failedCount || pending.length
       ? (batch.createdCount ? BATCH_STATUS.PARTIAL : BATCH_STATUS.DRAFT)
       : BATCH_STATUS.GENERATED;

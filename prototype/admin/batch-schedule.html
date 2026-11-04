@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>批量排课</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .steps { display:flex; gap:8px; align-items:center; margin-bottom:16px; }
+  .step-chip { flex:1; border:1px solid var(--border); border-radius:8px; padding:10px 14px; background:#fff; font-size:13px; color:var(--text-2); }
+  .step-chip b { display:block; font-size:12px; color:var(--text-3); }
+  .step-chip.on { border-color:var(--primary); background:var(--primary-soft); color:var(--primary-dark); }
+  .stu-list { max-height:360px; overflow:auto; border:1px solid var(--border); border-radius:8px; }
+  .stu-row { display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:1px solid var(--border); font-size:13px; }
+  .stu-row:last-child { border-bottom:none; }
+  .stu-row .grow { flex:1; }
+  .batch-table input[type=time] { width:104px; }
+  .batch-table input[type=date] { width:138px; }
+  .row-hard td { background:#fef2f2; }
+  .row-pending td { background:#fffbeb; }
+  .row-created td { background:#f0fdf4; }
+  .row-skipped td { opacity:.55; }
+  .rec { font-size:11px; color:var(--text-3); line-height:1.4; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+      <div class="page-head">
+        <div>
+          <div class="crumb">排课管理<span class="sep">/</span>批量排课</div>
+          <h1 class="page-title">多学员批量排课</h1>
+          <div class="page-sub">三步式：选学员 → 配教师与时间 → 预览冲突并提交；同批次同行的重复提交不会重复建课</div>
+        </div>
+        <div class="page-actions"><a class="btn" href="schedule-workbench.html">返回排课总览</a></div>
+      </div>
+
+      <div class="steps">
+        <div class="step-chip on" id="step1"><b>第 1 步</b>选学员</div>
+        <div class="step-chip" id="step2"><b>第 2 步</b>配教师与时间</div>
+        <div class="step-chip" id="step3"><b>第 3 步</b>预览并提交</div>
+      </div>
+
+      <!-- 第 1 步 -->
+      <div class="card" id="pane1">
+        <div class="flex gap8 wrap mb12 aic">
+          <div class="field" style="margin:0"><label>年级</label><select class="select" id="q_grade" onchange="stuPage=1;renderStudents()"></select></div>
+          <div class="field" style="margin:0"><label>关键字</label><input class="input" id="q_kw" placeholder="学员 / 编号" onkeydown="if(event.key==='Enter'){stuPage=1;renderStudents()}"></div>
+          <div class="field" style="margin:0"><label>每页</label><select class="select" id="q_size" onchange="stuPage=1;renderStudents()">
+            <option>8</option><option selected>10</option><option>20</option><option>50</option></select></div>
+          <button class="btn btn-sm btn-primary" onclick="stuPage=1;renderStudents()">查询</button>
+          <span class="small muted" id="stuCount"></span>
+        </div>
+        <div class="stu-list"><div id="stuList"></div></div>
+        <div class="pager mt12" id="stuPager"></div>
+        <div class="flex jcb aic mt12">
+          <span class="small muted">已选 <b id="selN">0</b> 人（跨页保留选择）</span>
+          <div class="flex gap8">
+            <button class="btn" onclick="toggleAllStudents(true)">全选当前页</button>
+            <button class="btn" onclick="toggleAllStudents(false)">清空选择</button>
+            <button class="btn btn-primary" onclick="goStep2()">下一步：配教师与时间</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 第 2 步 -->
+      <div class="card hidden" id="pane2">
+        <div class="section-title">批量指定</div>
+        <div class="form-grid g3 mb12">
+          <div class="field"><label>上课日期</label><input class="input" type="date" id="b_date"></div>
+          <div class="field"><label>开始时间</label><input class="input" type="time" id="b_start" value="19:00"></div>
+          <div class="field"><label>单节时长（分钟）</label><input class="input" type="number" id="b_duration" value="60" min="30" step="15"></div>
+          <div class="field"><label>统一教师</label><select class="select" id="b_teacher"><option value="">按推荐 / 学员当前教师</option></select></div>
+          <div class="field"><label>课程类型</label><select class="select" id="b_type"><option>一对一</option><option>补课</option></select></div>
+          <div class="field"><label>会议链接</label><input class="input" id="b_meeting" placeholder="留空待补充，不自动创建"></div>
+        </div>
+        <div class="flex gap8 aic mb12">
+          <button class="btn btn-primary" onclick="buildRows()">生成排课行</button>
+          <button class="btn" onclick="smartRecommend()">按时间智能推荐教师</button>
+          <span class="small muted" id="rowMeta">未生成排课行</span>
+        </div>
+        <div class="table-wrap"><table class="table compact batch-table">
+          <thead><tr><th>学员</th><th>年级</th><th>日期</th><th>时间</th><th>教师</th><th>推荐理由 / 提醒</th><th class="right">操作</th></tr></thead>
+          <tbody id="rowTbody"></tbody></table></div>
+        <div class="flex jcb aic mt12">
+          <button class="btn" onclick="setStep(1)">上一步</button>
+          <button class="btn btn-primary" onclick="goStep3()">下一步：预览并校验</button>
+        </div>
+      </div>
+
+      <!-- 第 3 步 -->
+      <div class="card hidden" id="pane3">
+        <div class="flex jcb aic mb12">
+          <div class="section-title" style="margin:0">预览与冲突处理</div>
+          <div class="flex gap8">
+            <button class="btn btn-sm" onclick="doPreview()">重新预览</button>
+            <button class="btn btn-sm btn-primary" onclick="doCommit()">提交批次</button>
+          </div>
+        </div>
+        <div id="batchSummary" class="mb12"></div>
+        <div class="flex gap8 aic mb12">
+          <label class="check"><input type="checkbox" id="b_confirm"> 我已确认提醒行（超负荷 / 首选偏差 / 缺链接等）</label>
+          <label class="check"><input type="checkbox" id="b_reasonSkip"> 提交时跳过硬冲突行</label>
+          <span class="small muted">硬冲突不会创建；提醒不确认则暂不创建，可稍后勾选再提交。</span>
+        </div>
+        <div class="table-wrap"><table class="table compact batch-table">
+          <thead><tr><th>学员</th><th>日期</th><th>时间</th><th>教师</th><th>结果</th><th>原因 / 提醒</th><th class="right">操作</th></tr></thead>
+          <tbody id="batchTbody"></tbody></table></div>
+        <div class="flex jcb aic mt12">
+          <button class="btn" onclick="setStep(2)">上一步</button>
+          <div class="flex gap8">
+            <button class="btn" onclick="retryAllFailed()">重试失败 / 待确认行</button>
+            <button class="btn btn-primary" onclick="doCommit()">提交批次</button>
+          </div>
+        </div>
+        <div id="commitResult" class="mt12"></div>
+      </div>
+
+      <div class="card mt16">
+        <div class="section-title">历史批次</div>
+        <div class="table-wrap"><table class="table compact">
+          <thead><tr><th>批次</th><th>创建人</th><th>日期范围</th><th>计划</th><th>已创建</th><th>失败</th><th>跳过</th><th>状态</th><th>创建时间</th><th class="right">操作</th></tr></thead>
+          <tbody id="batchList"></tbody></table></div>
+        <div class="small muted mt8">批次头记录创建人、操作人身份、创建时间与逐行行键；同 batchId + batchRowKey 幂等。</div>
+      </div>
+
+      <div class="alert alert-info mt16"><span class="ico">i</span>
+        <div><b>口径：</b>批量排课不扣课时；硬冲突阻断、提醒需确认；提交失败行可单独修正后重试，不影响已成功行。</div></div>
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'batch-schedule' });
+Store.setSession({ role: 'admin' });
+const S = Store;
+const TODAY = S.TODAY;
+
+const state = {
+  step: 1, stuPage: 1, selected: {}, rows: [], batchId: '',
+  perTeacher: {}, recTeacher: {}
+};
+let stuPage = 1;
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function addDays(date, n) {
+  const d = new Date(date + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function endOf(start, duration) {
+  const p = String(start).split(':');
+  const m = Number(p[0]) * 60 + Number(p[1]) + Number(duration);
+  return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+}
+
+/* ---------- 第 1 步：选学员 ---------- */
+(function init() {
+  const grades = Array.from(new Set(S.students().map(s => s.grade).filter(Boolean))).sort();
+  document.getElementById('q_grade').innerHTML = '<option value="">全部年级</option>' +
+    grades.map(g => `<option>${esc(g)}</option>`).join('');
+  document.getElementById('b_date').value = addDays(TODAY, 1);
+  document.getElementById('b_teacher').innerHTML = '<option value="">按推荐 / 学员当前教师</option>' +
+    S.teacherPool().map(p => `<option value="${esc(p.teacher.id)}">${esc(p.teacher.name)}</option>`).join('');
+  renderStudents();
+  renderBatchList();
+})();
+function filteredStudents() {
+  const g = document.getElementById('q_grade').value;
+  const kw = document.getElementById('q_kw').value.trim().toLowerCase();
+  return S.students().filter(s => (!g || s.grade === g) &&
+    (!kw || (s.name + s.id).toLowerCase().indexOf(kw) >= 0));
+}
+function currentTeacherOf(studentId) {
+  const rel = S.relationsOfStudent(studentId).filter(r => r.status === '当前有效')[0];
+  return rel ? rel.teacherId : '';
+}
+function renderStudents() {
+  const all = filteredStudents();
+  const size = Number(document.getElementById('q_size').value) || 10;
+  const pages = Math.max(1, Math.ceil(all.length / size));
+  if (stuPage > pages) stuPage = pages;
+  const rows = all.slice((stuPage - 1) * size, stuPage * size);
+  document.getElementById('stuList').innerHTML = rows.map(s => `
+    <div class="stu-row">
+      <input type="checkbox" ${state.selected[s.id] ? 'checked' : ''} onchange="toggleStudent('${esc(s.id)}',this.checked)">
+      <span class="grow"><b>${esc(s.name)}</b> <span class="small muted">${esc(s.id)} · ${esc(s.grade || '—')}</span></span>
+      <span class="small muted">当前教师：${esc((S.teacher(currentTeacherOf(s.id)) || {}).name || '未分配')}</span>
+    </div>`).join('') || '<div style="padding:16px"><span class="small muted">没有匹配学员</span></div>';
+  document.getElementById('stuCount').textContent = '筛选后 ' + all.length + ' 人';
+  document.getElementById('stuPager').innerHTML = `
+    <span class="small muted">第 ${stuPage}/${pages} 页</span>
+    <div class="pages">
+      <button class="pg" ${stuPage <= 1 ? 'disabled' : ''} onclick="gotoStuPage(${stuPage - 1})">上一页</button>
+      ${Array.from({ length: pages }, (_, i) => i + 1).map(n =>
+        `<button class="pg ${n === stuPage ? 'on' : ''}" onclick="gotoStuPage(${n})">${n}</button>`).join('')}
+      <button class="pg" ${stuPage >= pages ? 'disabled' : ''} onclick="gotoStuPage(${stuPage + 1})">下一页</button>
+    </div>`;
+  document.getElementById('selN').textContent = selectedIds().length;
+}
+function gotoStuPage(n) { stuPage = n; renderStudents(); }
+function toggleStudent(id, on) { if (on) state.selected[id] = true; else delete state.selected[id]; renderStudents(); }
+function toggleAllStudents(on) {
+  const rows = filteredStudents().slice((stuPage - 1) * (Number(document.getElementById('q_size').value) || 10),
+    stuPage * (Number(document.getElementById('q_size').value) || 10));
+  rows.forEach(s => { if (on) state.selected[s.id] = true; else delete state.selected[s.id]; });
+  renderStudents();
+}
+function selectedIds() { return Object.keys(state.selected).filter(id => S.student(id)); }
+
+/* ---------- 步骤切换 ---------- */
+function setStep(n) {
+  state.step = n;
+  [1, 2, 3].forEach(i => {
+    document.getElementById('pane' + i).classList.toggle('hidden', i !== n);
+    document.getElementById('step' + i).classList.toggle('on', i === n);
+  });
+}
+function goStep2() {
+  if (!selectedIds().length) { Proto.toast('请先选择至少一名学员', 'warn'); return; }
+  renderRowsTable();
+  setStep(2);
+}
+function goStep3() {
+  if (!state.rows.length) buildRows();
+  if (!state.rows.length) return;
+  setStep(3);
+  doPreview();
+}
+
+/* ---------- 第 2 步：配教师与时间 ---------- */
+function teacherOptions(selectedId) {
+  return S.teacherPool().map(p =>
+    `<option value="${esc(p.teacher.id)}" ${p.teacher.id === selectedId ? 'selected' : ''}>${esc(p.teacher.name)}</option>`).join('');
+}
+function teacherForRow(s) {
+  if (state.perTeacher[s.id]) return state.perTeacher[s.id];
+  const bulk = document.getElementById('b_teacher').value;
+  if (bulk) return bulk;
+  const cur = currentTeacherOf(s.id);
+  if (cur) return cur;
+  const cand = S.teacherCandidatesFor(slotOf(s.id));
+  return cand.length ? cand[0].teacherId : (S.teacherPool()[0] || {}).teacher ? S.teacherPool()[0].teacher.id : '';
+}
+function slotOf(studentId) {
+  return {
+    studentId: studentId,
+    date: document.getElementById('b_date').value,
+    start: document.getElementById('b_start').value,
+    end: endOf(document.getElementById('b_start').value, document.getElementById('b_duration').value)
+  };
+}
+function buildRows() {
+  const ids = selectedIds();
+  if (!ids.length) { Proto.toast('请先选择学员', 'warn'); return; }
+  const date = document.getElementById('b_date').value;
+  const start = document.getElementById('b_start').value;
+  const duration = Number(document.getElementById('b_duration').value) || 60;
+  if (!date || !start) { Proto.toast('请填写上课日期与开始时间', 'err'); return; }
+  const meetingUrl = document.getElementById('b_meeting').value.trim();
+  state.rows = ids.map(id => {
+    const stu = S.student(id);
+    const tid = teacherForRow(stu);
+    return {
+      rowKey: id + '|' + date + '|' + start,
+      studentId: id, student: stu.name, grade: stu.grade || '',
+      teacherId: tid, date: date, start: start, end: endOf(start, duration),
+      duration: duration, type: document.getElementById('b_type').value,
+      meetingUrl: meetingUrl, skip: false
+    };
+  });
+  state.batchId = '';
+  renderRowsTable();
+  document.getElementById('rowMeta').textContent = '已生成 ' + state.rows.length + ' 行；可单独修改教师与时间';
+}
+function renderRowsTable() {
+  const tbody = document.getElementById('rowTbody');
+  if (!state.rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7"><span class="small muted">选择学员后点「生成排课行」。</span></td></tr>';
+    return;
+  }
+  tbody.innerHTML = state.rows.map((r, i) => {
+    const cand = S.teacherCandidatesFor({ studentId: r.studentId, date: r.date, start: r.start, end: r.end, teacherId: r.teacherId, limit: 3 });
+    const rec = cand.length ? ('推荐 ' + cand[0].name + '（' + cand[0].score + ' 分）：' + (cand[0].reasons.join('、') || '暂无加分') +
+      (cand[0].warnings.length ? '；提醒：' + cand[0].warnings.join('、') : '')) : '暂无可推荐教师';
+    return `<tr>
+      <td class="strong">${esc(r.student)}<div class="rec">${esc(r.studentId)}</div></td>
+      <td>${esc(r.grade)}</td>
+      <td><input class="input" type="date" value="${esc(r.date)}" onchange="editRow(${i},'date',this.value)"></td>
+      <td><input class="input" type="time" value="${esc(r.start)}" onchange="editRow(${i},'start',this.value)"
+        title="结束 ${esc(r.end)}"></td>
+      <td><select class="select" onchange="editRow(${i},'teacherId',this.value)"><option value="">未指定</option>${teacherOptions(r.teacherId)}</select>
+        <div class="rec">${esc(rec)}</div></td>
+      <td class="rec">${esc(cand[0] ? cand[0].reasons.join('、') : '')}</td>
+      <td class="right"><button class="btn-link" onclick="removeRow(${i})">移除</button></td>
+    </tr>`;
+  }).join('');
+}
+function editRow(i, key, value) {
+  const r = state.rows[i];
+  if (!r) return;
+  if (key === 'start') r.start = value, r.end = endOf(value, r.duration);
+  else if (key === 'date') r.date = value;
+  else r.teacherId = value;
+  r.rowKey = r.studentId + '|' + r.date + '|' + r.start;
+  /* 记录人工选择，重新生成时保留 */
+  if (key === 'teacherId') state.perTeacher[r.studentId] = value;
+  if (state.batchId) {
+    try {
+      S.retryBatchRow(state.batchId, r.rowKey, { date: r.date, start: r.start, end: r.end, teacherId: r.teacherId });
+    } catch (e) { Proto.toast(e.message, 'err'); }
+  }
+  renderRowsTable();
+  if (state.batchId) renderBatchRows();
+}
+function removeRow(i) { state.rows.splice(i, 1); renderRowsTable(); document.getElementById('rowMeta').textContent = '已生成 ' + state.rows.length + ' 行'; }
+function smartRecommend() {
+  if (!state.rows.length) buildRows();
+  if (!state.rows.length) return;
+  let changed = 0, missing = 0;
+  state.rows.forEach(r => {
+    if (r.teacherId && !state.perTeacher[r.studentId]) return;
+    const cand = S.teacherCandidatesFor({ studentId: r.studentId, date: r.date, start: r.start, end: r.end, teacherId: r.teacherId, limit: 1 });
+    if (cand.length) { r.teacherId = cand[0].teacherId; changed++; } else missing++;
+  });
+  renderRowsTable();
+  Proto.toast('智能推荐完成：更新 ' + changed + ' 行' + (missing ? '，' + missing + ' 行暂无候选' : ''), 'ok');
+}
+
+/* ---------- 第 3 步：预览与提交 ---------- */
+function doPreview() {
+  if (!state.rows.length) { Proto.toast('请先生成排课行', 'warn'); return; }
+  try {
+    const batch = S.createScheduleBatch({
+      rows: state.rows.map(r => ({
+        rowKey: r.rowKey, studentId: r.studentId, teacherId: r.teacherId,
+        date: r.date, start: r.start, end: r.end, type: r.type,
+        meetingUrl: r.meetingUrl, note: r.note || '', skip: r.skip
+      })),
+      note: '批量排课页面创建'
+    });
+    state.batchId = batch.id;
+    renderBatchRows();
+    renderBatchList();
+    const hard = batch.rows.filter(r => r.result === '硬冲突').length;
+    const pending = batch.rows.filter(r => r.result === '待确认').length;
+    document.getElementById('batchSummary').innerHTML = `
+      <div class="count-box">
+        <span class="tag tag-slate">计划 ${batch.plannedCount} 节</span>
+        <span class="tag tag-green">可提交 ${batch.rows.filter(r => r.result === '可提交').length}</span>
+        <span class="tag tag-amber">待确认 ${pending}</span>
+        <span class="tag tag-red">硬冲突 ${hard}</span>
+        <span class="tag tag-slate">批次 ${esc(batch.id)}</span>
+      </div>`;
+    document.getElementById('rowMeta').textContent = '批次 ' + batch.id + ' 已生成草稿';
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function resultTag(row) {
+  if (row.result === '已创建') return 'tag-green';
+  if (row.result === '硬冲突' || row.result === '失败') return 'tag-red';
+  if (row.result === '待确认') return 'tag-amber';
+  if (row.result === '跳过') return 'tag-slate';
+  return 'tag-blue';
+}
+function updateBatchSummary() {
+  const b = S.batchOf(state.batchId);
+  if (!b) return;
+  const hard = b.rows.filter(r => r.hard.length).length;
+  const pending = b.rows.filter(r => r.result === '待确认').length;
+  document.getElementById('batchSummary').innerHTML = `
+    <div class="count-box">
+      <span class="tag tag-slate">计划 ${b.plannedCount} 节</span>
+      <span class="tag tag-green">可提交 ${b.rows.filter(r => r.result === '可提交').length}</span>
+      <span class="tag tag-amber">待确认 ${pending}</span>
+      <span class="tag tag-red">硬冲突 ${hard}</span>
+      <span class="tag tag-green">已创建 ${b.rows.filter(r => r.result === '已创建').length}</span>
+      <span class="tag tag-slate">批次 ${esc(b.id)}</span>
+    </div>`;
+}
+function renderBatchRows() {
+  const b = S.batchOf(state.batchId);
+  if (!b) return;
+  document.getElementById('batchTbody').innerHTML = b.rows.map(r => {
+    const cls = r.result === '已创建' ? 'row-created' : (r.result === '跳过' ? 'row-skipped' :
+      (r.hard.length ? 'row-hard' : (r.result === '待确认' ? 'row-pending' : '')));
+    const stu = S.student(r.studentId) || {};
+    const locked = r.result === '已创建' || r.result === '跳过';
+    return `<tr class="${cls}">
+      <td>${esc(stu.name || r.studentId)}<div class="rec">${esc(r.rowKey)}</div></td>
+      <td><input class="input" type="date" value="${esc(r.date)}" ${locked ? 'disabled' : ''}
+        onchange="editBatchRow('${esc(r.rowKey)}','date',this.value)"></td>
+      <td><input class="input" type="time" value="${esc(r.start)}" ${locked ? 'disabled' : ''}
+        onchange="editBatchRow('${esc(r.rowKey)}','start',this.value)"><div class="rec">结束 ${esc(r.end)}</div></td>
+      <td><select class="select" ${locked ? 'disabled' : ''} onchange="editBatchRow('${esc(r.rowKey)}','teacherId',this.value)">
+        <option value="">未指定</option>${teacherOptions(r.teacherId)}</select></td>
+      <td><span class="tag ${resultTag(r)}">${esc(r.result)}</span></td>
+      <td class="rec">${esc(r.reason || r.warnings.map(w => w.message).join('；'))}</td>
+      <td class="right">${locked ? '<span class="small muted">—</span>'
+        : `<button class="btn-link" onclick="retryRow('${esc(r.rowKey)}')">重校验</button>`}</td>
+    </tr>`;
+  }).join('');
+  updateBatchSummary();
+}
+function editBatchRow(rowKey, key, value) {
+  const b = S.batchOf(state.batchId);
+  const row = b.rows.filter(r => r.rowKey === rowKey)[0];
+  if (!row || row.result === '已创建' || row.result === '跳过') return;
+  let start = row.start, end = row.end;
+  if (key === 'start') {
+    const dur = (Number(row.end.slice(0, 2)) * 60 + Number(row.end.slice(3, 5)) -
+      Number(row.start.slice(0, 2)) * 60 - Number(row.start.slice(3, 5))) || 60;
+    start = value; end = endOf(value, dur);
+  }
+  try {
+    S.retryBatchRow(state.batchId, rowKey, {
+      date: key === 'date' ? value : row.date,
+      start: start, end: end,
+      teacherId: key === 'teacherId' ? value : row.teacherId
+    });
+    renderBatchRows();
+    Proto.toast('该行已重新校验', 'ok');
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function retryRow(rowKey) {
+  const b = S.batchOf(state.batchId);
+  const row = b.rows.filter(r => r.rowKey === rowKey)[0];
+  if (!row) return;
+  try {
+    S.retryBatchRow(state.batchId, rowKey, {
+      date: row.date, start: row.start, end: row.end, teacherId: row.teacherId,
+      confirmWarnings: row.result === '待确认'
+    });
+    renderBatchRows();
+    Proto.toast('该行已重新校验', 'ok');
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+function retryAllFailed() {
+  const b = S.batchOf(state.batchId);
+  if (!b) return;
+  b.rows.filter(r => r.result === '失败' || r.result === '硬冲突').forEach(r =>
+    S.retryBatchRow(state.batchId, r.rowKey, { confirmWarnings: false }));
+  Proto.toast('失败行已重新校验，请按提示修正后再次提交', 'warn');
+  renderBatchRows();
+}
+function doCommit() {
+  if (!state.batchId) { Proto.toast('请先预览批次', 'warn'); return; }
+  const confirmWarnings = document.getElementById('b_confirm').checked;
+  try {
+    const r = S.commitScheduleBatch(state.batchId, {
+      confirmWarnings: confirmWarnings, reason: '批量排课页面提交'
+    });
+    renderBatchRows();
+    renderBatchList();
+    document.getElementById('commitResult').innerHTML = `
+      <div class="alert ${r.failed.length || r.pending.length ? 'alert-warn' : 'alert-success'}">
+        <span class="ico">${r.failed.length || r.pending.length ? '!' : '✓'}</span>
+        <div>成功 <b>${r.created.length}</b> 节 · 失败 <b>${r.failed.length}</b> 节 · 跳过（含已创建 / 重复）<b>${r.skipped.length}</b> 节 · 待确认 <b>${r.pending.length}</b> 节</div>
+      </div>
+      ${r.failed.length ? '<div class="small muted">' + r.failed.map(f => esc(f.rowKey) + '：' + esc(f.reasons.join('；'))).join('<br>') +
+        '<br>可在上表点「重校验」，或修正后再次提交（已成功行不会重复建课）。</div>' : ''}
+      ${r.pending.length ? '<div class="small muted">待确认行：' + r.pending.map(p => esc(p.rowKey)).join('、') +
+        '<br>勾选「我已确认提醒行」后再次提交即可创建。</div>' : ''}`;
+    Proto.toast('批量提交：成功 ' + r.created.length + ' / 失败 ' + r.failed.length +
+      ' / 待确认 ' + r.pending.length, r.failed.length || r.pending.length ? 'warn' : 'ok');
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+/* ---------- 历史批次 ---------- */
+function renderBatchList() {
+  const list = S.batchList();
+  document.getElementById('batchList').innerHTML = list.length ? list.map(b => `<tr>
+    <td class="mono">${esc(b.id)}</td>
+    <td>${esc(b.createdBy || '—')}</td>
+    <td>${esc(b.dateFrom)} ~ ${esc(b.dateTo)}</td>
+    <td>${b.plannedCount}</td><td>${b.createdCount}</td><td>${b.failedCount}</td><td>${b.skippedCount}</td>
+    <td><span class="tag ${b.status === '已生成' ? 'tag-green' : b.status === '部分生成' ? 'tag-amber' : 'tag-slate'}">${esc(b.status)}</span></td>
+    <td class="mono">${esc(b.createdAt)}</td>
+    <td class="ops right"><button class="btn-link" onclick="openBatch('${esc(b.id)}')">打开</button></td>
+  </tr>`).join('') : '<tr><td colspan="10"><span class="small muted">暂无批次</span></td></tr>';
+}
+/* 刷新 / 重进页面后可从历史批次恢复，再提交仍按 batchId + rowKey 幂等 */
+function openBatch(id) {
+  const b = S.batchOf(id);
+  if (!b) return;
+  state.batchId = id;
+  state.rows = b.rows.map(r => ({
+    rowKey: r.rowKey, studentId: r.studentId, student: (S.student(r.studentId) || {}).name || r.studentId,
+    grade: (S.student(r.studentId) || {}).grade || '', teacherId: r.teacherId,
+    date: r.date, start: r.start, end: r.end, type: r.type, meetingUrl: r.meetingUrl,
+    skip: r.skip, duration: 60
+  }));
+  setStep(3);
+  renderBatchRows();
+  document.getElementById('commitResult').innerHTML = '<span class="small muted">已从历史批次恢复，再次提交不会重复建课。</span>';
+}
+
+setStep(1);
+</script>
+</body>
+</html>
