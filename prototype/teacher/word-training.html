@@ -151,9 +151,26 @@ const el = () => document.getElementById('stage');
 
 function boot() {
   const tid = params.get('task');
-  task = tid ? Store.trainTask(tid) : Store.activeTask(params.get('student') || 'S2026001');
-  if (!task) { location.replace('word-training-setup.html'); return; }
-  if (task.status === '预筛选中') { location.replace('word-training-prescreen.html?task=' + task.id); return; }
+  if (!tid) {
+    /* 单词训练必须从具体课程进入，不能凭学员编号脱离课程创建或恢复任务 */
+    if (courseId) { location.replace('word-training-setup.html?course=' + courseId); return; }
+    location.replace('workbench.html');
+    return;
+  }
+  task = Store.trainTask(tid);
+  if (!task) { location.replace(courseId ? 'course-workbench.html?course=' + courseId : 'workbench.html'); return; }
+  if (courseId) {
+    const c = Store.course(courseId);
+    if (!c || (c.teacherId || '') !== Proto.teacherId() || c.studentId !== task.studentId) {
+      Proto.toast('课程上下文与训练任务不匹配，已返回课程工作台', 'err');
+      location.replace('workbench.html');
+      return;
+    }
+  }
+  if (task.phase === Store.PHASE.PRESCREEN && !Store.isDone(task.status)) {
+    location.replace('word-training-prescreen.html?task=' + task.id + (courseId ? '&course=' + courseId : ''));
+    return;
+  }
 
   ids = task.queueWordIds.slice();
   groups = Store.groupsOfTask(task);
@@ -162,7 +179,9 @@ function boot() {
 
   const stu = Store.student(task.studentId);
   document.getElementById('topTitle').textContent = '单词训练 · ' + stu.name;
-  document.getElementById('backLink').href = 'word-training-setup.html?student=' + task.studentId;
+  document.getElementById('backLink').href = courseId
+    ? 'course-workbench.html?course=' + courseId
+    : 'workbench.html';
 
   // 依据统一状态（status）与阶段（phase）决定进入哪个视图（刷新恢复的关键）
   if (Store.isDone(task.status)) view = 'summary';
@@ -776,7 +795,7 @@ function renderSummary() {
             学习档案、单词档案、莱特纳盒子、21 天计划现在都能读到同一份结果。</div></div>
 
         <div class="flex gap8" style="justify-content:flex-end">
-          <a class="btn" href="word-training-setup.html?student=${task.studentId}">返回词库选择</a>
+          <a class="btn" href="${courseId ? 'word-training-setup.html?course=' + courseId : 'workbench.html'}">${courseId ? '返回词库选择' : '返回今日工作台'}</a>
           <a class="btn" href="word-detail.html?student=${task.studentId}&word=${ids[0] || ''}">查看单词档案</a>
           <a class="btn btn-primary" href="student-profile.html?student=${task.studentId}">返回学习档案</a>
         </div>
@@ -803,7 +822,7 @@ function renderInterrupted() {
             <div class="stat-value" style="color:var(--warning)">${left}</div></div>
         </div>
         <div class="flex gap8" style="justify-content:flex-end">
-          <a class="btn" href="word-training-setup.html?student=${task.studentId}">返回词库选择</a>
+          <a class="btn" href="${courseId ? 'word-training-setup.html?course=' + courseId : 'workbench.html'}">${courseId ? '返回词库选择' : '返回今日工作台'}</a>
           <button class="btn btn-primary btn-lg" onclick="resumeNow()">恢复并继续训练 →</button>
         </div>
       </div>
@@ -872,8 +891,10 @@ function doPause() {
 
 function saveExit() {
   task = Store.pauseTask(task.id);
-  Proto.toast('已保存并退出，可从词库选择页继续', 'ok');
-  setTimeout(() => location.href = 'word-training-setup.html?student=' + task.studentId + (courseId ? '&course=' + courseId : ''), 500);
+  Proto.toast('已保存并退出，可从课程工作台继续', 'ok');
+  setTimeout(() => location.href = courseId
+    ? 'course-workbench.html?course=' + courseId
+    : 'workbench.html', 500);
 }
 
 function doEnd() {

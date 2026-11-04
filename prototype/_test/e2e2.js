@@ -286,13 +286,17 @@ S.reset();
     throws(() => S.finalJudge(t.id, notInQueue, 'yes'), '不属于'));
 
   r.queue.forEach(id => S.finalJudge(t.id, id, 'yes'));
-  assert('T: 最后复习重复判断被拒绝',
-    throws(() => S.finalJudge(t.id, q0, 'no'), '修正'));
+  /* 第九轮起：未提交前允许重判，直接以本次结果为准并记录 correctedFrom */
+  assert('T: 提交前重判直接生效并留痕', (function () {
+    S.finalJudge(t.id, q0, 'no');
+    var fr = S.trainTask(t.id).finalResults[q0];
+    return fr.result === 'no' && fr.correctedFrom === 'yes';
+  })(), S.trainTask(t.id).finalResults[q0]);
   assert('T: 最后复习修正无原因被拒绝',
     throws(() => S.finalCorrect(t.id, q0, 'no', ''), '原因'));
   S.finalCorrect(t.id, q0, 'mid', '连读不清，暂不确定');
   assert('T: 最后复习修正留痕',
-    S.trainTask(t.id).finalResults[q0].correctedFrom === 'yes' &&
+    S.trainTask(t.id).finalResults[q0].correctedFrom === 'no' &&
     S.trainTask(t.id).finalResults[q0].result === 'mid');
 
   // 提交：仍有 mid → need 计入
@@ -549,9 +553,9 @@ S.reset();
 (function cross() {
   S.reset();
   const t = S.startTrainTask({ studentId: SID, teacherId: 'T001', wordbookId: 'WB001' });
-  S.wordsOfBook('WB001').forEach((w, i) => S.prescreenAnswer(t.id, w.id, i < 20));
+  S.wordsOfBook('WB001').forEach((w, i) => S.prescreenAnswer(t.id, w.id, i < 18));
   const r = S.finishPrescreen(t.id);
-  assert('X: 队列 3（23 词中 20 个认识）', r.queue.length === 3, r.queue.length);
+  assert('X: 队列 5（23 词中 18 个认识，满足最低 5 个）', r.queue.length === 5, r.queue.length);
   r.queue.forEach(id => S.trainJudge(t.id, id, 'no', 'en2cn', 0));
   const fr = S.toFinalStage(t.id);
   assert('X: 进入最后复习', fr.ok === true);

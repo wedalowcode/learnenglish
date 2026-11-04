@@ -113,7 +113,7 @@ const CID_PUB = 'C20261031001';      // 10-31 已完成（报告已发布）
   assert('课程记录关联训练任务', S.courseRecord(r0.record.id).links.trainTaskIds.indexOf(t.id) >= 0);
 
   assert('新任务状态=未开始 + 阶段=预筛选', t.status === '未开始' && t.phase === '预筛选', t.status + '/' + t.phase);
-  t.wordIds.slice(0, 4).forEach(id => S.prescreenAnswer(t.id, id, false));
+  t.wordIds.slice(0, 5).forEach(id => S.prescreenAnswer(t.id, id, false));
   assert('作答后状态=进行中', S.trainTask(t.id).status === '进行中');
   const fr = S.finishPrescreen(t.id);
   assert('预筛完成进入强化训练阶段',
@@ -209,7 +209,7 @@ const CID_PUB = 'C20261031001';      // 10-31 已完成（报告已发布）
   const bk = S.db.wordbooks.filter(b => b.wordCount > 0)[0];
   let t = S.startTrainTask({ studentId: SID, teacherId: 'T001', wordbookId: bk.id, courseId: CID });
   S.linkTask(CID, 'train', t.id);
-  t.wordIds.slice(0, 3).forEach(id => S.prescreenAnswer(t.id, id, false));
+  t.wordIds.slice(0, 5).forEach(id => S.prescreenAnswer(t.id, id, false));
   let fr = S.finishPrescreen(t.id);
   S.trainJudge(t.id, fr.queue[0], 'yes', 'en2cn', 0, CID);
 
@@ -233,7 +233,7 @@ const CID_PUB = 'C20261031001';      // 10-31 已完成（报告已发布）
   const bk2 = S.db.wordbooks.filter(b => b.wordCount > 0)[0];
   const t2 = S.startTrainTask({ studentId: 'S2026005', teacherId: 'T001', wordbookId: bk2.id, courseId: CID2 });
   S.linkTask(CID2, 'train', t2.id);
-  t2.wordIds.slice(0, 2).forEach(id => S.prescreenAnswer(t2.id, id, false));
+  t2.wordIds.slice(0, 5).forEach(id => S.prescreenAnswer(t2.id, id, false));
   const fr2 = S.finishPrescreen(t2.id);
   S.trainJudge(t2.id, fr2.queue[0], 'yes', 'en2cn', 0, CID2);
   const f2 = S.finishCourse(CID2, { policy: '结束', reason: '本节时间结束', by: 'T001' });
@@ -467,7 +467,7 @@ const CID_PUB = 'C20261031001';      // 10-31 已完成（报告已发布）
   S.openCourse(CID);
   const bk = S.db.wordbooks.filter(b => b.wordCount > 0)[0];
   const t = S.startTrainTask({ studentId: SID, teacherId: 'T001', wordbookId: bk.id, courseId: CID });
-  t.wordIds.slice(0, 3).forEach(id => S.prescreenAnswer(t.id, id, false));
+  t.wordIds.slice(0, 5).forEach(id => S.prescreenAnswer(t.id, id, false));
   const fr = S.finishPrescreen(t.id);
   S.trainJudge(t.id, fr.queue[0], 'yes', 'en2cn', 0, CID);
   const p3 = S.wordPanorama(SID, fr.queue[0]);
@@ -519,7 +519,7 @@ const CID_PUB = 'C20261031001';      // 10-31 已完成（报告已发布）
   const bk = S5.db.wordbooks.filter(b => b.wordCount > 0)[0];
   const t = S5.startTrainTask({ studentId: 'S2026005', teacherId: 'T001', wordbookId: bk.id, courseId: 'C20261102002' });
   S5.linkTask('C20261102002', 'train', t.id);
-  t.wordIds.slice(0, 2).forEach(id => S5.prescreenAnswer(t.id, id, false));
+  t.wordIds.slice(0, 5).forEach(id => S5.prescreenAnswer(t.id, id, false));
   S5.finishPrescreen(t.id);
   S5.endTask(t.id, '学员状态不佳', '');
   assert('训练中断不影响课程状态', S5.course('C20261102002').status === '授课中');

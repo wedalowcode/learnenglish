@@ -184,8 +184,10 @@ async function loginAs(p, role) {
     ok('主动开通记录操作人与原因', r.ok === true, r);
     ok('重复开通被拒', /已经拥有|有效授权/.test(r.dupErr), r.dupErr);
 
-    /* ================= 训练设置页：授权过滤 + 空态引导 ================= */
-    await p.goto(ROOT + 'teacher/word-training-setup.html?student=S2026001');
+    /* ================= 训练设置页：授权过滤 + 空态引导（第十轮：必须带课程） ================= */
+    await p.goto(ROOT + 'teacher/word-training-setup.html?course=C20261104001');
+    await p.eval(`Store.setSession({role:'teacher', teacherId:'T001', operatorName:'李婉'});`);
+    await p.goto(ROOT + 'teacher/word-training-setup.html?course=C20261104001');
     r = await p.eval(`
       var active = Store.studentWordbooksOf('S2026001').filter(x=>x.auth.status==='已授权').length;
       return { active: active, rows: document.querySelectorAll('#rows tr').length };`);
@@ -197,9 +199,9 @@ async function loginAs(p, role) {
       Store.studentWordbooksOf('S2026001').filter(x => x.auth.status === '已授权')
         .forEach(x => Store.disableStudentWordbook(x.auth.id, { reason: '测试：全部停用' }));
       Store.setSession({role:'teacher', operatorName:'李婉', teacherId:'T001'});`);
-    await p.goto(ROOT + 'teacher/word-training-setup.html?student=S2026001');
+    await p.goto(ROOT + 'teacher/word-training-setup.html?course=C20261104001');
     r = await p.eval(`return { txt: document.getElementById('rows').innerText.replace(/\\s+/g,' ') };`);
-    ok('无授权时显示申请引导', /词库申请/.test(r.txt) && /还没有任何词库授权/.test(r.txt), r.txt.slice(0, 200));
+    ok('无授权时显示申请引导', /暂未开通可用词库/.test(r.txt) && /词库申请|管理员/.test(r.txt), r.txt.slice(0, 200));
     await p.shot('p6-16-无授权引导');
 
     /* 历史训练数据不受停用影响 */
@@ -215,7 +217,7 @@ async function loginAs(p, role) {
       Store.setSession({role:'ops', operatorName:'王敏'});
       Store.studentWordbooksOf('S2026001').filter(x => x.auth.status === '已停用' && x.auth.wordbookId === 'WB001')
         .forEach(x => Store.enableStudentWordbook(x.auth.id, { reason: '恢复教材词表使用' }));`);
-    await p.goto(ROOT + 'teacher/word-training-setup.html?student=S2026001');
+    await p.goto(ROOT + 'teacher/word-training-setup.html?course=C20261104001');
     r = await p.eval(`return { rows: document.querySelectorAll('#rows tr').length };`);
     ok('重新启用后训练设置恢复', r.rows === 1, r.rows);
 

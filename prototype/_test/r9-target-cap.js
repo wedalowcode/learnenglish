@@ -18,43 +18,43 @@ function roleAdmin() {
 }
 function throws(n, fn, sub) { try { fn(); fail++; console.log('  FAIL ' + n + '  — 未抛错'); } catch (e) { const m = String((e && e.message) || e); if (!sub || m.indexOf(sub) >= 0) { pass++; console.log('  PASS ' + n + '  (' + m + ')'); } else { fail++; console.log('  FAIL ' + n + '  — 错误不符:' + m); } } }
 /* 结束已有未完成任务，保证新建任务是「新任务」而非复用 */
-function freshTask(sid, target) {
-  let r = S.createTrainTask({ studentId: sid, targetCount: target });
-  if (r.reused) { try { S.endTask(r.task.id, '测试清理'); } catch (e) {} r = S.createTrainTask({ studentId: sid, targetCount: target }); }
+function freshTask(sid) {
+  let r = S.createTrainTask({ studentId: sid });
+  if (r.reused) { try { S.endTask(r.task.id, '测试清理'); } catch (e) {} r = S.createTrainTask({ studentId: sid }); }
   return r.task;
 }
 
-console.log('\n== R9 阶段三-2 · 训练目标上限 45 ==');
+console.log('\n== R9 阶段三-2 · 训练目标上限 45（第十轮固定 5/45 规则） ==');
 roleAdmin();
 ok('TARGET_RANGE.max = 45', S.TARGET_RANGE.max === 45, S.TARGET_RANGE.max);
+ok('固定常量 TRAIN_WORD_MIN = 5', S.TRAIN_WORD_MIN === 5, S.TRAIN_WORD_MIN);
+ok('固定常量 TRAIN_WORD_MAX = 45', S.TRAIN_WORD_MAX === 45, S.TRAIN_WORD_MAX);
 
-/* >45 拒绝（数据层校验） */
-throws('目标 46 建任务被拒', () => S.createTrainTask({ studentId: 'S2026001', targetCount: 46 }), '训练目标数量需在');
+/* targetCount 不再可配置，新任务一律按上限 45 */
+const fixed = S.createTrainTask({ studentId: 'S2026002', targetCount: 10 });
+ok('targetCount 不再可配置，新任务固定 45', fixed.ok && fixed.task.targetCount === 45, fixed.task.targetCount);
+try { S.endTask(fixed.task.id, '测试清理'); } catch (e) {}
 
-/* =45 可建 */
-const c45 = S.createTrainTask({ studentId: 'S2026002', targetCount: 45 });
-ok('目标 45 可建任务', c45.ok && c45.task.targetCount === 45, c45.task.id);
-try { S.endTask(c45.task.id, '测试清理'); } catch (e) {}
-
-/* 候选 > 目标：队列封顶、未入队候选保留 */
-const tCap = freshTask('S2026001', 10);   // 小目标便于用 WB001(23词) 制造超额
-S.addWordbooksToTask(tCap.id, ['WB001']);
+/* 候选 > 45：队列封顶 45、未入队候选保留 */
+S.grantWordbook('S2026003', 'WB001', { reason: '上限验证补授权' });
+S.grantWordbook('S2026003', 'WB002', { reason: '上限验证补授权' });
+const tCap = freshTask('S2026003');
+S.addWordbooksToTask(tCap.id, ['WB003', 'WB001', 'WB002']);
 let cap = S.trainTask(tCap.id);
+ok('候选超过 45', cap.wordIds.length >= 46, cap.wordIds.length);
 cap.wordIds.forEach(id => S.prescreenAnswer(tCap.id, id, false));
 cap = S.trainTask(tCap.id);
-ok('候选 23 > 目标 10', cap.candidateWordIds.length > 10, cap.candidateWordIds.length);
-const fpCap = S.finishPrescreen(tCap.id, {});
+const fpCap = S.finishPrescreen(tCap.id);
 cap = S.trainTask(tCap.id);
-ok('队列封顶到目标(10)', cap.queueWordIds.length === 10, cap.queueWordIds.length);
-ok('未入队候选保留为 remain', cap.remainWordIds.length === cap.candidateWordIds.length - 10, cap.remainWordIds.length);
-ok('remain 仍为待强化训练(不丢失)', cap.remainWordIds.every(id => S.wordState('S2026001', id).state === '待强化训练'));
+ok('队列封顶到 45', cap.queueWordIds.length === 45, cap.queueWordIds.length);
+ok('未入队候选保留为 remain', cap.remainWordIds.length === cap.wordIds.length - 45, cap.remainWordIds.length);
+ok('remain 仍为待强化训练(不丢失)', cap.remainWordIds.every(id => S.wordState('S2026003', id).state === '待强化训练'));
 try { S.endTask(tCap.id, '测试清理'); } catch (e) {}
 
-/* 候选 < 目标：无 confirmShort 拒绝、confirmShort 后按实际开始 */
-/* 复用任何被 INTERRUPTED/进行中的任务都会被 isOpen 复用，故选一个无未完成任务的新学员 */
+/* 候选 ≥5 且 <45：直接按实际数量开始，不再需要 confirmShort */
 let low = null;
 for (const sid of S.db.students.map(s => s.id)) {
-  const r = S.createTrainTask({ studentId: sid, targetCount: 45 });
+  const r = S.createTrainTask({ studentId: sid });
   if (!r.reused) { low = r.task; break; }
 }
 ok('找到无未完成任务的新学员', !!low, low ? low.id + '/' + low.studentId : 'none');
@@ -62,12 +62,9 @@ if (!low) { console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败'); p
 S.addWordbooksToTask(low.id, ['WB001']);
 low = S.trainTask(low.id);
 low.wordIds.slice(0, 8).forEach(id => S.prescreenAnswer(low.id, id, false));
+const rOk = S.finishPrescreen(low.id);
 low = S.trainTask(low.id);
-const rSh = S.finishPrescreen(low.id, {});
-ok('候选不足且未确认被拒(可确认)', rSh.ok === false && rSh.reason === 'SHORT_OF_TARGET' && rSh.canConfirm === true, 'cand=' + rSh.candidate + ' target=' + rSh.target);
-const rOk = S.finishPrescreen(low.id, { confirmShort: true });
-low = S.trainTask(low.id);
-ok('confirmShort 后按实际开始', rOk.ok === true && low.queueWordIds.length === 8, low.queueWordIds.length);
+ok('8 个不认识可直接开始（无需确认）', rOk.ok === true && low.queueWordIds.length === 8, low.queueWordIds.length);
 
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
