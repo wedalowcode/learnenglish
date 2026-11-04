@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>训练报告与复习工作台</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+<style>
+  .mstyle { line-height:1.75; }
+  .mr { margin-bottom:8px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教学<span class="sep">/</span>训练报告与复习</div>
+          <h1 class="page-title">训练报告与复习工作台</h1>
+          <div class="page-sub" id="sub">选择学员查看训练会话报告与复习安排（报告/复习计划/复习记录统一到此）。</div>
+        </div>
+        <div class="page-actions">
+          <select class="select" id="fStu" style="min-width:200px" onchange="render()"></select>
+        </div>
+      </div>
+
+      <div id="body"><div class="card"><div class="card-body"><div class="small muted">加载中…</div></div></div></div>
+
+    </main>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'teacher', active: 'my-students' });
+const S = Store;
+const TID = Proto.teacherId();
+let stu = '';
+
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+const M_LABEL = { mastered: '已掌握', needs_practice: '待加强', not_mastered: '未掌握' };
+const M_TONE = { mastered: 'tag-green', needs_practice: 'tag-amber', not_mastered: 'tag-red' };
+
+function init() {
+  if (!TID) { document.getElementById('body').innerHTML = '<div class="card"><div class="card-body"><div class="small">未识别教师身份。</div></div></div>'; return; }
+  const list = S.currentStudentsOf ? S.currentStudentsOf(TID) : Store.tasksOf ? [] : [];
+  const sel = document.getElementById('fStu');
+  if (!list.length) {
+    sel.innerHTML = '<option value="">暂无学员</option>';
+    document.getElementById('body').innerHTML = '<div class="card"><div class="card-body"><div class="small muted">当前教师暂无负责学员。</div></div></div>';
+    return;
+  }
+  const q = new URLSearchParams(location.search);
+  stu = q.get('student') || list[0].id;
+  sel.innerHTML = list.map(s => `<option value="${s.id}" ${s.id === stu ? 'selected' : ''}>${esc(s.name)} · ${esc(s.grade || '')}</option>`).join('');
+  render();
+}
+
+function render() {
+  stu = document.getElementById('fStu').value || stu;
+  const student = S.student(stu);
+  document.getElementById('sub').textContent = student ? `学员 ${esc(student.name)} · 训练报告 ${S.trainingReportsOf(stu).length} 份 · 复习计划 ${S.reviewPlanStat(stu).active} 条(待复习 ${S.dueReviewWords(stu).length})` : '';
+  document.getElementById('body').innerHTML = `${reportBox()}${reviewBox()}`;
+  document.getElementById('body').addEventListener('click', e => {
+    const b = e.target.closest('[data-review]');
+    if (!b) return;
+    setReviewResult(b.dataset.review, b.dataset.result);
+  });
+}
+
+/* ---------- 训练报告 ---------- */
+function meanHtml(mean) {
+  return (mean || []).map(m => `${m.pos ? m.pos + ' ' : ''}${m.cn}`).join('；') || '—';
+}
+function reportBox() {
+  const list = S.trainingReportsOf(stu);
+  if (!list.length) {
+    return `<div class="card mb16"><div class="card-head"><div class="card-title">训练报告</div></div>
+      <div class="card-body"><div class="small muted">暂无已完成训练的报告。教师完成训练并提交复习检测后会自动生成。</div></div></div>`;
+  }
+  return list.map((r, idx) => {
+    const need = r.words.filter(w => w.mastery === 'not_mastered' || w.mastery === 'needs_practice');
+    const focus = need.map(w => `${esc(w.en)}(${w.mastery === 'not_mastered' ? '未掌握' : '待加强'})`).join('、');
+    const plans = S.reviewPlanStat(stu);
+    return `<div class="card mb16">
+      <div class="card-head"><div class="card-title">训练报告 ${(list.length - idx)} · ${esc(r.sessionDate)}</div>
+        <div class="small muted">任务 ${esc(r.taskId)} · ${esc(r.teacherId)}</div></div>
+      <div class="card-body">
+        <div class="grid g4 mb16">
+          <div class="card stat"><div class="stat-label">训练单词</div><div class="stat-value">${r.trainedCount}</div></div>
+          <div class="card stat"><div class="stat-label">已掌握</div><div class="stat-value" style="color:var(--success)">${r.masteredCount}</div></div>
+          <div class="card stat"><div class="stat-label">待加强</div><div class="stat-value" style="color:var(--warning)">${r.needsPracticeCount}</div></div>
+          <div class="card stat"><div class="stat-label">未掌握</div><div class="stat-value" style="color:var(--danger)">${r.notMasteredCount}</div></div>
+        </div>
+        <div class="mb16"><div class="small muted">掌握率 <b style="color:var(--primary-dark)">${r.masteredRate}%</b>（已掌握 ÷ 训练总数，来自本次最终检测）</div></div>
+        ${need.length ? `<div class="alert alert-warn mb16"><span class="ico">!</span>
+          <div>重点单词（待加强 + 未掌握）：<b>${focus}</b><br>
+            已进入统一复习计划，建议按到期时间发起复习。</div></div>` : '<div class="alert alert-success mb16"><span class="ico">✓</span><div>本次全部掌握，无需安排常规复习。</div></div>'}
+        <div class="section-title">逐词明细</div>
+        <div class="table-wrap">
+          <table class="table compact">
+            <thead><tr><th>单词</th><th>音标</th><th>中文</th><th>来源词库</th><th>最终判断</th><th>入复习</th></tr></thead>
+            <tbody>${r.words.map(w => `<tr>
+              <td class="strong">${esc(w.en)}</td>
+              <td class="sc-ph" style="font-family:'Times New Roman',serif">${esc(w.ph)}</td>
+              <td class="small muted">${meanHtml(w.mean)}</td>
+              <td class="small muted">${(w.sourceBookNames || []).join('、') || '—'}</td>
+              <td><span class="tag ${M_TONE[w.mastery] || 'tag-slate'} nodot">${w.masteryLabel || '—'}</span></td>
+              <td>${w.enteredReview ? '<span class="tag tag-blue nodot">进入计划</span>' : '<span class="muted">—</span>'}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>
+        ${r.teacherNote && r.teacherNote.overall ? `<div class="mt12 small">教师评价：${esc(r.teacherNote.overall)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ---------- 复习任务 / 发起复习 / 历史记录 ---------- */
+function reviewBox() {
+  const due = S.dueReviewWords(stu);
+  const plans = S.reviewPlansOf(stu);
+  const rec = plans.map(p => S.reviewRecordsOf(stu, p.wordId).length).reduce((a, b) => a + b, 0);
+  return `<div class="card">
+    <div class="card-head"><div class="card-title">复习任务 <span class="tag tag-red nodot">待复习 ${due.length}</span></div></div>
+    <div class="card-body">
+      ${due.length ? `<div class="table-wrap mb16">
+        <table class="table compact">
+          <thead><tr><th>单词</th><th>掌握状态</th><th>到期</th><th>复习结果</th><th style="width:130px">操作</th></tr></thead>
+          <tbody>${due.map(p => {
+            const w = S.word(p.wordId);
+            return `<tr>
+              <td class="strong">${esc(w ? w.en : p.wordId)}</td>
+              <td><span class="tag ${M_TONE[p.mastery] || 'tag-slate'} nodot">${esc(M_LABEL[p.mastery] || '')}</span></td>
+              <td class="small muted">${esc(p.nextReviewAt)}</td>
+              <td class="nowrap">
+                <button class="btn btn-sm" data-review="${p.wordId}" data-result="mastered">掌握</button>
+                <button class="btn btn-sm" data-review="${p.wordId}" data-result="needs_practice">待加强</button>
+                <button class="btn btn-sm" data-review="${p.wordId}" data-result="not_mastered">未掌握</button>
+              </td>
+              <td><a class="btn-link" href="word-detail.html?student=${stu}&word=${p.wordId}">详情</a></td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>` : '<div class="small muted mb16">当前没有到期的复习单词。</div>'}
+      <div class="small muted mb16 mr">复习记录：${rec} 条 · 有效计划 ${plans.filter(p => p.status === 'pending' || p.status === 'in_progress').length} 条（历史版本不删除）。</div>
+    </div>
+  </div>`;
+}
+
+function setReviewResult(wordId, result) {
+  try {
+    const r = S.recordReview({ studentId: stu, wordId, result, method: 'teacher', teacherId: TID, note: '复习工作台提交' });
+    Proto.toast(`已记录复习：${esc(S.word(wordId).en)} → ${M_LABEL[r.result]}，下次 ${r.nextReviewAt}`, 'ok');
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+init();
+</script>
+</body>
+</html>

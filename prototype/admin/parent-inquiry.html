@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>家长咨询处理</title>
+<link rel="stylesheet" href="../assets/css/common.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="crumb">教务管理<span class="sep">/</span>家长咨询</div>
+          <h1 class="page-title">家长咨询处理</h1>
+          <div class="page-sub">家长在「课时页」发起的咨询实时落库并生成待办与通知，教务在此回复处理</div>
+        </div>
+        <div class="page-actions">
+          <span class="small muted">状态：待处理 / 处理中 / 已回复 / 已关闭</span>
+        </div>
+      </div>
+
+      <div class="card filter">
+        <div class="field"><label>家长 / 内容 / 单号</label>
+          <input class="input" id="kw" placeholder="输入家长姓名、咨询内容或单号" oninput="render()"></div>
+        <div class="field"><label>状态</label>
+          <select class="select" id="st" onchange="render()">
+            <option value="">全部</option><option>待处理</option><option>处理中</option>
+            <option>已回复</option><option>已关闭</option>
+          </select></div>
+        <div class="filter-actions"><button class="btn btn-primary" onclick="render()">查询</button></div>
+      </div>
+
+      <div class="card mt16">
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th>单号</th><th>家长</th><th>孩子</th><th>类型</th><th>咨询内容</th>
+                  <th>联系方式</th><th>状态</th><th>提交时间</th><th style="width:230px">操作</th></tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span>共 <b id="total">0</b> 条</span>
+            <div class="pages"><button class="pg" disabled>‹</button><button class="pg on">1</button><button class="pg" disabled>›</button></div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- 处理咨询 -->
+<div class="mask" id="iqModal">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">处理家长咨询</div>
+      <button class="modal-close" onclick="Proto.closeModal('iqModal')">×</button></div>
+    <div class="modal-body">
+      <div class="alert alert-info mb16"><span class="ico">i</span><div id="iqInfo">—</div></div>
+      <div class="field mb12"><label>处理状态</label>
+        <select class="select" id="iqStatus">
+          <option>待处理</option><option>处理中</option><option>已回复</option><option>已关闭</option>
+        </select></div>
+      <div class="field"><label>回复内容</label>
+        <textarea class="textarea" id="iqReply" rows="4" placeholder="填写回复后家长端「我的咨询」可见并可收到通知"></textarea></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="Proto.closeModal('iqModal')">取消</button>
+      <button class="btn btn-primary" onclick="save()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>window.PROTO_ROOT = '../';</script>
+<script src="../assets/js/common.js"></script>
+<script src="../assets/js/data.js"></script>
+<script src="../assets/js/store.js"></script>
+<script>
+Proto.shell({ role: 'admin', active: 'parent-inquiry' });
+
+const ST_TONE = { '待处理': 'tag-amber', '处理中': 'tag-blue', '已回复': 'tag-green', '已关闭': 'tag-slate' };
+let cur = null;
+
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function render() {
+  const kw = document.getElementById('kw').value.trim();
+  const st = document.getElementById('st').value;
+  let list;
+  try { list = Store.allParentInquiries(); }
+  catch (e) { Proto.toast(e.message, 'err'); return; }
+  const rows = list.filter(q => {
+    if (st && q.status !== st) return false;
+    if (kw && !((q.parentName + q.content + q.type + q.id).includes(kw))) return false;
+    return true;
+  });
+  document.getElementById('total').textContent = rows.length;
+  Proto.renderRows('rows', rows, q => `
+    <tr>
+      <td class="mono small">${q.id}</td>
+      <td class="strong">${esc(q.parentName)}</td>
+      <td>${esc(q.studentName || '—')}</td>
+      <td><span class="tag tag-slate nodot">${esc(q.type)}</span></td>
+      <td style="max-width:240px" class="small muted">${esc(q.content)}</td>
+      <td class="mono small">${esc(q.contact || '—')}</td>
+      <td><span class="tag ${ST_TONE[q.status] || 'tag-slate'} nodot">${q.status}</span></td>
+      <td class="small muted">${esc((q.createdAt || '').slice(0, 16))}</td>
+      <td class="ops">
+        <button class="btn-link" onclick="openIq('${q.id}')">处理</button>
+        ${q.reply ? `<a class="btn-link" href="javascript:void 0" onclick="openIq('${q.id}')">查看回复</a>` : ''}
+      </td>
+    </tr>`, 8, '暂无家长咨询');
+}
+
+function openIq(id) {
+  let list;
+  try { list = Store.allParentInquiries(); } catch (e) { Proto.toast(e.message, 'err'); return; }
+  const q = list.filter(x => x.id === id)[0];
+  if (!q) { Proto.toast('咨询不存在', 'err'); return; }
+  cur = q;
+  document.getElementById('iqInfo').innerHTML =
+    `<b>${esc(q.parentName)}</b> · ${esc(q.studentName || '未指定孩子')} · ${esc(q.type)}<br>${esc(q.content)}`;
+  document.getElementById('iqStatus').value = q.status;
+  document.getElementById('iqReply').value = q.reply || '';
+  Proto.openModal('iqModal');
+}
+
+function save() {
+  if (!cur) return;
+  const status = document.getElementById('iqStatus').value;
+  const reply = document.getElementById('iqReply').value.trim();
+  try {
+    Store.handleParentInquiry(cur.id, { status, reply });
+    Proto.closeModal('iqModal');
+    Proto.toast('咨询已更新，家长端可查看', 'ok');
+    cur = null;
+    render();
+  } catch (e) { Proto.toast(e.message, 'err'); }
+}
+
+render();
+</script>
+</body>
+</html>
