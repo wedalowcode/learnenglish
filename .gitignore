@@ -19,3 +19,6 @@ Thumbs.db
 node_modules/
 dist/
 *.log
+
+# 生产环境凭据（严禁入库与推送）
+生产环境.txt
