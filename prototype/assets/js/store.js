@@ -9472,6 +9472,7 @@
     var availWarnings = [];
     if (!avail.ok && avail.reason) availWarnings.push(avail.reason);
     var from = teacher(c.teacherId);
+    if (!Array.isArray(c.reassignLogs)) c.reassignLogs = [];
     c.reassignLogs.push({
       fromTeacherId: c.teacherId, fromName: from ? from.name : c.teacherName,
       toTeacherId: nt.id, toName: nt.name,
@@ -9617,7 +9618,8 @@
       scheduleNote: String(input.scheduleNote || '').trim(), scheduleWarnings: scheduleWarnings,
       creator: session.operatorName || '',
       createdBy: session.operatorName || '', createdAt: stamp(),
-      actualStart: '', actualEnd: '', recordId: ''
+      actualStart: '', actualEnd: '', recordId: '',
+      reassignLogs: [], changeLogs: []
     };
     db.courses.push(c);
     recordAudit({

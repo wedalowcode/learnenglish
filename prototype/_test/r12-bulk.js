@@ -52,7 +52,7 @@ S.createCourse({ studentId: 'S2026003', teacherId: 'T003', date: '2026-11-10', s
 const r1 = S.batchReassignCourses([A.id, B.id, C.id, doneCourse.id], 'T003', '教师调课');
 assert('批量改派成功节数正确', r1.success.length === 2, r1.success.map(x => x.courseId));
 assert('批量改派失败节数正确', r1.failed.length === 2, r1.failed);
-assert('时段冲突的课程被单独列出原因', r1.failed.some(f => f.courseId === B.id && /冲突/.test(f.reason)), r1.failed);
+assert('时段冲突的课程被单独列出原因', r1.failed.some(f => f.courseId === B.id && /已有课程/.test(f.reason)), r1.failed);
 assert('已完成课程不可改派', r1.failed.some(f => f.courseId === doneCourse.id && /已完成/.test(f.reason)), r1.failed);
 assert('成功课程已换教师', S.course(A.id).teacherId === 'T003' && S.course(C.id).teacherId === 'T003');
 assert('失败课程保留原教师', S.course(B.id).teacherId === 'T001', S.course(B.id).teacherId);
