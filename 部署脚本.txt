@@ -1,0 +1,3 @@
+su - deploy
+cd /var/www/english-teaching-platform
+bash scripts/deploy.sh
